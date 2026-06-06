@@ -7,7 +7,7 @@ Goal: Convert current dev-friendly posture into production-safe defaults.
 ## How to use this document
 
 1. Use the finding table to prioritize production fixes.
-2. Copy the Copilot prompt for each finding when you are ready to implement.
+2. Use the implementation guidance for each finding when you are ready to implement.
 3. Use the acceptance criteria to verify the fix is complete.
 4. Keep this file updated as each item is closed.
 
@@ -35,11 +35,11 @@ Goal: Convert current dev-friendly posture into production-safe defaults.
 7. F6 Password policy
 8. F8 Credential file hygiene
 
-## Copilot implementation prompts
+## Implementation guidance
 
-Use these prompts in sequence when moving to production.
+Use these specifications in sequence when moving to production.
 
-### Prompt for F1: CSRF protection
+### F1: CSRF protection
 
 Implement CSRF protection for this Flask app with minimal disruption.
 
@@ -65,7 +65,7 @@ Acceptance checks:
 - Cross-site forged requests fail with 400/403.
 - No regressions for read-only GET APIs.
 
-### Prompt for F2: Logout hardening
+### F2: Logout hardening
 
 Harden logout endpoint.
 
@@ -79,7 +79,7 @@ Acceptance checks:
 - GET /logout returns 405 (or not found if redesigned).
 - POST with valid CSRF logs user out.
 
-### Prompt for F3: TLS verification defaults
+### F3: TLS verification defaults
 
 Make upstream FortiManager TLS validation production-safe by default.
 
@@ -94,7 +94,7 @@ Acceptance checks:
 - With invalid/untrusted cert, calls fail closed by default.
 - With trusted cert chain, calls succeed.
 
-### Prompt for F4: Safe error responses
+### F4: Safe error responses
 
 Replace raw exception leakage with safe client responses.
 
@@ -108,7 +108,7 @@ Acceptance checks:
 - API responses no longer expose stack/internal host details.
 - Logs retain enough data for debugging.
 
-### Prompt for F5: Upload limits
+### F5: Upload limits
 
 Harden file import endpoints against oversized uploads and parser abuse.
 
@@ -122,7 +122,7 @@ Acceptance checks:
 - Oversized upload rejected quickly.
 - Valid small CSV/XLSX continues to work.
 
-### Prompt for F6: Password policy
+### F6: Password policy
 
 Add production-safe password policy for local fallback accounts.
 
@@ -135,7 +135,7 @@ Acceptance checks:
 - Weak passwords rejected.
 - Strong passwords accepted.
 
-### Prompt for F7: Security headers
+### F7: Security headers
 
 Add baseline security headers through Flask middleware.
 
@@ -152,7 +152,7 @@ Acceptance checks:
 - Headers present on HTML and API responses.
 - App pages still function correctly.
 
-### Prompt for F8: Credentials file hygiene
+### F8: Credentials file hygiene
 
 Fix tracked local credential storage for production posture.
 

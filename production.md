@@ -385,7 +385,17 @@ AD_VERIFY_SSL    = os.environ.get("AD_VERIFY_SSL", "false").lower() == "true"
 
 ### 4.4 Replace app/auth.py with AD-aware version
 
-Replace the file with the AD-capable authentication module you already prepared in this guide.
+Update `app/auth.py` to add LDAP/AD authentication. The structure mirrors the
+FortiAuthenticator RADIUS implementation shown in the
+[Optional: FortiAuthenticator RADIUS Authentication](#optional-fortiauthentic
+ator-radius-authentication) section — replace the RADIUS bind with an `ldap3`
+bind using the AD credentials from `.env`, check `memberOf` for the admin/viewer
+group DNs, and preserve the local bcrypt fallback path unchanged.
+
+Key integration points:
+- `authenticate(username, password)` — attempt AD bind first; fall back to local bcrypt on failure
+- `get_user_role(username)` — resolve role from AD group membership (`AD_GROUP_ADMIN` / `AD_GROUP_VIEWER`)
+- Keep at least one local `admin` entry in `users.json` as an emergency fallback
 
 ### 4.5 Create AD Security Groups
 

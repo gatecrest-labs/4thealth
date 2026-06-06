@@ -1,6 +1,7 @@
 # Environment
 .env
 .env.*
+!.env.example
 
 # TLS certs
 certs/*.pem
@@ -40,4 +41,8 @@ build/
 
 # Docker
 docker-compose.override.yml
+
+# Claude Code memory index (internal AI assistant file — not project content)
+MEMORY.md
+memory/
 

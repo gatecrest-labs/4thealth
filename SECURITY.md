@@ -1,15 +1,37 @@
-Security Policy
+# Security Policy
 
-Reporting a Vulnerability
+## Reporting a Vulnerability
 
-If you discover a potential security issue, please do one of the following:
+If you discover a potential security issue in this project, please report it
+responsibly rather than opening a public issue.
 
-- Open an issue titled "security: <short description>" (mark as private) OR
-- Email security@example.com (replace with your project's security contact)
+**Preferred method:** Open a [GitHub Security Advisory](../../security/advisories/new)
+(private by default — only visible to maintainers until disclosed).
 
-Please include: a description of the issue, steps to reproduce, affected versions, and contact info. Do NOT include exploit code in public issue threads.
+**Alternative:** Open a regular issue titled `security: <short description>` and
+mark it as sensitive if the platform allows, or email the maintainer directly via
+the contact listed on the GitHub profile.
 
-Disclosure
+Please include:
 
-Maintainers will acknowledge receipt within 72 hours and coordinate a fix and disclosure timeline.
+- A clear description of the vulnerability
+- Steps to reproduce
+- Affected versions or components
+- Any suggested mitigation
 
+Do **not** include working exploit code in public issue threads.
+
+## Response Timeline
+
+Maintainers will acknowledge receipt within **72 hours** and aim to coordinate
+a fix and disclosure timeline within **14 days** for high-severity issues.
+
+## Scope
+
+This project is a **read-only** monitoring dashboard. It never writes configuration
+to FortiManager or managed devices. The attack surface is limited to:
+
+- Session authentication and cookie handling
+- Input validation on API endpoints
+- Credential storage (bcrypt hashes in `users.json`)
+- TLS configuration between the app and FortiManager

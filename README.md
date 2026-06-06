@@ -28,7 +28,7 @@ JSON-RPC API** — no direct FortiGate connections are made.
 ## Architecture
 
 ```
-fortigate-health/
+4thealth/
 ├── app/
 │   ├── __init__.py              Flask application factory (also starts background scheduler)
 │   ├── config.py                Settings loaded from .env
@@ -105,7 +105,7 @@ Production security hardening handoff is documented in [`SECURITY_PRODUCTION_HAN
 brew install uv
 ```
 
-Then from the `fortigate-health` directory:
+Then from the `4thealth` directory:
 
 ```bash
 # 1. Install all dependencies into an isolated .venv
