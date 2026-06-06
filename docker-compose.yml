@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    image: 4thealth:latest
+    container_name: 4thealth
+    restart: unless-stopped
+    ports:
+      # Bind to loopback only when Nginx (or another proxy) is on the host.
+      # Change to "8100:8100" to expose directly (e.g. for testing without a proxy).
+      - "127.0.0.1:8100:8100"
+    env_file:
+      - .env
+    volumes:
+      - ./users.json:/app/users.json:rw
+      - ./groups.json:/app/groups.json:rw
+      - ./infra_targets.json:/app/infra_targets.json:ro
+      - ./policy_db.json:/app/policy_db.json:rw
+      - ./certs:/app/certs:ro
+    healthcheck:
+      # The container runs plain HTTP on 8100; TLS is terminated at the host Nginx
+      # (or a proxy container).  If you terminate TLS inside the container instead,
+      # change the scheme here to https and add ssl context handling.
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8100/login', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

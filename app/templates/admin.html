@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Admin — 4THealth{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>&#9881; Administration</h2>
+  </div>
+</div>
+
+<!-- Admin sub-tabs -->
+<div class="admin-tabs" id="adminTabs">
+  <button class="admin-tab active" data-panel="groups">Groups &amp; Permissions</button>
+  <button class="admin-tab" data-panel="logs">Application Logs</button>
+</div>
+
+<!-- ═══════════════════════  GROUPS PANEL  ═══════════════════════ -->
+<div class="admin-panel active" id="panel-groups">
+
+  <div class="admin-panel-header">
+    <div>
+      <h3>Groups</h3>
+      <p class="text-muted" style="font-size:.85rem;margin-top:.2rem">
+        Groups control which navigation tabs a user can see.
+        Admins always have full access regardless of group membership.
+      </p>
+    </div>
+    <button class="btn btn-primary" id="btnNewGroup">+ New Group</button>
+  </div>
+
+  <div id="groupsTableWrap" class="table-wrapper">
+    <table class="data-table" id="groupsTable">
+      <thead>
+        <tr>
+          <th>Group Name</th>
+          <th>Members</th>
+          <th>Allowed Tabs</th>
+          <th>ADOM Access</th>
+          <th style="width:120px">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="groupsTbody">
+        <tr><td colspan="5" class="loading-placeholder">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════  LOGS PANEL  ═══════════════════════ -->
+<div class="admin-panel" id="panel-logs">
+
+  <div class="admin-panel-header">
+    <div>
+      <h3>Application Logs</h3>
+      <p class="text-muted" style="font-size:.85rem;margin-top:.2rem">
+        In-memory ring buffer — up to 2 000 entries, cleared on restart.
+      </p>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+      <label style="font-size:.85rem;font-weight:500">Level:</label>
+      <select class="form-select-sm" id="logLevelSelect"></select>
+      <button class="btn btn-primary btn-sm" id="btnSetLevel">Set</button>
+      <button class="btn btn-sm" id="btnRefreshLogs" style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">&#8635; Refresh</button>
+      <button class="btn btn-sm" id="btnClearLogs" style="background:rgba(220,53,69,.12);border:1px solid rgba(220,53,69,.3);color:var(--danger)">Clear Buffer</button>
+    </div>
+  </div>
+
+  <!-- Filter row -->
+  <div class="controls-row" style="margin-bottom:.75rem">
+    <label style="font-size:.85rem">Filter level ≥</label>
+    <select class="form-select-sm" id="logFilterLevel">
+      <option value="">All</option>
+    </select>
+    <label style="font-size:.85rem">Component</label>
+    <input class="form-control" id="logFilterComponent" placeholder="e.g. auth" style="max-width:160px;padding:.3rem .6rem;font-size:.8rem" />
+    <button class="btn btn-sm" id="btnApplyFilter" style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">Apply</button>
+  </div>
+
+  <div class="log-status-bar" id="logStatusBar">
+    Active level: <strong id="logCurrentLevel">—</strong> &nbsp;|&nbsp; Showing <strong id="logCount">0</strong> entries
+  </div>
+
+  <div class="log-container" id="logContainer">
+    <div class="loading-placeholder">Loading logs…</div>
+  </div>
+</div>
+
+<!-- ═══════════════════  GROUP MODAL  ═══════════════════ -->
+<div class="modal-overlay hidden" id="groupModal">
+  <div class="modal-dialog" style="max-width:620px">
+    <div class="modal-header">
+      <h3 id="groupModalTitle">New Group</h3>
+      <button class="modal-close" id="groupModalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="groupModalMode" value="create" />
+      <input type="hidden" id="groupModalOrigName" value="" />
+
+      <div class="form-group">
+        <label for="groupNameInput">Group Name</label>
+        <input type="text" class="form-control" id="groupNameInput" placeholder="e.g. NOC-Team" />
+      </div>
+
+      <div class="form-group">
+        <label>Allowed Tabs</label>
+        <div id="tabCheckboxes" class="checkbox-group"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Members</label>
+        <div class="member-picker">
+          <div id="memberCheckboxes" class="checkbox-group"></div>
+        </div>
+        <p class="text-muted" style="font-size:.78rem;margin-top:.4rem">
+          Admins always have full access and do not need to be in a group.
+        </p>
+      </div>
+
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+          <input type="checkbox" id="adomRestrictToggle" />
+          Restrict ADOM access for this group
+        </label>
+        <p class="text-muted" style="font-size:.78rem;margin-top:.3rem">
+          When enabled, members of this group can only see the ADOMs checked below.
+          If disabled, members have access to all ADOMs (subject to their tab permissions).
+        </p>
+      </div>
+
+      <div class="form-group" id="adomCheckboxWrap" style="display:none">
+        <label>Allowed ADOMs</label>
+        <div style="margin-bottom:.4rem;display:flex;gap:.5rem">
+          <button type="button" class="btn btn-sm" id="adomSelectAll"
+                  style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text);padding:.2rem .6rem;font-size:.78rem">
+            Select All
+          </button>
+          <button type="button" class="btn btn-sm" id="adomSelectNone"
+                  style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text);padding:.2rem .6rem;font-size:.78rem">
+            Clear All
+          </button>
+          <span id="adomCacheStatus" style="font-size:.75rem;color:var(--text-muted);align-self:center"></span>
+        </div>
+        <div id="adomCheckboxes" class="checkbox-group" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:.5rem"></div>
+      </div>
+
+      <div id="groupModalError" class="alert alert-danger hidden"></div>
+
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+        <button class="btn" id="groupModalCancel" style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">Cancel</button>
+        <button class="btn btn-primary" id="groupModalSave">Save Group</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════  DELETE CONFIRM MODAL  ═══════════════ -->
+<div class="modal-overlay hidden" id="deleteModal">
+  <div class="modal-dialog" style="max-width:420px">
+    <div class="modal-header">
+      <h3>Delete Group</h3>
+      <button class="modal-close" id="deleteModalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p>Delete group <strong id="deleteGroupName"></strong>? This cannot be undone.</p>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.25rem">
+        <button class="btn" id="deleteModalCancel" style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">Cancel</button>
+        <button class="btn" id="deleteModalConfirm" style="background:var(--danger);color:#fff;border:none">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=3"></script>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Device Review — 4THealth{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>Device Review</h2>
+    <span class="last-updated" id="drLastRunLabel"></span>
+  </div>
+</div>
+
+<!-- Selectors -->
+<div class="hygiene-selectors">
+  <div class="hygiene-selector-row">
+    <label for="drAdom">ADOM</label>
+    <select id="drAdom" class="form-select">
+      <option value="">— select ADOM —</option>
+    </select>
+    <span id="drDeviceLoading" class="text-muted" style="display:none;font-style:italic;font-size:.88rem;margin-left:.5rem">Loading…</span>
+  </div>
+
+  <!-- Check selector -->
+  <div class="hygiene-selector-row" style="margin-top:.75rem">
+    <label>Check</label>
+    <div class="checkbox-group" id="drChecks">
+      {% for check in checks %}
+      <label class="checkbox-label" title="{{ check.description }}">
+        <input type="checkbox" name="dr_check" value="{{ check.key }}" checked />
+        {{ check.name }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+    <button class="btn btn-primary" id="drRunBtn" disabled>&#9654; Run Review</button>
+    <button class="btn btn-secondary" id="drCancelBtn" style="display:none">&#9632; Cancel</button>
+    <span id="drRunning" class="text-muted" style="display:none;font-style:italic">Analysing…</span>
+    <span id="drError" class="text-danger" style="display:none"></span>
+  </div>
+
+  <!-- Progress bar (shown during run) -->
+  <div id="drProgressWrap" style="display:none;margin-top:.9rem">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.3rem">
+      <span id="drProgressLabel" class="text-muted" style="font-size:.82rem"></span>
+    </div>
+    <div class="dr-progress-track">
+      <div class="dr-progress-bar" id="drProgressBar">0%</div>
+    </div>
+  </div>
+</div>
+
+<!-- Results -->
+<div id="drResults" style="display:none;margin-top:1.5rem">
+
+  <!-- Protocol filter panel — populated after run -->
+  <div id="drProtoPanel" style="margin-bottom:1rem">
+    <div style="font-size:.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.45rem">
+      Filter by Protocol
+      <button class="btn btn-xs" id="drProtoAll"  style="margin-left:.6rem">All</button>
+      <button class="btn btn-xs" id="drProtoNone" style="margin-left:.2rem">None</button>
+    </div>
+    <div class="checkbox-group" id="drProtoChecks"></div>
+  </div>
+
+  <div class="hygiene-results-header">
+    <div>
+      <span id="drSummary" class="hygiene-summary-line"></span>
+    </div>
+    <div class="hygiene-export-row">
+      <button class="btn btn-sm" id="drExportCsv">&#8659; CSV</button>
+      <button class="btn btn-sm" id="drExportJson">&#8659; JSON</button>
+      <button class="btn btn-sm" id="drExportPdf">&#8659; PDF</button>
+    </div>
+  </div>
+
+  <!-- Filter + page controls -->
+  <div class="route-controls" style="margin:.75rem 0 .5rem;flex-wrap:wrap;gap:.5rem">
+    <input type="text" id="drFilter" class="form-control" placeholder="Filter by device, interface, IP…" style="max-width:300px" />
+    <select id="drDeviceFilter" class="form-select-sm" style="max-width:200px">
+      <option value="">All devices</option>
+    </select>
+    <select id="drStatusFilter" class="form-select-sm" style="max-width:160px">
+      <option value="up">Up only</option>
+      <option value="all">All (inc. down)</option>
+    </select>
+    <select id="drPageSize" class="form-select-sm">
+      <option value="10">10</option>
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+    </select>
+    <span class="text-muted" style="font-size:.8rem">per page</span>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrapper">
+    <table class="data-table" id="drTable">
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th>Interface</th>
+          <th>VDOM</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>IP Address</th>
+          <th>Protocols</th>
+        </tr>
+      </thead>
+      <tbody id="drTbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination" id="drPager" style="margin-top:.75rem"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/device_review.js') }}?v=5"></script>
+{% endblock %}
