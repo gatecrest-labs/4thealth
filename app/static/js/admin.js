@@ -260,54 +260,66 @@
   // ══════════════════════  MAP REGIONS  ═════════════════════════════════════
 
   let _mapRegionsLoaded = false;
+  let _mapAllStates     = [];
 
   async function loadMapRegions() {
     const tbody = document.getElementById('mapRegionsTbody');
-    tbody.innerHTML = '<tr><td colspan="3" class="loading-placeholder">Loading…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="loading-placeholder">Loading…</td></tr>';
 
     const res = await fetch('/admin/api/map-regions');
     if (!res.ok) {
-      tbody.innerHTML = '<tr><td colspan="3" class="text-danger">Failed to load region data.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="text-danger">Failed to load region data.</td></tr>';
       return;
     }
     const data = await res.json();
+    _mapAllStates = data.all_states || [];
     _renderMapRegions(data);
     _mapRegionsLoaded = true;
   }
 
+  // Build the inner HTML for one named-region <tr> (called for existing and new rows).
+  function _makeRegionRow(r) {
+    const assigned = new Set(r.states || []);
+    const options  = _mapAllStates.map(s =>
+      `<option value="${esc(s)}"${assigned.has(s) ? ' selected' : ''}>${esc(s)}</option>`
+    ).join('');
+    const color = r.color || '#888888';
+    return `<tr class="region-row">
+      <td style="vertical-align:top;padding-top:.5rem">
+        <input type="text" class="form-control region-name-input"
+               value="${esc(r.name)}" placeholder="Region name"
+               style="font-size:.85rem;padding:.35rem .5rem;font-weight:500" />
+      </td>
+      <td>
+        <select multiple class="region-states-select"
+                style="width:100%;min-height:110px;border:1px solid var(--border);border-radius:4px;font-size:.82rem;padding:.2rem;background:var(--surface);color:var(--text)">
+          ${options}
+        </select>
+        <p style="font-size:.75rem;color:var(--text-muted);margin:.25rem 0 0">
+          Hold Ctrl / Cmd to select multiple states.
+        </p>
+      </td>
+      <td style="vertical-align:top;padding-top:.5rem">
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <input type="color" class="region-color-input" value="${esc(color)}"
+                 style="width:44px;height:30px;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:2px" />
+          <span class="region-color-hex" style="font-size:.82rem;font-family:monospace">${esc(color)}</span>
+        </div>
+      </td>
+      <td style="vertical-align:top;padding-top:.4rem;text-align:center">
+        <button class="delete-region-btn btn btn-sm" title="Delete region"
+                style="background:rgba(220,53,69,.1);color:var(--danger);border:1px solid rgba(220,53,69,.25);padding:.2rem .55rem;font-size:1.1rem;line-height:1">&times;</button>
+      </td>
+    </tr>`;
+  }
+
   function _renderMapRegions(data) {
-    const tbody = document.getElementById('mapRegionsTbody');
-    const regions    = data.regions    || [];
+    const tbody      = document.getElementById('mapRegionsTbody');
     const otherColor = data.other_color || '#333333';
-    const allStates  = data.all_states  || [];
 
-    const regionRows = regions.map(r => {
-      const assigned = new Set(r.states || []);
-      const options  = allStates.map(s =>
-        `<option value="${esc(s)}"${assigned.has(s) ? ' selected' : ''}>${esc(s)}</option>`
-      ).join('');
-      return `<tr>
-        <td style="vertical-align:top;padding-top:.6rem"><strong>${esc(r.name)}</strong></td>
-        <td>
-          <select multiple class="region-states-select" data-region="${esc(r.name)}"
-                  style="width:100%;min-height:110px;border:1px solid var(--border);border-radius:4px;font-size:.82rem;padding:.2rem;background:var(--surface);color:var(--text)">
-            ${options}
-          </select>
-          <p style="font-size:.75rem;color:var(--text-muted);margin:.25rem 0 0">
-            Hold Ctrl / Cmd to select multiple states.
-          </p>
-        </td>
-        <td style="vertical-align:top;padding-top:.6rem">
-          <div style="display:flex;align-items:center;gap:.6rem">
-            <input type="color" class="region-color-input" data-region="${esc(r.name)}"
-                   value="${esc(r.color)}" style="width:44px;height:30px;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:2px" />
-            <span class="region-color-hex" style="font-size:.82rem;font-family:monospace">${esc(r.color)}</span>
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
+    const regionRows = (data.regions || []).map(_makeRegionRow).join('');
 
-    const otherRow = `<tr style="border-top:2px solid var(--border)">
+    const otherRow = `<tr id="otherRegionRow" style="border-top:2px solid var(--border)">
       <td style="vertical-align:middle"><strong>Other</strong></td>
       <td style="font-size:.83rem;color:var(--text-muted);vertical-align:middle">
         Any state not assigned to a named region above
@@ -319,42 +331,47 @@
           <span id="otherColorHex" style="font-size:.82rem;font-family:monospace">${esc(otherColor)}</span>
         </div>
       </td>
+      <td></td>
     </tr>`;
 
     tbody.innerHTML = regionRows + otherRow;
-
-    // Live hex label updates for color pickers
-    tbody.querySelectorAll('.region-color-input').forEach(inp => {
-      inp.addEventListener('input', () => { inp.nextElementSibling.textContent = inp.value; });
-    });
-    const otherInp = document.getElementById('otherColorInput');
-    if (otherInp) {
-      otherInp.addEventListener('input', () => {
-        document.getElementById('otherColorHex').textContent = otherInp.value;
-      });
-    }
-
-    // Wire cross-region state exclusion
-    tbody.querySelectorAll('.region-states-select').forEach(sel => {
-      sel.addEventListener('change', _syncStateSelects);
-    });
     _syncStateSelects();
   }
 
-  // Disable states in every select that are already chosen in a different select.
+  // Event delegation — handles all interactions inside the tbody.
+  const _mrTbody = document.getElementById('mapRegionsTbody');
+
+  _mrTbody.addEventListener('input', e => {
+    if (e.target.matches('.region-color-input')) {
+      e.target.nextElementSibling.textContent = e.target.value;
+    }
+    if (e.target.id === 'otherColorInput') {
+      document.getElementById('otherColorHex').textContent = e.target.value;
+    }
+  });
+
+  _mrTbody.addEventListener('change', e => {
+    if (e.target.matches('.region-states-select')) _syncStateSelects();
+  });
+
+  _mrTbody.addEventListener('click', e => {
+    const btn = e.target.closest('.delete-region-btn');
+    if (btn) { btn.closest('tr').remove(); _syncStateSelects(); }
+  });
+
+  // Disable any state option that is already selected in a different region's select.
   function _syncStateSelects() {
     const selects = [...document.querySelectorAll('.region-states-select')];
-
     selects.forEach(sel => {
-      const selectedElsewhere = new Set(
+      const takenElsewhere = new Set(
         selects
           .filter(s => s !== sel)
           .flatMap(s => [...s.options].filter(o => o.selected).map(o => o.value))
       );
       sel.querySelectorAll('option').forEach(opt => {
-        if (selectedElsewhere.has(opt.value)) {
+        if (takenElsewhere.has(opt.value)) {
           opt.disabled = true;
-          opt.selected = false;   // deselect if it somehow ended up in two regions
+          opt.selected = false;
         } else {
           opt.disabled = false;
         }
@@ -372,12 +389,23 @@
     setTimeout(() => el.classList.add('hidden'), 4000);
   }
 
+  document.getElementById('btnAddRegion').addEventListener('click', () => {
+    const otherRow = document.getElementById('otherRegionRow');
+    if (!otherRow) return;
+    otherRow.insertAdjacentHTML('beforebegin', _makeRegionRow({ name: '', color: '#888888', states: [] }));
+    _syncStateSelects();
+    otherRow.previousElementSibling.querySelector('.region-name-input').focus();
+  });
+
   document.getElementById('btnSaveRegionColors').addEventListener('click', async () => {
     const regions = [];
-    document.querySelectorAll('.region-states-select').forEach(sel => {
-      const states   = [...sel.options].filter(o => o.selected && !o.disabled).map(o => o.value);
-      const colorInp = document.querySelector(`.region-color-input[data-region="${sel.dataset.region.replace(/"/g, '\\"')}"]`);
-      regions.push({ name: sel.dataset.region, color: colorInp ? colorInp.value : '#333333', states });
+    document.querySelectorAll('#mapRegionsTbody .region-row').forEach(row => {
+      const name   = row.querySelector('.region-name-input').value.trim();
+      const color  = row.querySelector('.region-color-input').value;
+      const states = [...row.querySelectorAll('.region-states-select option')]
+                       .filter(o => o.selected && !o.disabled)
+                       .map(o => o.value);
+      regions.push({ name, color, states });
     });
 
     const otherInp = document.getElementById('otherColorInput');
@@ -391,6 +419,7 @@
 
     if (res.ok) {
       const data = await res.json();
+      _mapAllStates = data.all_states || _mapAllStates;
       _renderMapRegions(data);
       _showMapRegionsMsg('Region configuration saved. The map will update on next load.', false);
     } else {

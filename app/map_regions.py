@@ -1,7 +1,8 @@
 """Persistent store for map region configuration.
 
-Region names are fixed; colours and state assignments are user-configurable
-and written back to map_regions.json in the project root.
+Region names, state assignments, and colours are all user-configurable
+and written back to map_regions.json in the project root. If the file is
+absent the application falls back to the built-in defaults.
 """
 
 import copy
@@ -49,9 +50,6 @@ _DEFAULT: dict = {
     "other_color": "#333333",
 }
 
-# Canonical region names — cannot be added or removed through the UI
-REGION_NAMES: list = [r["name"] for r in _DEFAULT["regions"]]
-
 _PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "map_regions.json")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
@@ -59,20 +57,15 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 def load() -> dict:
     """Return current region config plus the canonical US state list."""
     with _LOCK:
-        out = copy.deepcopy(_DEFAULT)
         if os.path.exists(_PATH):
             try:
                 with open(_PATH) as f:
                     saved = json.load(f)
-                saved_map = {r["name"]: r for r in saved.get("regions", [])}
-                for region in out["regions"]:
-                    if region["name"] in saved_map:
-                        sr = saved_map[region["name"]]
-                        region["color"] = sr.get("color", region["color"])
-                        region["states"] = sr.get("states", region["states"])
-                out["other_color"] = saved.get("other_color", _DEFAULT["other_color"])
+                saved["all_states"] = ALL_US_STATES
+                return saved
             except Exception:
                 pass
+        out = copy.deepcopy(_DEFAULT)
         out["all_states"] = ALL_US_STATES
         return out
 
@@ -95,15 +88,21 @@ def is_valid_color(color: str) -> bool:
 
 def validate_regions(regions: list) -> str:
     """Validate submitted region list. Returns an error string, or empty string if valid."""
-    submitted_names = sorted(r.get("name", "") for r in regions)
-    if submitted_names != sorted(REGION_NAMES):
-        return f"Region names must be exactly: {', '.join(REGION_NAMES)}"
-
+    seen_names: set = set()
     seen_states: set = set()
+
     for r in regions:
+        name = (r.get("name") or "").strip()
+        if not name:
+            return "All regions must have a non-empty name"
+        if name in seen_names:
+            return f"Duplicate region name: '{name}'"
+        seen_names.add(name)
+
         color = r.get("color", "")
         if not is_valid_color(color):
-            return f"Invalid hex color for '{r.get('name')}': {color}"
+            return f"Invalid hex color for '{name}': {color}"
+
         for state in r.get("states", []):
             if state not in _ALL_STATES_SET:
                 return f"'{state}' is not a valid US state name"

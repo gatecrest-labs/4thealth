@@ -155,7 +155,7 @@ def api_map_regions_put():
         if err:
             return jsonify({"error": err}), 400
         current["regions"] = [
-            {"name": r["name"], "color": r["color"], "states": r.get("states", [])}
+            {"name": r["name"].strip(), "color": r["color"], "states": r.get("states", [])}
             for r in data["regions"]
         ]
 

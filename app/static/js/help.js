@@ -346,13 +346,14 @@ const SECTIONS = [
 <p>New ADOMs discovered from FortiManager are <em>not</em> automatically added to any group's allowed list — this is intentional. Restricted groups must be explicitly updated to grant access to a newly discovered ADOM.</p>
 
 <h3>Map Region Colors</h3>
-<p>The <strong>Map Region Colors</strong> sub-tab lets admins configure the US geographic regions used to colour device pins on the map. Each row shows the region name, a multi-select list of states assigned to that region, and a colour picker for the pin colour. The <strong>Other</strong> row at the bottom controls the colour for any device in a state not assigned to a named region.</p>
+<p>The <strong>Map Region Colors</strong> sub-tab lets admins fully configure the US geographic regions used to colour device pins on the map.</p>
 <ul>
-  <li>Hold <strong>Ctrl</strong> (Windows/Linux) or <strong>Cmd</strong> (Mac) to select multiple states in a region.</li>
-  <li>A state can only belong to one region — selecting it in one region automatically disables it in all others.</li>
-  <li>Region names are fixed; only state assignments and colours can be changed.</li>
+  <li><strong>Add a region</strong> — click <strong>+ Add Region</strong>, type a name, pick states and a colour.</li>
+  <li><strong>Rename a region</strong> — edit the name field directly in the table row.</li>
+  <li><strong>Delete a region</strong> — click the <strong>&times;</strong> button on the right; its states move back to the <em>Other</em> pool automatically.</li>
+  <li><strong>Reassign states</strong> — use the multi-select in each row. Hold <strong>Ctrl</strong> (Windows/Linux) or <strong>Cmd</strong> (Mac) to select multiple states. A state can only belong to one region — selecting it here disables it in all other region lists.</li>
 </ul>
-<p>Click <strong>Save Colors</strong> to persist changes. Updates take effect the next time the map page is loaded.</p>
+<p>The <strong>Other</strong> row at the bottom controls the colour for any device in a state not assigned to a named region. Click <strong>Save</strong> to persist all changes — the map uses the new settings on the next page load. If all regions are deleted, every device falls back to the <em>Other</em> colour.</p>
 
 <h3>Application Logs</h3>
 <p>An in-memory ring buffer showing up to 2,000 recent log entries (cleared on restart). Use the level and component filters to narrow results. Levels: TRACE → DEBUG → INFO → WARN → ERROR.</p>
