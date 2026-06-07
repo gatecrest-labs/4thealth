@@ -616,13 +616,14 @@ Device pin colours are defined by US geographic regions. The defaults are:
 | Southwest | Texas, New Mexico | Green (`#43a047`) |
 | Other | Any state not in a named region | Near-black (`#333333`) |
 
-Admin users can change the hex colour for any region (including **Other**) without restarting the app:
+Admin users can change both state assignments and colours without restarting the app:
 
 1. Navigate to **⚙ Admin → Map Region Colors**.
-2. Use the colour picker next to each region to choose a new colour.
-3. Click **Save Colors**.
+2. Use the multi-select list in each row to add or remove states from that region. Hold **Ctrl** (Windows/Linux) or **Cmd** (Mac) to select multiple states. A state can only belong to one region — selecting it in one region disables it in all others.
+3. Use the colour picker to change the pin colour for that region.
+4. Click **Save Colors**.
 
-Changes are written to `map_regions.json` in the project root and take effect the next time the map page is loaded. If `map_regions.json` is absent the application falls back to the defaults above. State assignments (which states belong to which region) are fixed in `app/map_regions.py` and are read-only from the UI.
+Changes are written to `map_regions.json` in the project root and take effect the next time the map page is loaded. If `map_regions.json` is absent the application falls back to the defaults above. Region names (Upper Midwest, Colorado, Southwest) are fixed and cannot be added or removed through the UI.
 
 ### ADOM access control
 

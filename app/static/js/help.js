@@ -346,8 +346,13 @@ const SECTIONS = [
 <p>New ADOMs discovered from FortiManager are <em>not</em> automatically added to any group's allowed list — this is intentional. Restricted groups must be explicitly updated to grant access to a newly discovered ADOM.</p>
 
 <h3>Map Region Colors</h3>
-<p>The <strong>Map Region Colors</strong> sub-tab shows the US geographic regions used to colour device pins on the map. Each row displays the region name, which states belong to it (read-only), and a colour picker for the pin colour. The <strong>Other</strong> row at the bottom controls the colour for any device whose state is not assigned to a named region.</p>
-<p>Click <strong>Save Colors</strong> to persist changes. The new colours take effect the next time the map page is loaded. State assignments (which states belong to which region) are fixed and cannot be changed here.</p>
+<p>The <strong>Map Region Colors</strong> sub-tab lets admins configure the US geographic regions used to colour device pins on the map. Each row shows the region name, a multi-select list of states assigned to that region, and a colour picker for the pin colour. The <strong>Other</strong> row at the bottom controls the colour for any device in a state not assigned to a named region.</p>
+<ul>
+  <li>Hold <strong>Ctrl</strong> (Windows/Linux) or <strong>Cmd</strong> (Mac) to select multiple states in a region.</li>
+  <li>A state can only belong to one region — selecting it in one region automatically disables it in all others.</li>
+  <li>Region names are fixed; only state assignments and colours can be changed.</li>
+</ul>
+<p>Click <strong>Save Colors</strong> to persist changes. Updates take effect the next time the map page is loaded.</p>
 
 <h3>Application Logs</h3>
 <p>An in-memory ring buffer showing up to 2,000 recent log entries (cleared on restart). Use the level and component filters to narrow results. Levels: TRACE → DEBUG → INFO → WARN → ERROR.</p>

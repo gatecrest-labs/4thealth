@@ -54,8 +54,9 @@
     <div>
       <h3>Map Region Colors</h3>
       <p class="text-muted" style="font-size:.85rem;margin-top:.2rem">
-        Device pins on the map are coloured by which US region the device is located in.
-        State assignments are fixed; only the pin colours are editable here.
+        Device pins on the map are coloured by US geographic region. Edit which states
+        belong to each region and choose the pin colour. The <strong>Other</strong> row
+        covers any state not assigned to a named region. A state can only belong to one region.
       </p>
     </div>
     <button class="btn btn-primary" id="btnSaveRegionColors">Save Colors</button>
@@ -67,7 +68,7 @@
     <thead>
       <tr>
         <th>Region</th>
-        <th>States (read-only)</th>
+        <th>States</th>
         <th style="width:180px">Pin Color</th>
       </tr>
     </thead>
@@ -204,5 +205,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=5"></script>
 {% endblock %}

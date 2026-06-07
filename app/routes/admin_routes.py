@@ -145,10 +145,19 @@ def api_map_regions_get():
 @bp.route("/api/map-regions", methods=["PUT"])
 @_admin_required
 def api_map_regions_put():
-    """Update region pin colors. State assignments are read-only."""
-    from app.map_regions import load, save, is_valid_color
+    """Update region colours and state assignments."""
+    from app.map_regions import load, save, is_valid_color, validate_regions
     data = request.get_json(silent=True) or {}
     current = load()
+
+    if "regions" in data:
+        err = validate_regions(data["regions"])
+        if err:
+            return jsonify({"error": err}), 400
+        current["regions"] = [
+            {"name": r["name"], "color": r["color"], "states": r.get("states", [])}
+            for r in data["regions"]
+        ]
 
     if "other_color" in data:
         color = data["other_color"]
@@ -156,17 +165,9 @@ def api_map_regions_put():
             return jsonify({"error": f"Invalid hex color: {color}"}), 400
         current["other_color"] = color
 
-    if "region_colors" in data:
-        for region in current["regions"]:
-            if region["name"] in data["region_colors"]:
-                color = data["region_colors"][region["name"]]
-                if not is_valid_color(color):
-                    return jsonify({"error": f"Invalid hex color for '{region['name']}': {color}"}), 400
-                region["color"] = color
-
     save(current)
-    app_log("INFO", "admin", "Map region colors updated", by=session["user"])
-    return jsonify(current)
+    app_log("INFO", "admin", "Map region config updated", by=session["user"])
+    return jsonify(load())
 
 
 # ── Logs API ──────────────────────────────────────────────────────────────────

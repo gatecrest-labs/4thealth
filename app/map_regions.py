@@ -1,8 +1,7 @@
 """Persistent store for map region configuration.
 
-Region state assignments are defined here as defaults and are read-only from
-the admin UI.  Only per-region colours and the catch-all "other" colour are
-user-configurable and are written back to map_regions.json in the project root.
+Region names are fixed; colours and state assignments are user-configurable
+and written back to map_regions.json in the project root.
 """
 
 import copy
@@ -13,6 +12,21 @@ import tempfile
 import threading
 
 _LOCK = threading.Lock()
+
+ALL_US_STATES: list = [
+    "Alabama", "Alaska", "Arizona", "Arkansas", "California",
+    "Colorado", "Connecticut", "Delaware", "Florida", "Georgia",
+    "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
+    "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland",
+    "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri",
+    "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey",
+    "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio",
+    "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina",
+    "South Dakota", "Tennessee", "Texas", "Utah", "Vermont",
+    "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming",
+]
+
+_ALL_STATES_SET = set(ALL_US_STATES)
 
 _DEFAULT: dict = {
     "regions": [
@@ -35,34 +49,38 @@ _DEFAULT: dict = {
     "other_color": "#333333",
 }
 
+# Canonical region names — cannot be added or removed through the UI
+REGION_NAMES: list = [r["name"] for r in _DEFAULT["regions"]]
+
 _PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "map_regions.json")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def load() -> dict:
-    """Return current region config, merging persisted colors with default state assignments."""
+    """Return current region config plus the canonical US state list."""
     with _LOCK:
+        out = copy.deepcopy(_DEFAULT)
         if os.path.exists(_PATH):
             try:
                 with open(_PATH) as f:
                     saved = json.load(f)
-                # Re-apply saved colors onto the canonical region list so state
-                # assignments always reflect the defaults even if the file is stale.
-                out = copy.deepcopy(_DEFAULT)
-                color_map = {r["name"]: r["color"] for r in saved.get("regions", [])}
+                saved_map = {r["name"]: r for r in saved.get("regions", [])}
                 for region in out["regions"]:
-                    if region["name"] in color_map:
-                        region["color"] = color_map[region["name"]]
+                    if region["name"] in saved_map:
+                        sr = saved_map[region["name"]]
+                        region["color"] = sr.get("color", region["color"])
+                        region["states"] = sr.get("states", region["states"])
                 out["other_color"] = saved.get("other_color", _DEFAULT["other_color"])
-                return out
             except Exception:
                 pass
-        return copy.deepcopy(_DEFAULT)
+        out["all_states"] = ALL_US_STATES
+        return out
 
 
 def save(data: dict) -> None:
-    """Write region config to disk atomically."""
+    """Write region config to disk atomically (strips the runtime all_states list)."""
     out = copy.deepcopy(data)
+    out.pop("all_states", None)
     with _LOCK:
         dir_ = os.path.dirname(_PATH)
         with tempfile.NamedTemporaryFile("w", dir=dir_, delete=False, suffix=".tmp") as tmp:
@@ -73,3 +91,24 @@ def save(data: dict) -> None:
 
 def is_valid_color(color: str) -> bool:
     return bool(_HEX_RE.match(color or ""))
+
+
+def validate_regions(regions: list) -> str:
+    """Validate submitted region list. Returns an error string, or empty string if valid."""
+    submitted_names = sorted(r.get("name", "") for r in regions)
+    if submitted_names != sorted(REGION_NAMES):
+        return f"Region names must be exactly: {', '.join(REGION_NAMES)}"
+
+    seen_states: set = set()
+    for r in regions:
+        color = r.get("color", "")
+        if not is_valid_color(color):
+            return f"Invalid hex color for '{r.get('name')}': {color}"
+        for state in r.get("states", []):
+            if state not in _ALL_STATES_SET:
+                return f"'{state}' is not a valid US state name"
+            if state in seen_states:
+                return f"State '{state}' is assigned to more than one region"
+            seen_states.add(state)
+
+    return ""
