@@ -48,6 +48,14 @@ def map_refresh():
     return jsonify({"queued": True})
 
 
+@bp.route("/api/map/regions")
+@tab_required("map_view")
+def map_regions():
+    """Return region definitions (name, states, color) used by the map legend."""
+    from app.map_regions import load
+    return jsonify(load())
+
+
 @bp.route("/api/map/status")
 @tab_required("map_view")
 def map_status():

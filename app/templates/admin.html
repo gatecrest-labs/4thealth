@@ -11,6 +11,7 @@
 <!-- Admin sub-tabs -->
 <div class="admin-tabs" id="adminTabs">
   <button class="admin-tab active" data-panel="groups">Groups &amp; Permissions</button>
+  <button class="admin-tab" data-panel="map-regions">Map Region Colors</button>
   <button class="admin-tab" data-panel="logs">Application Logs</button>
 </div>
 
@@ -44,6 +45,37 @@
       </tbody>
     </table>
   </div>
+</div>
+
+<!-- ═══════════════════  MAP REGIONS PANEL  ═══════════════════ -->
+<div class="admin-panel" id="panel-map-regions">
+
+  <div class="admin-panel-header">
+    <div>
+      <h3>Map Region Colors</h3>
+      <p class="text-muted" style="font-size:.85rem;margin-top:.2rem">
+        Device pins on the map are coloured by which US region the device is located in.
+        State assignments are fixed; only the pin colours are editable here.
+      </p>
+    </div>
+    <button class="btn btn-primary" id="btnSaveRegionColors">Save Colors</button>
+  </div>
+
+  <div id="mapRegionsMsg" class="hidden" style="margin-bottom:.75rem;padding:.5rem .75rem;border-radius:4px;font-size:.85rem"></div>
+
+  <table class="data-table" id="mapRegionsTable">
+    <thead>
+      <tr>
+        <th>Region</th>
+        <th>States (read-only)</th>
+        <th style="width:180px">Pin Color</th>
+      </tr>
+    </thead>
+    <tbody id="mapRegionsTbody">
+      <tr><td colspan="3" class="loading-placeholder">Loading…</td></tr>
+    </tbody>
+  </table>
+
 </div>
 
 <!-- ═══════════════════════  LOGS PANEL  ═══════════════════════ -->
@@ -172,5 +204,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=4"></script>
 {% endblock %}

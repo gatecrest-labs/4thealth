@@ -597,13 +597,32 @@ Location data is fetched from FortiManager at app startup and re-fetched once ev
 
 | Feature | Detail |
 |---|---|
-| **Colour by ADOM** | Each ADOM is assigned a distinct colour from a 12-colour palette. Both the legend and the cluster circles use these colours. |
-| **Clustering** | Nearby devices merge into a count bubble at low zoom levels. The bubble colour reflects the most common ADOM among clustered devices. |
+| **Colour by region** | Device pins are coloured by US geographic region. Each region groups a set of states and has its own configurable hex colour. Devices in states not assigned to any named region appear in the **Other** colour. |
+| **Clustering** | Nearby devices merge into a count bubble at low zoom levels. The bubble colour reflects the most common region among clustered devices. |
 | **Zoom to expand** | Click any cluster to zoom in. At city level individual pins appear. |
-| **Device popup** | Click a pin to see name, ADOM, platform, firmware version, description, connection status, and exact coordinates. |
+| **Device popup** | Click a pin to see name, region, ADOM, platform, firmware version, description, connection status, and exact coordinates. |
 | **ADOM filter** | Checkboxes above the map let users show/hide devices per ADOM instantly — no server round-trip. |
 | **Status bar** | Shows refresh progress (N / total ADOMs — current ADOM) while the cache warms. Disappears when complete. |
 | **Refresh button** | Admin-only button triggers an immediate background refresh. Progress is shown in the status bar; the map updates when done. |
+
+### Region color configuration
+
+Device pin colours are defined by US geographic regions. The defaults are:
+
+| Region | States | Default colour |
+|---|---|---|
+| Upper Midwest | Minnesota, Wisconsin, North Dakota, South Dakota | Blue (`#1976d2`) |
+| Colorado | Colorado | Red (`#e53935`) |
+| Southwest | Texas, New Mexico | Green (`#43a047`) |
+| Other | Any state not in a named region | Near-black (`#333333`) |
+
+Admin users can change the hex colour for any region (including **Other**) without restarting the app:
+
+1. Navigate to **⚙ Admin → Map Region Colors**.
+2. Use the colour picker next to each region to choose a new colour.
+3. Click **Save Colors**.
+
+Changes are written to `map_regions.json` in the project root and take effect the next time the map page is loaded. If `map_regions.json` is absent the application falls back to the defaults above. State assignments (which states belong to which region) are fixed in `app/map_regions.py` and are read-only from the UI.
 
 ### ADOM access control
 

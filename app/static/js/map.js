@@ -2,31 +2,34 @@
 
 (function () {
 
-// ── Region definitions — edit these to change state groupings / colours ──────
-const REGIONS = [
-  {
-    name:   'Upper Midwest',
-    color:  '#1976d2',   // blue
-    states: new Set(['Minnesota', 'Wisconsin', 'North Dakota', 'South Dakota']),
-  },
-  {
-    name:   'Colorado',
-    color:  '#e53935',   // red
-    states: new Set(['Colorado']),
-  },
-  {
-    name:   'Southwest',
-    color:  '#43a047',   // green
-    states: new Set(['Texas', 'New Mexico']),
-  },
-  {
-    name:   'Other',
-    color:  '#333333',   // near-black
-    states: null,        // catch-all
-  },
+// ── Region definitions — loaded from /api/map/regions at startup ─────────────
+// Fallback values used if the API call fails.
+const _FALLBACK_REGIONS = [
+  { name: 'Upper Midwest', color: '#1976d2', states: new Set(['Minnesota', 'Wisconsin', 'North Dakota', 'South Dakota']) },
+  { name: 'Colorado',      color: '#e53935', states: new Set(['Colorado']) },
+  { name: 'Southwest',     color: '#43a047', states: new Set(['Texas', 'New Mexico']) },
 ];
+const _FALLBACK_OTHER = { name: 'Other', color: '#333333', states: null };
 
-const REGION_OTHER = REGIONS[REGIONS.length - 1];
+let REGIONS      = [..._FALLBACK_REGIONS, _FALLBACK_OTHER];
+let REGION_OTHER = _FALLBACK_OTHER;
+
+async function loadRegions() {
+  try {
+    const r = await fetch('/api/map/regions');
+    if (!r.ok) return;
+    const data = await r.json();
+    const named = (data.regions || []).map(rg => ({
+      name:   rg.name,
+      color:  rg.color,
+      states: new Set(rg.states || []),
+    }));
+    REGION_OTHER = { name: 'Other', color: data.other_color || '#333333', states: null };
+    REGIONS = [...named, REGION_OTHER];
+  } catch (_) {
+    // Keep fallback values
+  }
+}
 
 function regionForState(stateName) {
   for (const r of REGIONS) {
@@ -367,7 +370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btn) { btn.style.display = ''; btn.addEventListener('click', triggerRefresh); }
   }
 
-  await loadStateGeoJSON();
+  await Promise.all([loadStateGeoJSON(), loadRegions()]);
   await loadDevices();
 });
 

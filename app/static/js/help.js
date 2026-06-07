@@ -289,14 +289,18 @@ const SECTIONS = [
 
 <h3>Map Behaviour</h3>
 <ul>
-  <li><strong>Zoom out</strong> — nearby devices cluster into a single circle showing the count. The circle colour reflects the dominant ADOM at that location.</li>
+  <li><strong>Zoom out</strong> — nearby devices cluster into a single circle showing the count. The circle colour reflects the dominant region at that location.</li>
   <li><strong>Zoom in</strong> — clusters split apart until individual device pins appear at city level.</li>
   <li><strong>Click a cluster</strong> — zooms in to expand it.</li>
-  <li><strong>Click a pin</strong> — opens a popup showing the device name, ADOM, platform, version, description, online status, and exact coordinates.</li>
+  <li><strong>Click a pin</strong> — opens a popup showing the device name, region, ADOM, platform, version, description, online status, and exact coordinates.</li>
 </ul>
 
+<h3>Region Colours</h3>
+<p>Device pins are colour-coded by US geographic region. Each region groups a set of states and is assigned a distinct colour. The legend above the map shows the current colour for each region. Any device in a state not assigned to a named region appears in the <strong>Other</strong> colour.</p>
+<p>Admins can change the pin colour for any region (including <strong>Other</strong>) in <strong>&#9881; Admin → Map Region Colors</strong>. Color changes take effect on the next map page load.</p>
+
 <h3>Legend &amp; ADOM Filter</h3>
-<p>Each ADOM is assigned a distinct colour. The legend above the map shows the colour key. Use the <strong>ADOM filter checkboxes</strong> to show or hide devices by ADOM — useful for focusing on a specific environment (e.g. OT-SERVICES only). The <strong>All</strong> and <strong>None</strong> buttons quickly toggle all checkboxes at once.</p>
+<p>The legend shows each region with its colour. Use the <strong>ADOM filter checkboxes</strong> to show or hide devices by ADOM — useful for focusing on a specific environment (e.g. OT-SERVICES only). The <strong>All</strong> and <strong>None</strong> buttons quickly toggle all checkboxes at once.</p>
 
 <h3>Status Bar</h3>
 <p>A status bar below the page header shows the current state of the location cache:</p>
@@ -321,7 +325,7 @@ const SECTIONS = [
     label: 'Admin',
     html: `
 <h3>Administration Panel</h3>
-<p>Accessible to <strong>admin</strong> accounts only via the <strong>&#9881; Admin</strong> link in the navigation bar. Contains two sub-tabs: <strong>Groups &amp; Permissions</strong> and <strong>Application Logs</strong>.</p>
+<p>Accessible to <strong>admin</strong> accounts only via the <strong>&#9881; Admin</strong> link in the navigation bar. Contains three sub-tabs: <strong>Groups &amp; Permissions</strong>, <strong>Map Region Colors</strong>, and <strong>Application Logs</strong>.</p>
 
 <h3>Groups &amp; Permissions</h3>
 <p>Groups control two things for non-admin users: which <strong>navigation tabs</strong> they can see and which <strong>ADOMs</strong> they can access.</p>
@@ -340,6 +344,10 @@ const SECTIONS = [
 <p>The ADOM list is populated automatically from FortiManager at startup and refreshed every 30 minutes. If FortiManager is unreachable the list shows whatever was last loaded.</p>
 <p><strong>Important:</strong> If a user belongs to multiple groups and even one of them is unrestricted, that user gets full ADOM access. Restrictions only take effect when <em>all</em> of a user's groups have ADOM restrict enabled.</p>
 <p>New ADOMs discovered from FortiManager are <em>not</em> automatically added to any group's allowed list — this is intentional. Restricted groups must be explicitly updated to grant access to a newly discovered ADOM.</p>
+
+<h3>Map Region Colors</h3>
+<p>The <strong>Map Region Colors</strong> sub-tab shows the US geographic regions used to colour device pins on the map. Each row displays the region name, which states belong to it (read-only), and a colour picker for the pin colour. The <strong>Other</strong> row at the bottom controls the colour for any device whose state is not assigned to a named region.</p>
+<p>Click <strong>Save Colors</strong> to persist changes. The new colours take effect the next time the map page is loaded. State assignments (which states belong to which region) are fixed and cannot be changed here.</p>
 
 <h3>Application Logs</h3>
 <p>An in-memory ring buffer showing up to 2,000 recent log entries (cleared on restart). Use the level and component filters to narrow results. Levels: TRACE → DEBUG → INFO → WARN → ERROR.</p>

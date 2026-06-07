@@ -13,6 +13,12 @@ Groups API (JSON):
 ADOM cache (JSON):
   GET    /admin/api/adoms            known ADOM names from the background cache
 
+Map regions (JSON):
+  GET    /admin/api/map-regions      current region config (names, states, colors)
+  PUT    /admin/api/map-regions      update region colors only
+                                     {"region_colors": {"Upper Midwest": "#hex", ...},
+                                      "other_color": "#hex"}
+
 Logs API (JSON):
   GET    /admin/api/logs?level=INFO&component=auth&limit=500
   POST   /admin/api/logs/level       {"level": "DEBUG"}
@@ -124,6 +130,43 @@ def api_users_list():
 @_admin_required
 def api_tabs_list():
     return jsonify([{"key": k, "name": v} for k, v in registry.known_tabs().items()])
+
+
+# ── Map Regions API ───────────────────────────────────────────────────────────
+
+@bp.route("/api/map-regions")
+@_admin_required
+def api_map_regions_get():
+    """Return current region config (names, states, colors)."""
+    from app.map_regions import load
+    return jsonify(load())
+
+
+@bp.route("/api/map-regions", methods=["PUT"])
+@_admin_required
+def api_map_regions_put():
+    """Update region pin colors. State assignments are read-only."""
+    from app.map_regions import load, save, is_valid_color
+    data = request.get_json(silent=True) or {}
+    current = load()
+
+    if "other_color" in data:
+        color = data["other_color"]
+        if not is_valid_color(color):
+            return jsonify({"error": f"Invalid hex color: {color}"}), 400
+        current["other_color"] = color
+
+    if "region_colors" in data:
+        for region in current["regions"]:
+            if region["name"] in data["region_colors"]:
+                color = data["region_colors"][region["name"]]
+                if not is_valid_color(color):
+                    return jsonify({"error": f"Invalid hex color for '{region['name']}': {color}"}), 400
+                region["color"] = color
+
+    save(current)
+    app_log("INFO", "admin", "Map region colors updated", by=session["user"])
+    return jsonify(current)
 
 
 # ── Logs API ──────────────────────────────────────────────────────────────────

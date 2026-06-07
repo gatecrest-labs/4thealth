@@ -10,6 +10,7 @@
       btn.classList.add('active');
       document.getElementById('panel-' + btn.dataset.panel).classList.add('active');
       if (btn.dataset.panel === 'logs') loadLogs();
+      if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
     });
   });
 
@@ -253,6 +254,110 @@
   });
   document.getElementById('deleteModal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeDeleteModal();
+  });
+
+
+  // ══════════════════════  MAP REGIONS  ═════════════════════════════════════
+
+  let _mapRegionsLoaded = false;
+
+  async function loadMapRegions() {
+    const tbody = document.getElementById('mapRegionsTbody');
+    tbody.innerHTML = '<tr><td colspan="3" class="loading-placeholder">Loading…</td></tr>';
+
+    const res = await fetch('/admin/api/map-regions');
+    if (!res.ok) {
+      tbody.innerHTML = '<tr><td colspan="3" class="text-danger">Failed to load region data.</td></tr>';
+      return;
+    }
+    const data = await res.json();
+    _renderMapRegions(data);
+    _mapRegionsLoaded = true;
+  }
+
+  function _renderMapRegions(data) {
+    const tbody = document.getElementById('mapRegionsTbody');
+    const regions = data.regions || [];
+    const otherColor = data.other_color || '#333333';
+
+    const regionRows = regions.map(r => {
+      const states = (r.states || []).join(', ') || '—';
+      return `<tr>
+        <td><strong>${esc(r.name)}</strong></td>
+        <td style="font-size:.83rem;color:var(--text-muted)">${esc(states)}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:.6rem">
+            <input type="color" class="region-color-input" data-region="${esc(r.name)}"
+                   value="${esc(r.color)}" style="width:44px;height:30px;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:2px" />
+            <span class="region-color-hex" style="font-size:.82rem;font-family:monospace">${esc(r.color)}</span>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+
+    const otherRow = `<tr style="border-top:2px solid var(--border)">
+      <td><strong>Other</strong></td>
+      <td style="font-size:.83rem;color:var(--text-muted)">Any state not assigned to a named region</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <input type="color" id="otherColorInput" value="${esc(otherColor)}"
+                 style="width:44px;height:30px;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:2px" />
+          <span id="otherColorHex" style="font-size:.82rem;font-family:monospace">${esc(otherColor)}</span>
+        </div>
+      </td>
+    </tr>`;
+
+    tbody.innerHTML = regionRows + otherRow;
+
+    // Live-update hex label as color changes
+    tbody.querySelectorAll('.region-color-input').forEach(inp => {
+      inp.addEventListener('input', () => {
+        inp.nextElementSibling.textContent = inp.value;
+      });
+    });
+    const otherInp = document.getElementById('otherColorInput');
+    if (otherInp) {
+      otherInp.addEventListener('input', () => {
+        document.getElementById('otherColorHex').textContent = otherInp.value;
+      });
+    }
+  }
+
+  function _showMapRegionsMsg(msg, isError) {
+    const el = document.getElementById('mapRegionsMsg');
+    el.textContent = msg;
+    el.style.background = isError ? 'rgba(220,53,69,.12)' : 'rgba(40,167,69,.12)';
+    el.style.border      = isError ? '1px solid rgba(220,53,69,.3)' : '1px solid rgba(40,167,69,.3)';
+    el.style.color       = isError ? 'var(--danger)' : 'var(--success)';
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 4000);
+  }
+
+  document.getElementById('btnSaveRegionColors').addEventListener('click', async () => {
+    const regionColors = {};
+    document.querySelectorAll('.region-color-input').forEach(inp => {
+      regionColors[inp.dataset.region] = inp.value;
+    });
+    const otherInp = document.getElementById('otherColorInput');
+    const otherColor = otherInp ? otherInp.value : null;
+
+    const body = { region_colors: regionColors };
+    if (otherColor) body.other_color = otherColor;
+
+    const res = await fetch('/admin/api/map-regions', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      _renderMapRegions(data);
+      _showMapRegionsMsg('Colors saved. The map will use the new colors on next load.', false);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      _showMapRegionsMsg(err.error || 'Failed to save colors.', true);
+    }
   });
 
 
