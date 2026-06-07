@@ -19,13 +19,42 @@ def _load_users() -> dict:
         return json.load(f)
 
 
-def authenticate(username: str, password: str) -> bool:
+def authenticate(username: str, password: str) -> str | None:
+    """Return the user's role ('admin'|'viewer') on success, None on failure.
+
+    If RADIUS_ENABLED=true, RADIUS is tried first.  Local bcrypt accounts
+    always work as a fallback (break-glass admin access).
+    """
+    from app.config import Config  # lazy to avoid circular import at module load
+
+    if Config.RADIUS_ENABLED:
+        if not Config.RADIUS_HOST or not Config.RADIUS_SECRET:
+            raise RuntimeError(
+                "RADIUS_ENABLED=true but RADIUS_HOST or RADIUS_SECRET is not set in .env"
+            )
+        from app.radius_auth import authenticate as radius_authenticate
+        role = radius_authenticate(
+            username=username,
+            password=password,
+            host=Config.RADIUS_HOST,
+            port=Config.RADIUS_PORT,
+            secret=Config.RADIUS_SECRET,
+            timeout=Config.RADIUS_TIMEOUT,
+            group_admin=Config.RADIUS_GROUP_ADMIN,
+            group_viewer=Config.RADIUS_GROUP_VIEWER,
+        )
+        if role is not None:
+            return role
+
+    # Local bcrypt auth (always available; acts as fallback when RADIUS is enabled)
     users = _load_users()
     entry = users.get(username)
     if not entry:
-        return False
+        return None
     stored_hash = entry.get("password_hash", "")
-    return bcrypt.checkpw(password.encode(), stored_hash.encode())
+    if bcrypt.checkpw(password.encode(), stored_hash.encode()):
+        return entry.get("role", "viewer")
+    return None
 
 
 def validate_password_policy(password: str) -> None:

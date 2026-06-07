@@ -58,3 +58,12 @@ class Config:
     CPU_CRIT  = int(os.environ.get("CPU_CRIT",  "90"))
     MEM_WARN  = int(os.environ.get("MEM_WARN",  "75"))
     MEM_CRIT  = int(os.environ.get("MEM_CRIT",  "90"))
+
+    # RADIUS / FortiAuthenticator (optional)
+    RADIUS_ENABLED      = os.environ.get("RADIUS_ENABLED",  "false").lower() == "true"
+    RADIUS_HOST         = os.environ.get("RADIUS_HOST",     "")
+    RADIUS_PORT         = int(os.environ.get("RADIUS_PORT", "1812"))
+    RADIUS_SECRET       = os.environ.get("RADIUS_SECRET",   "")
+    RADIUS_TIMEOUT      = int(os.environ.get("RADIUS_TIMEOUT", "10"))
+    RADIUS_GROUP_ADMIN  = os.environ.get("RADIUS_GROUP_ADMIN",  "")
+    RADIUS_GROUP_VIEWER = os.environ.get("RADIUS_GROUP_VIEWER", "")

@@ -210,6 +210,50 @@ SUMMARY_REFRESH_MINUTE=0
 # MAP_CACHE_INTERVAL_HOURS=24
 ```
 
+### Step 4a — Enable FortiAuthenticator RADIUS (optional)
+
+No rebuild is required — RADIUS is configured entirely through `.env`.
+
+**On FortiAuthenticator:**
+
+1. Go to **Authentication → RADIUS Service → Clients** and add a new client:
+   - IP address: this server's IP
+   - Secret: a strong shared secret (copy it to `RADIUS_SECRET` in `.env`)
+2. Create two user groups, e.g. `4THealth-Admins` and `4THealth-Viewers`.
+3. In your RADIUS policy, add a **Reply Attribute**:
+   - Attribute: `Filter-Id`
+   - Value: the group name (one policy per group, or use a dynamic attribute)
+
+**In `.env`**, uncomment and fill in the RADIUS block:
+
+```dotenv
+RADIUS_ENABLED=true
+RADIUS_HOST=<fortiauth-ip>
+RADIUS_PORT=1812
+RADIUS_SECRET=<shared-secret>
+RADIUS_TIMEOUT=10
+RADIUS_GROUP_ADMIN=4THealth-Admins
+RADIUS_GROUP_VIEWER=4THealth-Viewers
+```
+
+Then restart the container to pick up the new env vars:
+
+```bash
+docker compose up -d
+```
+
+**How it works:**
+- Login tries RADIUS first. If FortiAuthenticator accepts the credentials and
+  returns a `Filter-Id` matching `RADIUS_GROUP_ADMIN`, the user gets admin role;
+  matching `RADIUS_GROUP_VIEWER` gets viewer role.
+- Local accounts in `users.json` always work regardless of this setting — use
+  them as break-glass admin access if RADIUS is unreachable.
+
+**For a Linux (non-Docker) install**, the same `.env` changes apply. Restart
+the app with `docker compose up -d` or `systemctl restart 4thealth` as appropriate.
+
+---
+
 ### Step 5 — Prepare runtime data files
 
 These files must exist on the **host** before the first `docker compose up`, because

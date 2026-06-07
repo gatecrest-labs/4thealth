@@ -3,7 +3,7 @@ import time
 from collections import defaultdict
 from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
-from app.auth import authenticate, get_user_role
+from app.auth import authenticate
 from app.groups import get_allowed_tabs
 from app.app_logger import app_log
 from app import registry
@@ -83,11 +83,12 @@ def login():
             flash("Too many failed attempts. Please wait before trying again.", "danger")
             return render_template("login.html"), 429
 
-        if authenticate(username, password):
+        role = authenticate(username, password)
+        if role is not None:
             _clear_failures(ip, username)
             session.permanent = True
             session["user"] = username
-            session["role"] = get_user_role(username)
+            session["role"] = role
             allowed = list(get_allowed_tabs(username))
             session["allowed_tabs"] = allowed
             app_log("INFO", "auth", "Login successful", username=username, role=session["role"])
