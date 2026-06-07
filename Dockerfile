@@ -8,8 +8,10 @@ WORKDIR /app
 # Copy dependency manifests first for better layer caching
 COPY pyproject.toml uv.lock ./
 
-# Install production dependencies into the system Python (no venv needed in containers)
-RUN uv sync --extra prod --no-dev --system
+# Install production dependencies into the project virtualenv
+RUN uv sync --extra prod --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy application source
 COPY wsgi.py manage_users.py ./
@@ -20,6 +22,7 @@ RUN useradd --system --no-create-home --shell /sbin/nologin appuser \
     && mkdir -p /app/certs \
     && chown -R appuser:appuser /app
 
+ENV HOME=/tmp
 USER appuser
 
 EXPOSE 8100
@@ -30,6 +33,9 @@ CMD ["gunicorn", \
      "--worker-class", "gthread", \
      "--bind", "0.0.0.0:8100", \
      "--timeout", "120", \
+     "--worker-tmp-dir", "/dev/shm", \
+     "--certfile", "certs/cert.pem", \
+     "--keyfile", "certs/key.pem", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
      "wsgi:app"]

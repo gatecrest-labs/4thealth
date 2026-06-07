@@ -103,8 +103,10 @@ WORKDIR /app
 # Copy dependency manifests first for better layer caching
 COPY pyproject.toml uv.lock ./
 
-# Install production dependencies into the system Python (no venv needed in containers)
-RUN uv sync --extra prod --no-dev --system
+# Install production dependencies into the project virtualenv
+RUN uv sync --extra prod --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy application source
 COPY wsgi.py manage_users.py ./
@@ -115,6 +117,7 @@ RUN useradd --system --no-create-home --shell /sbin/nologin appuser \
     && mkdir -p /app/certs \
     && chown -R appuser:appuser /app
 
+ENV HOME=/tmp
 USER appuser
 
 EXPOSE 8100
@@ -125,6 +128,9 @@ CMD ["gunicorn", \
      "--worker-class", "gthread", \
      "--bind", "0.0.0.0:8100", \
      "--timeout", "120", \
+     "--worker-tmp-dir", "/dev/shm", \
+     "--certfile", "certs/cert.pem", \
+     "--keyfile", "certs/key.pem", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
      "wsgi:app"]
@@ -135,9 +141,9 @@ CMD ["gunicorn", \
 > Writing to files inside the container is pointless and wastes disk. Log forwarding is
 > handled at the Docker level.
 
-> **Why `--system` with uv:** A container already provides isolation, so a virtual
-> environment inside a container is redundant overhead. `--system` installs directly into
-> the container's Python, which is what `gunicorn` in the CMD expects.
+> **Why `--certfile`/`--keyfile`:** TLS is terminated inside Gunicorn directly, so no
+> Nginx proxy is needed. The cert files are bind-mounted read-only from the host at
+> runtime — they are never baked into the image.
 
 ### Step 3 — Create `docker-compose.yml`
 
@@ -160,7 +166,7 @@ services:
       - ./certs:/app/certs:ro
     healthcheck:
       test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:8100/login', timeout=5)"]
+             "import urllib.request, ssl; urllib.request.urlopen('https://localhost:8100/login', context=ssl._create_unverified_context(), timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -219,13 +225,14 @@ cp groups.example.json groups.json
 # Edit groups.json: rename groups, set tab permissions, add members, configure ADOM access
 
 # If users.json is missing, create the first admin account now
-python3 -m venv /tmp/fh-setup && source /tmp/fh-setup/bin/activate
-pip install bcrypt
-python3 manage_users.py add admin --role admin
-deactivate && rm -rf /tmp/fh-setup
+uv run python manage_users.py add admin --role admin
 
 # If infra_targets.json is missing, start from the example
 cp infra_targets.example.json infra_targets.json
+
+# If policy_db.json is missing, start from the example
+cp policy_db.example.json policy_db.json
+# Edit policy_db.json: add your real zones (with subnets) and segmentation policies
 
 # Generate TLS certs if you don't have them already
 mkdir -p certs

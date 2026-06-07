@@ -3,11 +3,10 @@
 
 import argparse
 import sys
-from app.auth import add_user, delete_user, list_users
-from app.config import Config
 
 
 def cmd_add(args):
+    from app.auth import add_user
     import getpass
     password = args.password or getpass.getpass(f"Password for {args.username}: ")
     if not password:
@@ -22,6 +21,7 @@ def cmd_add(args):
 
 
 def cmd_delete(args):
+    from app.auth import delete_user
     if delete_user(args.username):
         print(f"User '{args.username}' deleted.")
     else:
@@ -30,6 +30,7 @@ def cmd_delete(args):
 
 
 def cmd_list(_):
+    from app.auth import list_users
     users = list_users()
     if not users:
         print("No users configured.")
