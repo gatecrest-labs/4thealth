@@ -272,7 +272,9 @@ def api_policy_add():
     if missing:
         return _err(f"Missing fields: {', '.join(missing)}")
     raw_svc  = d.get("services", "")
-    svc_list = [s.strip() for s in raw_svc.split(",") if s.strip()] if isinstance(raw_svc, str) else raw_svc
+    svc_list = zdb.normalize_service_list(
+        [s.strip() for s in raw_svc.split(",") if s.strip()] if isinstance(raw_svc, str) else raw_svc
+    )
     try:
         db  = zdb.load_db()
         msg = zdb.policy_add(

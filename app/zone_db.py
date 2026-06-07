@@ -73,6 +73,13 @@ def db_available() -> bool:
 
 # ── Service helpers ───────────────────────────────────────────────────────────
 
+_WILDCARD_SERVICES: frozenset[str] = frozenset({"any", "all"})
+
+
+def _is_wildcard(token: str) -> bool:
+    return token.lower() in _WILDCARD_SERVICES
+
+
 def _service_aliases(token: str) -> list[str]:
     aliases: list[str] = [token]
     m = re.fullmatch(r"(?:tcp|udp|icmp)/(\d+)", token, re.IGNORECASE)
@@ -90,7 +97,13 @@ def _service_aliases(token: str) -> list[str]:
 def parse_service_tokens(raw: str | None) -> list[str]:
     if not raw:
         return []
-    return [t.strip() for t in re.split(r"[\s,]+", raw.strip()) if t.strip()]
+    tokens = [t.strip() for t in re.split(r"[\s,]+", raw.strip()) if t.strip()]
+    return ["any" if _is_wildcard(t) else t for t in tokens]
+
+
+def normalize_service_list(services: list[str]) -> list[str]:
+    """Normalize a stored services list, canonicalising Any/All → 'any'."""
+    return ["any" if _is_wildcard(s) else s for s in services]
 
 
 # ── IP / zone resolution ──────────────────────────────────────────────────────
@@ -221,7 +234,10 @@ def evaluate(
         alias_sets = [_service_aliases(t) for t in services]
         for p in policies:
             if p["access_type"] == "block only":
-                rn = [s.lower() for s in p["services"]]
+                policy_svcs = p.get("services", [])
+                if any(_is_wildcard(s) for s in policy_svcs):
+                    return "BLOCKED", [p]
+                rn = [s.lower() for s in policy_svcs]
                 if any(alias.lower() in rn for aliases in alias_sets for alias in aliases):
                     return "BLOCKED", [p]
 
@@ -403,7 +419,7 @@ def policy_add(
 ) -> str:
     if access_type not in VALID_ACCESS_TYPES:
         raise ValueError(f"Invalid access_type '{access_type}'.")
-    services = services or []
+    services = normalize_service_list(services or [])
     if access_type == "block only" and not services:
         raise ValueError("'block only' requires at least one service.")
     db["policies"].append({
@@ -429,7 +445,7 @@ def policy_modify(db: dict, index: int, field: str, value: str) -> str:
         raise IndexError(f"Index {index} out of range.")
     if field not in POLICY_MUTABLE_FIELDS:
         raise ValueError(f"Field '{field}' is not editable.")
-    coerced = [s.strip() for s in value.split(",") if s.strip()] if field == "services" else value
+    coerced = normalize_service_list([s.strip() for s in value.split(",") if s.strip()]) if field == "services" else value
     old = db["policies"][index].get(field)
     db["policies"][index][field] = coerced
     save_db(db)
