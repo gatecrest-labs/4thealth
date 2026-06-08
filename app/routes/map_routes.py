@@ -1,6 +1,6 @@
 """Map (Beta) — device location map routes."""
 
-from flask import Blueprint, render_template, jsonify, request, current_app
+from flask import Blueprint, render_template, jsonify, current_app
 from app import registry
 from app.decorators import tab_required, admin_required
 

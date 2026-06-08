@@ -164,10 +164,9 @@ def hygiene_policies():
         with make_client() as client:
             addr_objects = client.get_address_objects(adom)
             addr_groups  = client.get_address_groups(adom)
-            svc_objects  = client.get_service_objects(adom)
             svc_groups   = client.get_service_groups(adom)
     except Exception:
-        addr_objects = addr_groups = svc_objects = svc_groups = []
+        addr_objects = addr_groups = svc_groups = []
 
     # Build lookup maps: name -> list of member names
     addr_grp_map: dict[str, list[str]] = {}

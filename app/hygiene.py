@@ -13,7 +13,6 @@ CHECKS maps key -> display name.  Order here controls the dropdown order in the 
 """
 
 from __future__ import annotations
-import re
 from datetime import datetime, timezone
 
 

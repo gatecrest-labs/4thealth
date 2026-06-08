@@ -288,7 +288,7 @@ def infrastructure():
             entry["_perf_raw"]  = perf
             entry["_usage_raw"] = usage
 
-        except Exception as exc:
+        except Exception:
             entry["status"] = "red"
             entry["error"] = "Unable to query target"
         entry.pop("_perf_raw",  None)

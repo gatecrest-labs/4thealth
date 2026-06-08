@@ -10,7 +10,6 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
-import sys
 from pathlib import Path
 
 # policy_db.json sits at the project root (one level above app/)
@@ -446,7 +445,6 @@ def policy_modify(db: dict, index: int, field: str, value: str) -> str:
     if field not in POLICY_MUTABLE_FIELDS:
         raise ValueError(f"Field '{field}' is not editable.")
     coerced = normalize_service_list([s.strip() for s in value.split(",") if s.strip()]) if field == "services" else value
-    old = db["policies"][index].get(field)
     db["policies"][index][field] = coerced
     save_db(db)
     return f"Policy #{index}: {field} updated."

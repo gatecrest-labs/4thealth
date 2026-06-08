@@ -539,8 +539,8 @@ def _fortios_cli(device_name: str, pkg_path: str, flow: dict, insert_after: Opti
     lines += [
         "    edit 0",
         f'        set name "{comment[:35]}"',
-        f'        set srcintf "any"',
-        f'        set dstintf "any"',
+        '        set srcintf "any"',
+        '        set dstintf "any"',
         f'        set srcaddr "{src}"',
         f'        set dstaddr "{dst}"',
         f'        set service "{svc.upper()}"',
@@ -674,9 +674,12 @@ def analyze_flows(
                 dst_names = pol.get("dstaddr") or []
                 svc_names = pol.get("service") or []
 
-                if isinstance(src_names, str): src_names = [src_names]
-                if isinstance(dst_names, str): dst_names = [dst_names]
-                if isinstance(svc_names, str): svc_names = [svc_names]
+                if isinstance(src_names, str):
+                    src_names = [src_names]
+                if isinstance(dst_names, str):
+                    dst_names = [dst_names]
+                if isinstance(svc_names, str):
+                    svc_names = [svc_names]
 
                 src_nets   = _resolve_addrs(src_names, addr_map)
                 dst_nets   = _resolve_addrs(dst_names, addr_map)
