@@ -463,7 +463,6 @@ def _assemble_health(adom: str, device_name: str, dev_rec: dict, vdoms_raw: list
         sys_status = sys_status[0]
     if not isinstance(sys_status, dict):
         sys_status = {}
-    uptime = sys_status.get("uptime", "n/a")
 
     cpu_val = _extract_percent(payload("cpu"), "cpu")
     mem_val = _extract_percent(payload("mem"), "mem")
@@ -520,6 +519,8 @@ def _assemble_health(adom: str, device_name: str, dev_rec: dict, vdoms_raw: list
         perf_raw = perf_raw[0]
     if not isinstance(perf_raw, dict):
         perf_raw = {}
+
+    uptime = sys_status.get("uptime") or perf_raw.get("uptime") or "n/a"
 
     def _parse_vdom_routes(r) -> dict:
         by_vdom = {}
