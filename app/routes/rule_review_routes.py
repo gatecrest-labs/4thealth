@@ -126,7 +126,7 @@ def rr_parse_import():
             content = f.read().decode("utf-8-sig", errors="replace")
             reader = csv.DictReader(io.StringIO(content))
             rows, errors = _parse_rows(reader)
-        except Exception as exc:
+        except Exception:
             return jsonify({"error": "CSV parse error"}), 400
 
     elif filename.endswith((".xls", ".xlsx")):

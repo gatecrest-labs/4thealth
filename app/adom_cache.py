@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import threading
 import datetime
-from typing import Optional
 
 from flask import Flask
 
@@ -48,7 +47,6 @@ def _run_refresh(app: Flask) -> None:
     with app.app_context():
         try:
             from app.fmg_helpers import make_client
-            from app.fmg_client import FMGError
             with make_client() as client:
                 raw = client.get_adoms()
             names = sorted(

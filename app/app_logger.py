@@ -15,7 +15,7 @@ from collections import deque
 from datetime import datetime, timezone
 
 _LEVELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
-_LEVEL_RANK = {l: i for i, l in enumerate(_LEVELS)}
+_LEVEL_RANK = {lvl: i for i, lvl in enumerate(_LEVELS)}
 
 _MAX_ENTRIES = 2000
 _buffer: deque = deque(maxlen=_MAX_ENTRIES)

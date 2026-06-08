@@ -213,7 +213,6 @@ function renderTable() {
     disabled:    '#64748b',
     expired:     '#dc2626',
     unhit:       '#0ea5e9',
-    no_deny_all: '#f97316',
   };
 
   const tbody = document.getElementById('hygieneTbody');

@@ -13,7 +13,6 @@ CHECKS maps key -> display name.  Order here controls the dropdown order in the 
 """
 
 from __future__ import annotations
-import re
 from datetime import datetime, timezone
 
 
@@ -26,7 +25,6 @@ CHECKS: dict[str, str] = {
     "disabled":       "Disabled / Inactive Rules",
     "expired":        "Expired Rules (past schedule end-date)",
     "unhit":          "Unused / Un-Hit Rules (zero hit count)",
-    "no_deny_all":    "Missing Deny-All Default Rule",
 }
 
 
@@ -391,69 +389,6 @@ def check_unhit(policies: list[dict]) -> list[dict]:
     return findings
 
 
-def check_no_deny_all(
-    policies: list[dict],
-    has_implicit_deny: bool = False,
-) -> list[dict]:
-    """Checks whether the package has a terminal deny-all rule.
-
-    A proper deny-all rule requires: src=any, dst=any, svc=ALL/any, action=deny/block.
-    Global policy-block entries (_policy_block) are excluded — they are not regular rules.
-
-    has_implicit_deny — set True when the package settings confirm the device has a
-    firmware-level implicit deny (FortiOS always has one; detectable via the
-    'package settings' object containing 'fwpolicy-implicit-log').  When True and no
-    explicit deny-all rule is found, the finding message notes the implicit deny exists
-    but warns that it is not visible in the policy list.
-    Returns at most one finding (package-level, not per-rule).
-    """
-    has_explicit_deny_all = False
-    for p in policies:
-        if _is_policy_block(p):
-            continue
-        if _status(p) == "disable":
-            continue
-        action = _action(p)
-        if action not in ("deny", "block", "drop"):
-            continue
-        if (_is_any(p.get("srcaddr") or p.get("src_addr")) and
-                _is_any(p.get("dstaddr") or p.get("dst_addr")) and
-                _svc_is_any(p.get("service") or p.get("services"))):
-            has_explicit_deny_all = True
-            break
-
-    if has_explicit_deny_all:
-        return []
-
-    if has_implicit_deny:
-        # FortiOS firmware implicit deny exists — not a policy gap, but worth noting
-        return [{
-            "policy_id":   "—",
-            "policy_name": "(package-level)",
-            "seq":         0,
-            "check":       "no_deny_all",
-            "detail":      (
-                "No explicit deny-all rule in the policy list. "
-                "The FortiOS firmware implicit deny (src=any, dst=any, svc=ALL) "
-                "is active but is not visible as a policy object. "
-                "Consider adding an explicit deny-all to make intent clear and enable logging."
-            ),
-        }]
-
-    return [{
-        "policy_id":   "—",
-        "policy_name": "(package-level)",
-        "seq":         0,
-        "check":       "no_deny_all",
-        "detail":      (
-            "No enabled deny-all rule found "
-            "(src=any, dst=any, svc=ALL, action=deny). "
-            "Traffic not matched by any rule may be implicitly permitted "
-            "depending on device configuration."
-        ),
-    }]
-
-
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 _CHECK_FNS = {
@@ -463,7 +398,6 @@ _CHECK_FNS = {
     "disabled":    check_disabled,
     "expired":     check_expired,
     "unhit":       check_unhit,
-    "no_deny_all": check_no_deny_all,
 }
 
 
@@ -472,23 +406,11 @@ def run_checks(
     checks: list[str],
     pkg_settings: dict | None = None,
 ) -> list[dict]:
-    """Run the requested checks against the policy list.  Returns combined findings.
-
-    pkg_settings — the 'package settings' dict from FMG for this package.
-    Used by check_no_deny_all to detect the firmware implicit deny.
-    """
-    settings = pkg_settings or {}
-    # FortiOS always has an implicit deny; detectable by the presence of
-    # 'fwpolicy-implicit-log' in package settings (key exists even when value is 0).
-    has_implicit_deny = "fwpolicy-implicit-log" in settings
-
+    """Run the requested checks against the policy list.  Returns combined findings."""
     results = []
     for key in checks:
         fn = _CHECK_FNS.get(key)
         if not fn:
             continue
-        if key == "no_deny_all":
-            results.extend(check_no_deny_all(policies, has_implicit_deny=has_implicit_deny))
-        else:
-            results.extend(fn(policies))
+        results.extend(fn(policies))
     return results
