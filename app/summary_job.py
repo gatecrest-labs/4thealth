@@ -64,7 +64,8 @@ def _run_job(app):
             adoms_raw = client.get_adoms()
             adom_names = [
                 a.get("name", "") for a in adoms_raw
-                if isinstance(a, dict) and a.get("name") and a.get("name") != "root"
+                if isinstance(a, dict) and a.get("name")
+                and not a.get("name", "").lower().startswith("forti")
             ]
             logger.info("summary_job: %d ADOMs found: %s", len(adom_names), adom_names)
 
