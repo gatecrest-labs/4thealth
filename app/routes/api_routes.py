@@ -147,7 +147,7 @@ def summary_history():
 
 
 @bp.route("/summary/refresh", methods=["POST"])
-@admin_required
+@tab_required("dashboard")
 def summary_refresh():
     """Kick off an immediate recalculation in the background."""
     from flask import current_app

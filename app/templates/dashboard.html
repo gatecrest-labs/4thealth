@@ -15,6 +15,7 @@
     <div class="summary-stat-label">Policy Rules Managed</div>
   </div>
   <div class="summary-meta" id="summaryMeta"></div>
+  <button class="btn btn-sm btn-ghost summary-refresh-btn" id="summaryRefreshBtn" title="Recalculate now">&#8635;</button>
 </div>
 
 <!-- ── 30-day trend charts ── -->
@@ -54,5 +55,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=11"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=12"></script>
 {% endblock %}

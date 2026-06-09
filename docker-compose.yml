@@ -13,6 +13,7 @@ services:
       - ./groups.json:/app/groups.json:rw
       - ./infra_targets.json:/app/infra_targets.json:ro
       - ./policy_db.json:/app/policy_db.json:rw
+      - ./summary_history.json:/app/summary_history.json:rw
       - ./certs:/app/certs:ro
     healthcheck:
       test: ["CMD", "python3", "-c",

@@ -51,14 +51,11 @@ def _prune(records: list[dict]) -> list[dict]:
 
 
 def record_today(firewalls: int, rules: int) -> None:
-    """Write (or overwrite) today's entry if today is not already recorded."""
+    """Write today's entry, overwriting any existing entry for today."""
     today = date.today().isoformat()
     with _lock:
         records = _load()
-        existing = {r["date"] for r in records}
-        if today in existing:
-            logger.debug("summary_history: today (%s) already recorded, skipping", today)
-            return
+        records = [r for r in records if r["date"] != today]
         records.append({"date": today, "firewalls": firewalls, "rules": rules})
         records = _prune(records)
         _save(records)
