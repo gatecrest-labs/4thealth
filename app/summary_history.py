@@ -35,9 +35,10 @@ def _load() -> list[dict]:
 
 
 def _save(records: list[dict]) -> None:
-    tmp = _HISTORY_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(records, indent=2), encoding="utf-8")
-    tmp.replace(_HISTORY_PATH)
+    # Write directly — atomic rename fails when the destination is a Docker
+    # bind-mounted file (cross-device link error).  History data is low-risk
+    # and fully regeneratable, so a direct write is acceptable here.
+    _HISTORY_PATH.write_text(json.dumps(records, indent=2), encoding="utf-8")
 
 
 def _prune(records: list[dict]) -> list[dict]:

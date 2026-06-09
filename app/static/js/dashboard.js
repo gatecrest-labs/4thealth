@@ -61,7 +61,7 @@ async function loadSummary() {
     if (resp.status === 401) return;
     const d = await resp.json();
     renderSummary(d);
-    if (d.status === 'pending' || d.status === 'running') startSummaryPoller();
+    if (d.status === 'pending' || d.status === 'running') startSummaryPoller(loadTrendCharts);
   } catch (_) {}
 }
 
