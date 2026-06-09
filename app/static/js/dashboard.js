@@ -38,32 +38,57 @@ function renderSummary(d) {
   }
 }
 
+function startSummaryPoller(onDone) {
+  if (summaryPoller) return;
+  summaryPoller = setInterval(async () => {
+    try {
+      const r = await fetch('/api/summary');
+      if (r.status === 401) { clearInterval(summaryPoller); summaryPoller = null; return; }
+      const d = await r.json();
+      renderSummary(d);
+      if (d.status !== 'pending' && d.status !== 'running') {
+        clearInterval(summaryPoller);
+        summaryPoller = null;
+        if (onDone) onDone(d);
+      }
+    } catch (_) {}
+  }, 5000);
+}
+
 async function loadSummary() {
   try {
     const resp = await fetch('/api/summary');
     if (resp.status === 401) return;
     const d = await resp.json();
     renderSummary(d);
-
-    // If still calculating, poll every 5 s until done
-    if (d.status === 'pending' || d.status === 'running') {
-      if (!summaryPoller) {
-        summaryPoller = setInterval(async () => {
-          try {
-            const r2 = await fetch('/api/summary');
-            if (r2.status === 401) { clearInterval(summaryPoller); return; }
-            const d2 = await r2.json();
-            renderSummary(d2);
-            if (d2.status !== 'pending' && d2.status !== 'running') {
-              clearInterval(summaryPoller);
-              summaryPoller = null;
-            }
-          } catch (_) { /* ignore transient errors */ }
-        }, 5000);
-      }
-    }
-  } catch (_) { /* ignore */ }
+    if (d.status === 'pending' || d.status === 'running') startSummaryPoller(loadTrendCharts);
+  } catch (_) {}
 }
+
+(function () {
+  const btn  = document.getElementById('summaryRefreshBtn');
+  const meta = document.getElementById('summaryMeta');
+  if (!btn) return;
+  btn.addEventListener('click', async function () {
+    btn.disabled = true;
+    const prev = meta.textContent;
+    meta.textContent = 'Recalculating…';
+    try {
+      const resp = await fetch('/api/summary/refresh', { method: 'POST' });
+      if (!resp.ok) throw new Error('request failed');
+      // Stop any existing poller so ours takes over
+      clearInterval(summaryPoller);
+      summaryPoller = null;
+      startSummaryPoller(function () {
+        btn.disabled = false;
+        loadTrendCharts();
+      });
+    } catch (_) {
+      meta.textContent = prev;
+      btn.disabled = false;
+    }
+  });
+}());
 
 
 function renderCard(d) {

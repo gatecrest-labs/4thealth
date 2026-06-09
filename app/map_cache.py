@@ -159,7 +159,16 @@ def init_scheduler(app):
     scheduler.start()
     logger.info("map_cache: scheduler started — every %d hours", interval_hours)
 
-    t = threading.Thread(target=_run_job, args=[app], name="map_cache_startup", daemon=True)
+    # One retry after 15 s handles transient FMG connectivity at container startup.
+    def _startup(app=app):
+        _run_job(app)
+        with _lock:
+            if _store["status"] != "ok":
+                logger.info("map_cache: startup run failed, retrying in 15s")
+                _time.sleep(15)
+                _run_job(app)
+
+    t = threading.Thread(target=_startup, name="map_cache_startup", daemon=True)
     t.start()
 
     return scheduler

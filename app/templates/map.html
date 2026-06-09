@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Map (Beta) — 4THealth{% endblock %}
+{% block title %}Map — 4THealth{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}?v=1.9.4" />
@@ -10,7 +10,7 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h2>&#127760; Device Location Map <span class="beta-badge">Beta</span></h2>
+    <h2>&#127760; Device Location Map</h2>
     <span class="last-updated" id="mapLastUpdated"></span>
   </div>
   <div class="page-header-actions" id="mapHeaderActions">

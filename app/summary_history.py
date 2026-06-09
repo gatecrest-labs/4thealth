@@ -35,9 +35,10 @@ def _load() -> list[dict]:
 
 
 def _save(records: list[dict]) -> None:
-    tmp = _HISTORY_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(records, indent=2), encoding="utf-8")
-    tmp.replace(_HISTORY_PATH)
+    # Write directly — atomic rename fails when the destination is a Docker
+    # bind-mounted file (cross-device link error).  History data is low-risk
+    # and fully regeneratable, so a direct write is acceptable here.
+    _HISTORY_PATH.write_text(json.dumps(records, indent=2), encoding="utf-8")
 
 
 def _prune(records: list[dict]) -> list[dict]:
@@ -51,14 +52,11 @@ def _prune(records: list[dict]) -> list[dict]:
 
 
 def record_today(firewalls: int, rules: int) -> None:
-    """Write (or overwrite) today's entry if today is not already recorded."""
+    """Write today's entry, overwriting any existing entry for today."""
     today = date.today().isoformat()
     with _lock:
         records = _load()
-        existing = {r["date"] for r in records}
-        if today in existing:
-            logger.debug("summary_history: today (%s) already recorded, skipping", today)
-            return
+        records = [r for r in records if r["date"] != today]
         records.append({"date": today, "firewalls": firewalls, "rules": rules})
         records = _prune(records)
         _save(records)

@@ -162,8 +162,17 @@ def init_scheduler(app):
         refresh_hour, refresh_minute,
     )
 
-    # Fire immediately in a background thread so the first page load has data ASAP
-    t = threading.Thread(target=_run_job, args=[app], name="summary_job_startup", daemon=True)
+    # Fire immediately in a background thread so the first page load has data ASAP.
+    # One retry after 15 s handles transient FMG connectivity at container startup.
+    def _startup(app=app):
+        _run_job(app)
+        with _lock:
+            if _store["status"] != "ok":
+                logger.info("summary_job: startup run failed, retrying in 15s")
+                _time.sleep(15)
+                _run_job(app)
+
+    t = threading.Thread(target=_startup, name="summary_job_startup", daemon=True)
     t.start()
 
     return scheduler

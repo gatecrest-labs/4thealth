@@ -1,4 +1,4 @@
-"""Map (Beta) — device location map routes."""
+"""Map — device location map routes."""
 
 from flask import Blueprint, render_template, jsonify, current_app
 from app import registry
@@ -6,7 +6,7 @@ from app.decorators import tab_required, admin_required
 
 bp = Blueprint("map", __name__)
 
-registry.register("map_view", "🌐 Map (Beta)", "map.map_page")
+registry.register("map_view", "🌐 Map", "map.map_page")
 
 
 @bp.route("/map")

@@ -322,7 +322,6 @@ async function loadDevices() {
     const data = await r.json();
 
     if (data.status === 'running') { showStatusBar('Refreshing device locations…', '', true); startPolling(); return; }
-    if (data.status === 'error')   { showStatusBar(`Cache error: ${data.error || 'unknown'}`, '', false); }
 
     allDevices = data.devices || [];
     updateLastUpdated(data.last_updated);
@@ -333,11 +332,14 @@ async function loadDevices() {
     buildLegend();
     buildAdomFilter(adoms);
     document.getElementById('mapControls').style.display = '';
-    hideStatusBar();
 
-    if (data.status === 'pending') {
+    if (data.status === 'error') {
+      showStatusBar(`Cache error: ${data.error || 'unknown'}`, '', false);
+    } else if (data.status === 'pending') {
       showStatusBar('Location data is warming up — map will refresh automatically.', '', true);
       startPolling();
+    } else {
+      hideStatusBar();
     }
 
     renderMarkers();
