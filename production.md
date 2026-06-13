@@ -47,10 +47,19 @@ sudo apt-get install -y git curl openssl nginx python3 python3-pip \
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/env
 
-# Verify
+# The installer places the binary at ~/.local/bin/uv
+# Newer versions do not create a ~/.local/env file — verify directly:
+uv --version 2>/dev/null || export PATH="$HOME/.local/bin:$PATH"
 uv --version
+```
+
+Then copy `uv` system-wide so it is available when running commands as other users (e.g. `sudo -u 4thealth`):
+
+```bash
+sudo cp ~/.local/bin/uv /usr/local/bin/uv
+sudo cp ~/.local/bin/uvx /usr/local/bin/uvx
+sudo chmod 755 /usr/local/bin/uv /usr/local/bin/uvx
 ```
 
 ### 1.4 Create a Dedicated Service Account
@@ -65,8 +74,18 @@ sudo usermod -aG 4thealth $USER
 
 ### 1.5 Firewall Rules
 
+First check which firewall is active on your server:
+
 ```bash
-# RHEL / Rocky / AlmaLinux (firewalld)
+sudo systemctl status firewalld
+sudo systemctl status ufw 2>/dev/null
+sudo iptables -L INPUT --line-numbers 2>/dev/null | head -5
+```
+
+If `iptables` INPUT policy is `ACCEPT` with no rules, there is no host-based firewall — skip this section and rely on your network-level controls.
+
+```bash
+# RHEL / Rocky / AlmaLinux with firewalld active
 sudo firewall-cmd --permanent --add-service=https
 sudo firewall-cmd --permanent --add-service=http
 sudo firewall-cmd --reload
@@ -86,31 +105,47 @@ Goal: Deploy the application code, configure the environment, generate SSL crede
 
 ### 2.1 Clone or Copy the Repository
 
+> **Note:** `useradd --create-home` in Phase 1.4 already created `/opt/4thealth` and owns it as `4thealth`.
+> Do **not** run `mkdir` again — clone directly into that directory.
+
 ```bash
-sudo mkdir -p /opt/4thealth
-sudo chown 4thealth:4thealth /opt/4thealth
+# Option A - git clone as your own user, then fix ownership (recommended)
+# The 4thealth service account has no SSH key authorized on GitHub/GitLab,
+# so clone as yourself first and then hand ownership over.
+sudo rm -rf /opt/4thealth
+git clone <your-repo-url> /tmp/4thealth
+sudo mv /tmp/4thealth /opt/4thealth
+sudo chown -R 4thealth:4thealth /opt/4thealth
 
-# Option A - git clone (recommended)
-sudo -u 4thealth git clone <your-repo-url> /opt/4thealth
+# Option B - git clone over HTTPS with a personal access token
+# (avoids SSH key issues entirely)
+sudo rm -rf /opt/4thealth
+git clone https://<username>:<PAT>@github.com/<org>/<repo>.git /tmp/4thealth
+sudo mv /tmp/4thealth /opt/4thealth
+sudo chown -R 4thealth:4thealth /opt/4thealth
 
-# Option B - copy from dev machine (replace IP/path)
+# Option C - copy from dev machine (replace IP/path)
 rsync -avz --exclude '.venv' --exclude '__pycache__' --exclude 'certs' \
     /path/to/fortigate-health/ user@server:/opt/4thealth/
+sudo chown -R 4thealth:4thealth /opt/4thealth
 ```
 
 ### 2.2 Install Python Dependencies
 
 ```bash
-cd /opt/4thealth
-sudo -u 4thealth uv sync --extra prod
+sudo -u 4thealth /usr/local/bin/uv sync --extra prod --project /opt/4thealth
 ```
+
+> **Note:** Do not use `cd /opt/4thealth` — your user account cannot enter that directory because
+> `4thealth` is mode `750`. Always pass `--project /opt/4thealth` and use the full path
+> `/usr/local/bin/uv` (installed in Phase 1.3) so `sudo -u 4thealth` can find it.
 
 This installs Flask, gunicorn, APScheduler, bcrypt, requests, and python-dotenv into `/opt/4thealth/.venv`.
 
 ### 2.3 Configure Environment Variables
 
 ```bash
-sudo -u 4thealth cp .env.example .env
+sudo -u 4thealth cp /opt/4thealth/.env.example /opt/4thealth/.env
 sudo chmod 640 /opt/4thealth/.env
 sudo chown 4thealth:4thealth /opt/4thealth/.env
 
@@ -137,7 +172,7 @@ PORT=8100
 ### 2.3a Configure Infrastructure Dashboard Targets
 
 ```bash
-sudo -u 4thealth cp infra_targets.example.json infra_targets.json
+sudo -u 4thealth cp /opt/4thealth/infra_targets.example.json /opt/4thealth/infra_targets.json
 sudo chmod 640 /opt/4thealth/infra_targets.json
 sudo chown 4thealth:4thealth /opt/4thealth/infra_targets.json
 
@@ -156,8 +191,7 @@ To add devices (e.g. FortiAuthenticator), append entries to the array. No code c
 Generate a strong `SECRET_KEY`:
 
 ```bash
-cd /opt/4thealth
-sudo -u 4thealth uv run python manage_users.py secret
+sudo -u 4thealth /usr/local/bin/uv run --project /opt/4thealth python /opt/4thealth/manage_users.py secret
 ```
 
 ### 2.4 Generate a TLS Certificate
@@ -170,8 +204,8 @@ sudo openssl req -x509 -newkey rsa:4096 -nodes \
   -keyout /opt/4thealth/certs/key.pem \
   -out /opt/4thealth/certs/cert.pem \
   -days 3650 \
-  -subj "/CN=4thealth.yourdomain.com" \
-  -addext "subjectAltName=DNS:4thealth.yourdomain.com,IP:<SERVER_IP>"
+  -subj "/CN=4thealth.example.com" \
+  -addext "subjectAltName=DNS:4thealth.yourdomain.com,IP:10.137.8.4"
 sudo chown -R 4thealth:4thealth /opt/4thealth/certs
 sudo chmod 600 /opt/4thealth/certs/key.pem
 ```
@@ -195,9 +229,8 @@ sudo certbot --nginx -d 4thealth.yourdomain.com
 ### 2.5 Create Initial User Accounts (local fallback)
 
 ```bash
-cd /opt/4thealth
-sudo -u 4thealth uv run python manage_users.py add admin --role admin
-sudo -u 4thealth uv run python manage_users.py add readonly --role viewer
+sudo -u 4thealth /usr/local/bin/uv run --project /opt/4thealth python /opt/4thealth/manage_users.py add admin --role admin
+sudo -u 4thealth /usr/local/bin/uv run --project /opt/4thealth python /opt/4thealth/manage_users.py add readonly --role viewer
 ```
 
 Keep at least one local admin account in `users.json` for emergency access.
@@ -217,6 +250,7 @@ User=4thealth
 Group=4thealth
 WorkingDirectory=/opt/4thealth
 EnvironmentFile=/opt/4thealth/.env
+Environment=TZ=America/Chicago
 ExecStart=/opt/4thealth/.venv/bin/gunicorn \
     --workers 2 \
     --threads 4 \
@@ -233,6 +267,11 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
+> **Timezone note:** `Environment=TZ=America/Chicago` is required on RHEL/Rocky systems where
+> `/etc/sysconfig/clock` and `/etc/localtime` report conflicting timezone names (e.g. `America/Chicago`
+> vs `US/Central`). Python 3.12+ raises an error on startup when it detects this conflict. Set `TZ` to
+> the canonical IANA name for your server's timezone (verify with `timedatectl`).
+>
 > **Worker configuration note:** The `gthread` worker class with `--workers 2 --threads 4` is required because the background summary job uses a Python `threading.Thread`. The default `sync` worker model forks separate processes — background threads started in the parent do not transfer to child workers, which means the summary job would never start. The `gthread` model shares in-process threads, so APScheduler and the summary job run correctly in each worker. If you need more concurrency, increase `--threads` rather than `--workers`.
 >
 > **Timeout rationale:** `--timeout 130` is set to match the FMG client's worst-case paginated request ceiling (120 s per page fetch in `_get_paged`) plus a 10 s buffer. This ensures gunicorn never kills a thread that is legitimately waiting on a slow FortiManager response. The Nginx `proxy_read_timeout 140s` sits 10 s above the gunicorn timeout so Nginx never cuts the upstream connection before gunicorn has had a chance to return a proper error response. If a user closes their browser mid-request, the in-flight thread continues to run until the FMG call completes and then exits cleanly — all FMG sessions are closed by the context manager (`with make_client()`) regardless of whether the response is delivered.
@@ -314,6 +353,11 @@ server {
 ```
 
 ```bash
+# Allow nginx to read the app's static files
+# (the 4thealth directory is mode 750 — nginx must be in the 4thealth group)
+sudo usermod -aG 4thealth nginx
+sudo systemctl restart nginx
+
 sudo nginx -t
 sudo systemctl enable nginx
 sudo systemctl restart nginx
