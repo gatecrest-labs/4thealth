@@ -733,13 +733,31 @@ The file is written atomically by the app on each admin edit, so backups are saf
 
 Goal: Keep the service running, up-to-date, and observable in production.
 
-### 7.1 Systemd Watchdog and Health Check
+### 7.1 Verifying the Full Stack
+
+In the standard production layout, Gunicorn binds to `127.0.0.1:8100` and Nginx terminates TLS on port 443. Port 5443 is **only used** in direct/dev mode (no Nginx). Use these commands to confirm each layer is healthy:
 
 ```bash
+# 1. Confirm both services are active
 sudo systemctl status 4thealth
+sudo systemctl status nginx
+
+# 2. Confirm Nginx is listening on 443 and Gunicorn is on 8100
+sudo ss -tlnp | grep -E '443|8100'
+
+# 3. Test Gunicorn directly (bypasses Nginx — confirms the app itself is up)
+curl -s http://127.0.0.1:8100/login | grep -i 4thealth
+
+# 4. Test the full stack through Nginx
+curl -sk https://localhost/login | grep -i 4thealth
+
+# 5. Tail application logs
 sudo journalctl -u 4thealth -f
 sudo tail -f /var/log/4thealth/access.log
+sudo tail -f /var/log/4thealth/error.log
 ```
+
+If step 3 succeeds but step 4 fails, the problem is in Nginx (config error, SELinux, cert issue). Check with `sudo nginx -t` and `sudo journalctl -u nginx -n 50`.
 
 ### 7.1a Monitoring the Background Summary Job
 
@@ -1453,7 +1471,7 @@ sudo nginx -t
 # Reload nginx without downtime
 sudo nginx -s reload
 
-# Check open ports
+# Check open ports (production: Nginx on 443/80, Gunicorn on 8100 — NOT 5443)
 ss -tlnp | grep -E '443|80|8100'
 
 # Check SELinux denials (RHEL/Rocky)

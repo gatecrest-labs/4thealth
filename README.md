@@ -666,7 +666,14 @@ See **[container.md](container.md)** for Docker and Docker Compose deployment.
 > worker forks child processes — background threads (summary job, map cache, ADOM cache)
 > do not transfer to forked workers and the schedulers will never fire.
 >
+> In the standard production layout, Gunicorn binds to `127.0.0.1:8100` and Nginx
+> terminates TLS on port 443. Port 5443 is only used in direct/dev mode (no Nginx).
+>
 > ```bash
+> # Standard production (behind Nginx on port 443)
+> gunicorn --workers 2 --threads 4 --worker-class gthread --bind 127.0.0.1:8100 wsgi:app
+>
+> # Direct mode / development (no Nginx — app handles TLS itself)
 > gunicorn --workers 2 --threads 4 --worker-class gthread --bind 0.0.0.0:5443 wsgi:app
 > ```
 
