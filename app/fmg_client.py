@@ -291,6 +291,38 @@ class FMGClient:
             offset += page_size
         return all_policies
 
+    def get_live_policy_hits(self, adom: str, device_name: str, vdom: str = "root") -> dict:
+        """Return live per-policy hit counts from the device via FMG proxy.
+
+        FMG's stored _hitcount is updated only when FMG syncs stats from the
+        device (which may be infrequent or never).  This method queries the
+        FortiGate's monitor API directly through FMG's proxy so hit counts are
+        always current regardless of FMG sync state.
+
+        Returns {policyid (int): hit_count (int)}.  Returns {} on any error so
+        callers can fall back to FMG-cached values gracefully.
+        """
+        try:
+            r = self._proxy(adom, device_name, f"/api/v2/monitor/firewall/policy?vdom={vdom}")
+            payload = r.get("payload", [])
+            if not isinstance(payload, list):
+                return {}
+            result: dict = {}
+            for entry in payload:
+                if not isinstance(entry, dict):
+                    continue
+                pid = entry.get("policyid") or entry.get("id")
+                if pid is None:
+                    continue
+                # FortiOS REST API uses "hit_count" on the monitor endpoint
+                hit = entry.get("hit_count")
+                if hit is None:
+                    hit = entry.get("hitcount", 0)
+                result[int(pid)] = int(hit) if hit is not None else 0
+            return result
+        except Exception:
+            return {}
+
     def get_policy_count(self, adom: str, pkg_path: str) -> int:
         """Return the number of firewall policies in a package without fetching full objects."""
         try:
