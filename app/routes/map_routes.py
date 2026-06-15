@@ -26,7 +26,7 @@ def map_devices():
     cached = get_cached()
     devices = cached.get("devices", [])
 
-    allowed = get_allowed_adoms(session.get("user", ""))
+    allowed = get_allowed_adoms(session.get("user", ""), ad_groups=session.get("ad_groups", []))
     if allowed is not None:
         devices = [d for d in devices if d.get("adom") in allowed]
 

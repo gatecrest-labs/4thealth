@@ -35,13 +35,14 @@
         <tr>
           <th>Group Name</th>
           <th>Members</th>
+          <th>AD Groups</th>
           <th>Allowed Tabs</th>
           <th>ADOM Access</th>
           <th style="width:120px">Actions</th>
         </tr>
       </thead>
       <tbody id="groupsTbody">
-        <tr><td colspan="5" class="loading-placeholder">Loading…</td></tr>
+        <tr><td colspan="6" class="loading-placeholder">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -145,12 +146,31 @@
       </div>
 
       <div class="form-group">
-        <label>Members</label>
+        <label>Members <span class="text-muted" style="font-weight:400;font-size:.82rem">(local accounts)</span></label>
         <div class="member-picker">
           <div id="memberCheckboxes" class="checkbox-group"></div>
         </div>
         <p class="text-muted" style="font-size:.78rem;margin-top:.4rem">
           Admins always have full access and do not need to be in a group.
+        </p>
+      </div>
+
+      <div class="form-group">
+        <label>AD / RADIUS Groups <span class="text-muted" style="font-weight:400;font-size:.82rem">(optional)</span></label>
+        <div id="adGroupTags" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.4rem"></div>
+        <div style="display:flex;gap:.4rem">
+          <input type="text" class="form-control" id="adGroupInput"
+                 placeholder="e.g. 4THealth-Admins  then press Enter"
+                 style="flex:1" />
+          <button type="button" class="btn btn-sm" id="adGroupAdd"
+                  style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text);white-space:nowrap">
+            Add
+          </button>
+        </div>
+        <p class="text-muted" style="font-size:.78rem;margin-top:.4rem">
+          Any RADIUS user whose Filter-Id or Class attribute matches one of these
+          values is treated as a member of this group. Use the exact string
+          FortiAuthenticator returns (check with <code>radtest -x</code>).
         </p>
       </div>
 
@@ -210,5 +230,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=6"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=7"></script>
 {% endblock %}

@@ -13,6 +13,14 @@ Role resolution from reply attributes:
   - Admin group takes precedence over viewer group.
   - If FortiAuthenticator sends no group attributes the user gets 'viewer'.
   - If group attributes are present but none match, access is denied.
+
+Failover:
+  - If RADIUS_HOST_2 is set, it is tried automatically when the primary FAC
+    is unreachable (timeout / connection refused).  Both servers share the
+    same secret, timeout, and group mapping.
+  - The full list of Filter-Id/Class values returned by FAC is exposed as
+    'ad_groups' in the result dict so callers can match them against the
+    group-level ad_groups lists stored in groups.json.
 """
 
 import hashlib
@@ -25,8 +33,8 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-_ACCESS_REQUEST  = 1
-_ACCESS_ACCEPT   = 2
+_ACCESS_REQUEST      = 1
+_ACCESS_ACCEPT       = 2
 _ATTR_USER_NAME      = 1
 _ATTR_USER_PASSWORD  = 2
 _ATTR_FILTER_ID      = 11
@@ -63,22 +71,20 @@ def _parse_attrs(data: bytes) -> dict:
     return attrs
 
 
-def authenticate(
+def _try_one_server(
     username: str,
     password: str,
     host: str,
     port: int,
-    secret: str,
+    secret_b: bytes,
     timeout: int,
-    group_admin: str,
-    group_viewer: str,
-) -> Optional[str]:
-    """
-    Send a RADIUS Access-Request (PAP) and return the user's role or None.
+) -> Optional[tuple]:
+    """Send a single RADIUS Access-Request.
 
-    Returns 'admin', 'viewer', or None (rejected / error / no group match).
+    Returns (reply_bytes, req_auth, secret_b) on network success, or None if
+    the server is unreachable.  A non-Accept reply code is still a 'success'
+    here — the caller interprets the code.
     """
-    secret_b   = secret.encode("utf-8")
     identifier = os.urandom(1)[0]
     req_auth   = os.urandom(16)
 
@@ -95,9 +101,51 @@ def authenticate(
             sock.settimeout(timeout)
             sock.sendto(packet, (host, port))
             reply, _ = sock.recvfrom(4096)
+        return (reply, req_auth, secret_b)
     except OSError as exc:
-        log.error("RADIUS socket error for %r: %s", username, exc)
+        log.warning("RADIUS server %s:%d unreachable for %r: %s", host, port, username, exc)
         return None
+
+
+def authenticate(
+    username: str,
+    password: str,
+    host: str,
+    port: int,
+    secret: str,
+    timeout: int,
+    group_admin: str,
+    group_viewer: str,
+    host2: str = "",
+    port2: int = 1812,
+) -> Optional[dict]:
+    """Send a RADIUS Access-Request, trying host2 if host is unreachable.
+
+    Returns a dict {'role': 'admin'|'viewer', 'ad_groups': [...]} on success,
+    or None on rejection / authenticator mismatch / no matching group.
+
+    'ad_groups' contains all raw Filter-Id and Class values from the reply so
+    the caller can use them for group-membership lookups in groups.json.
+    """
+    secret_b = secret.encode("utf-8")
+
+    servers = [(host, port)]
+    if host2:
+        servers.append((host2, port2))
+
+    raw = None
+    for srv_host, srv_port in servers:
+        raw = _try_one_server(username, password, srv_host, srv_port, secret_b, timeout)
+        if raw is not None:
+            log.debug("RADIUS: got reply from %s:%d for %r", srv_host, srv_port, username)
+            break
+        log.warning("RADIUS: no reply from %s:%d, trying next server", srv_host, srv_port)
+
+    if raw is None:
+        log.error("RADIUS: all servers unreachable for %r", username)
+        return None
+
+    reply, req_auth, secret_b = raw
 
     if len(reply) < 20:
         log.warning("RADIUS short reply for %r (%d bytes)", username, len(reply))
@@ -120,26 +168,26 @@ def authenticate(
         log.info("RADIUS access denied for %r (code=%d)", username, code)
         return None
 
-    # Extract group names from Filter-Id and Class attributes
-    attrs  = _parse_attrs(attrs_data)
-    groups = [
+    # Extract all group names from Filter-Id and Class attributes
+    attrs     = _parse_attrs(attrs_data)
+    ad_groups = [
         v.decode("utf-8", errors="ignore").strip("\x00 ")
         for t in (_ATTR_FILTER_ID, _ATTR_CLASS)
         for v in attrs.get(t, [])
         if v
     ]
 
-    if group_admin and any(group_admin.lower() in g.lower() for g in groups):
-        return "admin"
-    if group_viewer and any(group_viewer.lower() in g.lower() for g in groups):
-        return "viewer"
-    if groups:
+    if group_admin and any(group_admin.lower() in g.lower() for g in ad_groups):
+        return {"role": "admin", "ad_groups": ad_groups}
+    if group_viewer and any(group_viewer.lower() in g.lower() for g in ad_groups):
+        return {"role": "viewer", "ad_groups": ad_groups}
+    if ad_groups:
         log.warning(
             "RADIUS user %r authenticated but no role group matched. "
             "Groups received: %s. Expected admin=%r viewer=%r",
-            username, groups, group_admin, group_viewer,
+            username, ad_groups, group_admin, group_viewer,
         )
         return None
 
-    # No group attributes in reply — default to viewer
-    return "viewer"
+    # No group attributes in reply — default to viewer, empty ad_groups
+    return {"role": "viewer", "ad_groups": []}

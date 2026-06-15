@@ -65,11 +65,12 @@ def api_groups_create():
     if not name:
         return jsonify({"error": "name is required"}), 400
     members       = data.get("members", [])
+    ad_groups     = data.get("ad_groups", [])
     allowed_tabs  = data.get("allowed_tabs", [])
     adom_restrict = bool(data.get("adom_restrict", False))
     allowed_adoms = data.get("allowed_adoms", [])
     try:
-        ok = create_group(name, members, allowed_tabs, adom_restrict, allowed_adoms)
+        ok = create_group(name, members, ad_groups, allowed_tabs, adom_restrict, allowed_adoms)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     if not ok:
@@ -83,10 +84,11 @@ def api_groups_create():
 def api_groups_update(name: str):
     data = request.get_json(silent=True) or {}
     members       = data.get("members", [])
+    ad_groups     = data.get("ad_groups", [])
     allowed_tabs  = data.get("allowed_tabs", [])
     adom_restrict = bool(data.get("adom_restrict", False))
     allowed_adoms = data.get("allowed_adoms", [])
-    if not update_group(name, members, allowed_tabs, adom_restrict, allowed_adoms):
+    if not update_group(name, members, allowed_tabs, adom_restrict, allowed_adoms, ad_groups=ad_groups):
         return jsonify({"error": f"Group '{name}' not found"}), 404
     app_log("INFO", "admin", "Group updated", by=session["user"], group=name)
     return jsonify(get_group(name))

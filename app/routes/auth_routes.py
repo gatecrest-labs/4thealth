@@ -83,13 +83,15 @@ def login():
             flash("Too many failed attempts. Please wait before trying again.", "danger")
             return render_template("login.html"), 429
 
-        role = authenticate(username, password)
-        if role is not None:
+        auth_result = authenticate(username, password)
+        if auth_result is not None:
+            role, ad_groups = auth_result
             _clear_failures(ip, username)
             session.permanent = True
             session["user"] = username
             session["role"] = role
-            allowed = list(get_allowed_tabs(username))
+            session["ad_groups"] = ad_groups
+            allowed = list(get_allowed_tabs(username, ad_groups=ad_groups))
             session["allowed_tabs"] = allowed
             app_log("INFO", "auth", "Login successful", username=username, role=session["role"])
             next_url = request.args.get("next", "").strip()
