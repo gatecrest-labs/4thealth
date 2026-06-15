@@ -50,7 +50,7 @@
     }
 
     if (!groups.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state" style="padding:.85rem 1rem">No groups yet — click <strong>+ New Group</strong> to create one.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state" style="padding:.85rem 1rem">No groups yet — click <strong>+ New Group</strong> to create one.</td></tr>';
       return;
     }
 
@@ -66,10 +66,15 @@
         const extra   = g.allowed_adoms.length > 3 ? ` <span class="text-muted">+${g.allowed_adoms.length - 3} more</span>` : '';
         adomCell = preview + extra;
       }
+      const adGroupsCell = (g.ad_groups && g.ad_groups.length)
+        ? g.ad_groups.slice(0, 2).map(esc).join(', ')
+          + (g.ad_groups.length > 2 ? ` <span class="text-muted">+${g.ad_groups.length - 2} more</span>` : '')
+        : '<span class="text-muted">—</span>';
       return `
       <tr>
         <td><strong>${esc(g.name)}</strong></td>
         <td>${g.members.length ? g.members.map(esc).join(', ') : '<span class="text-muted">—</span>'}</td>
+        <td>${adGroupsCell}</td>
         <td>${g.allowed_tabs.length
               ? g.allowed_tabs.map(k => `<span class="tab-badge">${esc(tabMap[k] || k)}</span>`).join(' ')
               : '<span class="text-muted">None</span>'}</td>
@@ -133,6 +138,9 @@
         </label>`).join('');
     }
 
+    // AD group tags
+    _setAdGroupTags(group ? (group.ad_groups || []) : []);
+
     // ADOM restrict toggle
     const restrict = group ? !!group.adom_restrict : false;
     document.getElementById('adomRestrictToggle').checked = restrict;
@@ -143,6 +151,47 @@
 
     document.getElementById('groupModal').classList.remove('hidden');
   }
+
+  // ── AD Group tag helpers ───────────────────────────────────────────────────
+
+  function _setAdGroupTags(tags) {
+    const container = document.getElementById('adGroupTags');
+    container.innerHTML = '';
+    tags.forEach(t => _appendAdGroupTag(container, t));
+  }
+
+  function _appendAdGroupTag(container, value) {
+    if (!value.trim()) return;
+    const span = document.createElement('span');
+    span.style.cssText = 'display:inline-flex;align-items:center;gap:.25rem;background:var(--surface-alt);border:1px solid var(--border);border-radius:4px;padding:.15rem .45rem;font-size:.82rem';
+    span.dataset.value = value.trim();
+    span.innerHTML = `${esc(value.trim())} <button type="button" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1rem;line-height:1;padding:0" aria-label="Remove">&times;</button>`;
+    span.querySelector('button').addEventListener('click', () => span.remove());
+    container.appendChild(span);
+  }
+
+  function _getAdGroupTags() {
+    return [...document.querySelectorAll('#adGroupTags [data-value]')].map(s => s.dataset.value);
+  }
+
+  document.getElementById('adGroupAdd').addEventListener('click', () => {
+    const inp = document.getElementById('adGroupInput');
+    const val = inp.value.trim();
+    if (!val) return;
+    // prevent exact duplicates
+    if (!_getAdGroupTags().includes(val)) {
+      _appendAdGroupTag(document.getElementById('adGroupTags'), val);
+    }
+    inp.value = '';
+    inp.focus();
+  });
+
+  document.getElementById('adGroupInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('adGroupAdd').click();
+    }
+  });
 
   function _toggleAdomSection(show) {
     document.getElementById('adomCheckboxWrap').style.display = show ? '' : 'none';
@@ -188,6 +237,7 @@
     const name         = document.getElementById('groupNameInput').value.trim();
     const tabs         = [...document.querySelectorAll('#tabCheckboxes input[name=tab]:checked')].map(i => i.value);
     const members      = [...document.querySelectorAll('#memberCheckboxes input[name=member]:checked')].map(i => i.value);
+    const adGroups     = _getAdGroupTags();
     const adomRestrict = document.getElementById('adomRestrictToggle').checked;
     const allowedAdoms = [...document.querySelectorAll('#adomCheckboxes input[name=adom]:checked')].map(i => i.value);
     const errEl        = document.getElementById('groupModalError');
@@ -197,6 +247,7 @@
 
     const body = {
       members,
+      ad_groups:     adGroups,
       allowed_tabs:  tabs,
       adom_restrict: adomRestrict,
       allowed_adoms: adomRestrict ? allowedAdoms : [],

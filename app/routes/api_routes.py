@@ -356,7 +356,7 @@ def adoms():
         # Filter to ADOMs the current user is allowed to see
         from flask import session as _session
         from app.groups import get_allowed_adoms
-        allowed = get_allowed_adoms(_session.get("user", ""))
+        allowed = get_allowed_adoms(_session.get("user", ""), ad_groups=_session.get("ad_groups", []))
         if allowed is not None:  # None means unrestricted
             items = [i for i in items if i["name"] in allowed]
         return jsonify(items)
@@ -652,7 +652,7 @@ def search():
         return jsonify([])
     try:
         from app.groups import get_allowed_adoms
-        allowed = get_allowed_adoms(session.get("user", ""))
+        allowed = get_allowed_adoms(session.get("user", ""), ad_groups=session.get("ad_groups", []))
         with _make_client() as client:
             adoms_raw = client.get_adoms()
             adom_names = [a.get("name", "") for a in adoms_raw if isinstance(a, dict) and a.get("name")]

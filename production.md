@@ -1111,14 +1111,18 @@ This adds `pyrad` to `pyproject.toml` and updates `uv.lock`. Commit both files.
 
 ```dotenv
 RADIUS_ENABLED=true
-RADIUS_HOST=<FortiAuthenticator IP>
+RADIUS_HOST=<Primary FAC IP>
 RADIUS_PORT=1812
+RADIUS_HOST_2=<Secondary FAC IP>   # HA failover — leave blank if unused
+RADIUS_PORT_2=1812
 RADIUS_SECRET=<shared secret from FAC-1.1>
 RADIUS_AUTH_METHOD=pap        # pap or chap — must match FAC client config
-RADIUS_TIMEOUT=10             # seconds before falling back to local auth
+RADIUS_TIMEOUT=10             # per-server timeout before trying next / falling back to local auth
 RADIUS_GROUP_ADMIN=4THealth-Admins
 RADIUS_GROUP_VIEWER=4THealth-Viewers
 ```
+
+Both `RADIUS_HOST` and `RADIUS_HOST_2` use the same shared secret. On a primary FAC timeout or connection refusal, the app automatically retries the secondary FAC before falling back to local `users.json` accounts. The switch is transparent to the user — login latency increases by at most one `RADIUS_TIMEOUT` interval during a failover.
 
 #### FAC-2.3 Add RADIUS support to `app/auth.py`
 
@@ -1345,50 +1349,27 @@ The login handler must call `get_radius_role_for()` when RADIUS is active so the
             return redirect(_first_allowed_url(allowed))
 ```
 
-#### FAC-2.5 Handle RADIUS users in `app/groups.py`
+#### FAC-2.5 Map RADIUS users to 4THealth groups
 
-RADIUS-authenticated users are not listed in `users.json`, so `get_allowed_tabs()` and `get_allowed_adoms()` need to handle them. The session role is already correct — add a session-aware path by passing the role in from the route layer, or use the simpler approach: add RADIUS users to the appropriate group in `groups.json` by their AD username.
+RADIUS-authenticated users are not listed in `users.json`. Tab and ADOM permissions are resolved at login time using the AD group names returned by FAC in the `Filter-Id` / `Class` attributes of the `Access-Accept` reply.
 
-**Recommended approach — add users to groups.json via the Admin UI:**
+**Recommended approach — AD Group membership (no per-user config):**
+
+This is now the built-in approach. Instead of adding individual usernames, add the AD group name directly to a 4THealth group:
 
 1. Log in as a local admin.
 2. Go to **Admin → Groups & Permissions**.
-3. Edit the group that matches their role (e.g. `NOC-Viewers`).
-4. Add the AD `sAMAccountName` (e.g. `jsmith`) to the Members list.
+3. Open (or create) the group that should cover these users (e.g. `NOC-Team`).
+4. In the **AD / RADIUS Groups** field, type the exact group name that FortiAuthenticator returns — for example `4THealth-NOC` — and press **Enter** or **Add**.
+5. Save the group.
 
-When that user authenticates via RADIUS, `get_allowed_tabs("jsmith")` finds them in the group and returns the correct tab set. Their role (admin/viewer) comes from the RADIUS Filter-Id.
+When any member of that AD group authenticates via RADIUS, the `Filter-Id`/`Class` value in the reply matches the stored AD group name and the user automatically gets the tab and ADOM permissions for `NOC-Team`. No `users.json` entry required.
 
-**Alternative — role-only approach (no per-user group membership):**
+To verify the exact string FAC sends, run `radtest -x` and look for the `Filter-Id` or `Class` line in the `Access-Accept` response.
 
-For environments where managing a members list is impractical, update `get_allowed_tabs()` in `app/groups.py` to fall back to role when no group membership is found:
+**Per-user fallback — explicit Members list:**
 
-```python
-def get_allowed_tabs(username: str, role: str | None = None) -> set[str]:
-    from app.auth import _load_users
-    users = _load_users()
-    user_entry = users.get(username, {})
-    effective_role = role or user_entry.get("role", "viewer")
-
-    if effective_role == "admin":
-        return set(KNOWN_TABS.keys())
-
-    with _lock:
-        groups = _load()
-
-    tabs: set[str] = set()
-    for g in groups.values():
-        if username in g.get("members", []):
-            tabs.update(g.get("allowed_tabs", []))
-
-    # RADIUS user not in any group — grant default viewer tabs by role
-    if not tabs and effective_role == "viewer":
-        viewer_group = groups.get("default-viewers", {})
-        tabs.update(viewer_group.get("allowed_tabs", []))
-
-    return tabs
-```
-
-Then pass `role=session["role"]` from `auth_routes.py` when calling `get_allowed_tabs()`.
+You can still add individual AD `sAMAccountName` values (e.g. `jsmith`) to a group's **Members** list. Both mechanisms work simultaneously — a user is a member if their username is in `members` **or** if any of their RADIUS groups matches `ad_groups`.
 
 #### FAC-2.6 Smoke test
 
@@ -1417,27 +1398,32 @@ If the role is wrong (viewer instead of admin), the Filter-Id attribute is eithe
 
 | Scenario | Behaviour |
 |---|---|
-| FAC unreachable (timeout) | `_radius_authenticate()` returns `None`; app falls through to local `users.json` bcrypt auth |
+| Primary FAC unreachable (timeout) | App automatically retries `RADIUS_HOST_2` (if configured); falls through to local auth only when all servers fail |
+| Secondary FAC unreachable | Falls through to local `users.json` bcrypt auth |
+| Both FACs unreachable | Local `users.json` bcrypt auth only |
 | User not in any FAC group | FAC sends Access-Reject; app falls through to local auth |
 | AD outage (FAC cannot reach DC) | FAC sends Access-Reject; fallback to local auth |
 | `RADIUS_ENABLED=false` | RADIUS path skipped entirely; pure local bcrypt |
 
-Keep the local `admin` account in `users.json` at all times. If FAC is unreachable, set `RADIUS_ENABLED=false` in `.env` and restart:
+Keep the local `admin` account in `users.json` at all times. If both FACs are unreachable, set `RADIUS_ENABLED=false` in `.env` and restart:
 
 ```bash
 sudo systemctl restart 4thealth
 ```
 
+> **HA note:** Both `RADIUS_HOST` and `RADIUS_HOST_2` should be registered as separate NAS clients on their respective FAC instances (or as a single shared NAS client if both FACs share the same RADIUS policy database). The shared secret must match on both.
+
 ### FAC-4 — Security Checklist
 
-- [ ] RADIUS shared secret is at least 32 characters and stored only in `.env` (mode `640`)
-- [ ] FAC RADIUS policy default action is **Reject** (users not in either group are denied)
-- [ ] FAC client IP is locked to the 4THealth server IP — no wildcard `/0` subnet
-- [ ] UDP port 1812 is open from the 4THealth server to FAC and closed from everywhere else
+- [ ] RADIUS shared secret is at least 32 random characters and stored only in `.env` (mode `640`)
+- [ ] FAC RADIUS policy default action is **Reject** (users not in either role group are denied)
+- [ ] FAC client IP is locked to the 4THealth server IP on both primary and secondary FACs — no wildcard `/0` subnet
+- [ ] UDP port 1812 is open from the 4THealth server to both FAC IPs and closed from everywhere else
 - [ ] `RADIUS_AUTH_METHOD` matches the FAC client config (both PAP, or both CHAP)
 - [ ] Local `admin` account in `users.json` is retained as an emergency fallback
-- [ ] `RADIUS_TIMEOUT` is set low enough (10s) that login failures are not excessively slow
+- [ ] `RADIUS_TIMEOUT` is set low enough (10 s) so failover latency is predictable (worst case = 1 × timeout per server)
 - [ ] FAC is configured to log all authentication attempts for audit trail
+- [ ] AD group names added to 4THealth groups match exactly what FAC sends (verify with `radtest -x`)
 
 ---
 

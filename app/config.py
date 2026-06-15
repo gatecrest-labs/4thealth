@@ -63,6 +63,9 @@ class Config:
     RADIUS_ENABLED      = os.environ.get("RADIUS_ENABLED",  "false").lower() == "true"
     RADIUS_HOST         = os.environ.get("RADIUS_HOST",     "")
     RADIUS_PORT         = int(os.environ.get("RADIUS_PORT", "1812"))
+    # Secondary FAC for HA / maintenance failover — leave blank if not used
+    RADIUS_HOST_2       = os.environ.get("RADIUS_HOST_2",   "")
+    RADIUS_PORT_2       = int(os.environ.get("RADIUS_PORT_2", "1812"))
     RADIUS_SECRET       = os.environ.get("RADIUS_SECRET",   "")
     RADIUS_TIMEOUT      = int(os.environ.get("RADIUS_TIMEOUT", "10"))
     RADIUS_GROUP_ADMIN  = os.environ.get("RADIUS_GROUP_ADMIN",  "")

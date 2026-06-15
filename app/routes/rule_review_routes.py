@@ -43,7 +43,7 @@ def rr_adoms():
     try:
         from flask import session as _session
         from app.groups import get_allowed_adoms
-        allowed = get_allowed_adoms(_session.get("user", ""))
+        allowed = get_allowed_adoms(_session.get("user", ""), ad_groups=_session.get("ad_groups", []))
         with make_client() as client:
             raw = client.get_adoms()
         names = sorted(

@@ -19,8 +19,11 @@ def _load_users() -> dict:
         return json.load(f)
 
 
-def authenticate(username: str, password: str) -> str | None:
-    """Return the user's role ('admin'|'viewer') on success, None on failure.
+def authenticate(username: str, password: str) -> "tuple[str, list] | None":
+    """Return (role, ad_groups) on success, None on failure.
+
+    role     — 'admin' or 'viewer'
+    ad_groups — list of AD/RADIUS group strings from the reply (empty for local auth)
 
     If RADIUS_ENABLED=true, RADIUS is tried first.  Local bcrypt accounts
     always work as a fallback (break-glass admin access).
@@ -33,7 +36,7 @@ def authenticate(username: str, password: str) -> str | None:
                 "RADIUS_ENABLED=true but RADIUS_HOST or RADIUS_SECRET is not set in .env"
             )
         from app.radius_auth import authenticate as radius_authenticate
-        role = radius_authenticate(
+        result = radius_authenticate(
             username=username,
             password=password,
             host=Config.RADIUS_HOST,
@@ -42,9 +45,11 @@ def authenticate(username: str, password: str) -> str | None:
             timeout=Config.RADIUS_TIMEOUT,
             group_admin=Config.RADIUS_GROUP_ADMIN,
             group_viewer=Config.RADIUS_GROUP_VIEWER,
+            host2=Config.RADIUS_HOST_2,
+            port2=Config.RADIUS_PORT_2,
         )
-        if role is not None:
-            return role
+        if result is not None:
+            return result["role"], result["ad_groups"]
 
     # Local bcrypt auth (always available; acts as fallback when RADIUS is enabled)
     users = _load_users()
@@ -53,7 +58,7 @@ def authenticate(username: str, password: str) -> str | None:
         return None
     stored_hash = entry.get("password_hash", "")
     if bcrypt.checkpw(password.encode(), stored_hash.encode()):
-        return entry.get("role", "viewer")
+        return entry.get("role", "viewer"), []
     return None
 
 

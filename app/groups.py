@@ -2,7 +2,9 @@
 
 A group has:
   name           str   unique identifier
-  members        list  of username strings
+  members        list  of local username strings (users.json accounts)
+  ad_groups      list  of AD/RADIUS group name strings — any user whose RADIUS
+                       reply contains one of these values is treated as a member
   allowed_tabs   list  of tab keys (see KNOWN_TABS)
   adom_restrict  bool  when True, only ADOMs in allowed_adoms are accessible
   allowed_adoms  list  of ADOM name strings (only used when adom_restrict=True)
@@ -19,9 +21,11 @@ ADOM access rules:
   - In other words: a single unrestricted group grants full ADOM access.
   - If a user belongs to no group, they have no ADOM access.
 
-For future AD integration: authenticate() in auth.py will resolve AD group
-membership; this module will then be queried only for tab/ADOM permissions
-attached to those group names.  No structural change is needed here.
+AD group membership (ad_groups):
+  When a user authenticates via RADIUS, FortiAuthenticator returns Filter-Id /
+  Class attributes listing the user's AD groups.  Those values are stored in
+  session['ad_groups'] and passed into get_allowed_tabs() / get_allowed_adoms()
+  so membership is resolved at login time without any extra LDAP query.
 """
 
 import json
@@ -54,6 +58,7 @@ def _group_to_dict(name: str, g: dict) -> dict:
     return {
         "name":          name,
         "members":       g.get("members", []),
+        "ad_groups":     g.get("ad_groups", []),
         "allowed_tabs":  g.get("allowed_tabs", []),
         "adom_restrict": bool(g.get("adom_restrict", False)),
         "allowed_adoms": g.get("allowed_adoms", []),
@@ -78,6 +83,7 @@ def get_group(name: str) -> dict | None:
 def create_group(
     name: str,
     members: list[str] | None = None,
+    ad_groups: list[str] | None = None,
     allowed_tabs: list[str] | None = None,
     adom_restrict: bool = False,
     allowed_adoms: list[str] | None = None,
@@ -92,6 +98,7 @@ def create_group(
             return False
         groups[name] = {
             "members":       list(members or []),
+            "ad_groups":     list(ad_groups or []),
             "allowed_tabs":  list(allowed_tabs or []),
             "adom_restrict": bool(adom_restrict),
             "allowed_adoms": list(allowed_adoms or []),
@@ -106,13 +113,15 @@ def update_group(
     allowed_tabs: list[str],
     adom_restrict: bool = False,
     allowed_adoms: list[str] | None = None,
+    ad_groups: list[str] | None = None,
 ) -> bool:
     """Returns False if the group does not exist."""
     with _lock:
         groups = _load()
         if name not in groups:
             return False
-        groups[name]["members"]       = list(members)
+        groups[name]["members"]   = list(members)
+        groups[name]["ad_groups"] = list(ad_groups or [])
         # Only filter against KNOWN_TABS when the registry has been populated
         # (it's empty before the Flask app factory runs — skip filtering in that case
         # so manage scripts and tests don't silently clear tab lists).
@@ -136,16 +145,16 @@ def delete_group(name: str) -> bool:
     return True
 
 
-def get_allowed_tabs(username: str) -> set[str]:
+def get_allowed_tabs(username: str, ad_groups: list[str] | None = None) -> set[str]:
     """Return the set of tab keys the user may access.
 
     Rules:
     - Admins always get all tabs.
     - Non-admins get the union of allowed_tabs across all groups they belong to.
+    - Group membership is satisfied by either:
+        (a) username in group['members']  — explicit local membership
+        (b) any value in ad_groups overlaps group['ad_groups']  — AD/RADIUS group match
     - If a user is in no group they get no tabs (empty set).
-
-    AD note: when AD is wired in, replace the users.json role/membership lookup
-    with the resolved AD group list — the tab-permission logic here is unchanged.
     """
     from app.auth import _load_users  # local import to avoid circular
     users = _load_users()
@@ -156,9 +165,10 @@ def get_allowed_tabs(username: str) -> set[str]:
     with _lock:
         groups = _load()
 
+    ad_set = set(ad_groups or [])
     tabs: set[str] = set()
     for g in groups.values():
-        if username in g.get("members", []):
+        if username in g.get("members", []) or ad_set & set(g.get("ad_groups", [])):
             tabs.update(g.get("allowed_tabs", []))
     return tabs
 
@@ -167,7 +177,7 @@ def user_can_access_tab(username: str, tab_key: str) -> bool:
     return tab_key in get_allowed_tabs(username)
 
 
-def get_allowed_adoms(username: str) -> list[str] | None:
+def get_allowed_adoms(username: str, ad_groups: list[str] | None = None) -> list[str] | None:
     """Return the list of ADOM names the user may access, or None for unrestricted.
 
     Rules:
@@ -176,6 +186,9 @@ def get_allowed_adoms(username: str) -> list[str] | None:
     - Non-admin users where every group has adom_restrict=True → union of their
       allowed_adoms lists (may be empty, meaning no ADOM access at all).
     - Users in no group → empty list (no access).
+
+    Group membership is satisfied by username in group['members'] OR by any
+    overlap between ad_groups and group['ad_groups'].
     """
     from app.auth import _load_users  # local import to avoid circular
     users = _load_users()
@@ -186,7 +199,11 @@ def get_allowed_adoms(username: str) -> list[str] | None:
     with _lock:
         groups = _load()
 
-    user_groups = [g for g in groups.values() if username in g.get("members", [])]
+    ad_set = set(ad_groups or [])
+    user_groups = [
+        g for g in groups.values()
+        if username in g.get("members", []) or ad_set & set(g.get("ad_groups", []))
+    ]
 
     if not user_groups:
         return []  # no group membership → no access
@@ -202,9 +219,9 @@ def get_allowed_adoms(username: str) -> list[str] | None:
     return sorted(allowed)
 
 
-def user_can_access_adom(username: str, adom: str) -> bool:
+def user_can_access_adom(username: str, adom: str, ad_groups: list[str] | None = None) -> bool:
     """Return True if the user may access the given ADOM."""
-    allowed = get_allowed_adoms(username)
+    allowed = get_allowed_adoms(username, ad_groups=ad_groups)
     if allowed is None:
         return True  # unrestricted
     return adom in allowed

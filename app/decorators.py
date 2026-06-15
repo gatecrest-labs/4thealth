@@ -79,6 +79,7 @@ def check_adom_access(adom: str) -> "tuple | None":
     if session.get("role") == "admin":
         return None
     from app.groups import user_can_access_adom
-    if not user_can_access_adom(session.get("user", ""), adom):
+    ad_groups = session.get("ad_groups", [])
+    if not user_can_access_adom(session.get("user", ""), adom, ad_groups=ad_groups):
         return jsonify({"error": f"Access to ADOM '{adom}' is not permitted for your account"}), 403
     return None

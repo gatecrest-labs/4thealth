@@ -220,7 +220,9 @@ Definitions are stored in `groups.json` (gitignored — copy from `groups.exampl
 1. An admin creates a group (e.g. `NOC-Team`).
 2. The admin selects which **navigation tabs** the group can see.
 3. Optionally, the admin restricts the group to specific **ADOMs**.
-4. The admin adds viewer accounts as members.
+4. The admin adds members in one or both ways:
+   - **Members** — individual local accounts (users.json).
+   - **AD / RADIUS Groups** — one or more AD group names (e.g. `4THealth-NOC`). Any RADIUS user whose `Filter-Id` or `Class` reply attribute matches one of these strings is automatically treated as a member at login. No per-user configuration required for large AD groups.
 5. On next login, each member's session reflects the union of allowed tabs across all groups they belong to.
 
 **Admins always have full access** regardless of group membership.
@@ -340,12 +342,14 @@ Token priority (first match wins): per-entry `"token"` → `FMG_API_TOKEN` → `
 | Variable | Default | Description |
 |---|---|---|
 | `RADIUS_ENABLED` | `false` | Set `true` to enable RADIUS authentication |
-| `RADIUS_HOST` | — | RADIUS server IP or hostname |
-| `RADIUS_PORT` | `1812` | RADIUS UDP port |
-| `RADIUS_SECRET` | — | Shared secret configured on the RADIUS server |
-| `RADIUS_TIMEOUT` | `10` | Request timeout in seconds |
-| `RADIUS_GROUP_ADMIN` | — | `Filter-Id` value that maps to the `admin` role |
-| `RADIUS_GROUP_VIEWER` | — | `Filter-Id` value that maps to the `viewer` role |
+| `RADIUS_HOST` | — | Primary FAC IP or hostname |
+| `RADIUS_PORT` | `1812` | Primary FAC UDP port |
+| `RADIUS_HOST_2` | — | Secondary FAC IP or hostname (HA failover — leave blank if unused) |
+| `RADIUS_PORT_2` | `1812` | Secondary FAC UDP port |
+| `RADIUS_SECRET` | — | Shared secret (same on both FACs) |
+| `RADIUS_TIMEOUT` | `10` | Per-server request timeout in seconds |
+| `RADIUS_GROUP_ADMIN` | — | `Filter-Id` / `Class` value that maps to the `admin` role |
+| `RADIUS_GROUP_VIEWER` | — | `Filter-Id` / `Class` value that maps to the `viewer` role |
 
 ---
 
