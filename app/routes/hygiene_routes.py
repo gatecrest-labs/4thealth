@@ -428,8 +428,28 @@ def hygiene_run():
 
     try:
         with make_client() as client:
-            policies    = client.get_policies(adom, path)
+            policies     = client.get_policies(adom, path)
             pkg_settings = client.get_pkg_settings(adom, path)
+
+            # For the unhit check, FMG's stored _hitcount is only updated when
+            # FMG syncs stats from the device — which may be stale or never run.
+            # Fetch live hit counts from each device in scope and overlay them so
+            # the check always reflects what the device actually sees.
+            if "unhit" in valid_checks:
+                scope = client.get_pkg_scope_members(adom, path)
+                live_hits: dict[int, int] = {}
+                for member in scope[:10]:
+                    dev  = member.get("name", "") if isinstance(member, dict) else str(member)
+                    vdom = member.get("vdom", "root") if isinstance(member, dict) else "root"
+                    if not dev:
+                        continue
+                    for pid, count in client.get_live_policy_hits(adom, dev, vdom).items():
+                        live_hits[pid] = live_hits.get(pid, 0) + count
+                if live_hits:
+                    for p in policies:
+                        pid = p.get("policyid")
+                        if pid is not None:
+                            p["_hitcount"] = live_hits.get(int(pid), p.get("_hitcount") or 0)
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
