@@ -28,6 +28,7 @@ JSON-RPC API** — no direct device connections are made.
 - [Zone Policy](#zone-policy)
 - [Map (Beta)](#map-beta)
 - [Security Notes](#security-notes)
+- [Automated Monitoring (Ansible / AAP)](#automated-monitoring-ansible--aap)
 - [Production Deployment](#production-deployment)
 - [Extending the Application](#extending-the-application)
 - [Contributing](#contributing)
@@ -650,6 +651,79 @@ Changes are written to `map_regions.json` in the project root and take effect on
 - `SESSION_COOKIE_HTTPONLY`, `SESSION_COOKIE_SAMESITE=Lax`, and automatic `SESSION_COOKIE_SECURE` (when TLS is active) are all set.
 - Flask session cookies are cryptographically signed with `SECRET_KEY`.
 - All `/admin/*` routes enforce the `admin` role server-side — the nav-link hiding is cosmetic only.
+
+---
+
+## Automated Monitoring (Ansible / AAP)
+
+The [Ansible/](Ansible/) directory contains a playbook that runs a full health check against the production server and emails a formatted HTML report to your team. It is designed to be imported into Red Hat Ansible Automation Platform (AAP) and run on a schedule.
+
+### What the playbook checks
+
+| Check | Failure condition |
+|---|---|
+| **Systemd services** | `4thealth.service` or `nginx.service` not active |
+| **Port listeners** | Gunicorn not on `127.0.0.1:8100`, Nginx not on `:443` |
+| **HTTP reachability** | `/login` returns non-2xx/3xx on Gunicorn direct or Nginx HTTPS |
+| **TLS certificate expiry** | < 30 days remaining (warning) / < 7 days (critical) |
+| **Disk space** | > 80 % used (warning) / > 90 % (critical) on app or log filesystem |
+| **Application error logs** | 1–10 journald errors in the last 60 min (warning) / > 10 (critical) |
+| **API availability** | `/api/summary` returns no HTTP response at all |
+
+The overall job status in AAP reflects the worst finding — a CRITICAL check causes the AAP job to fail, making it easy to wire up AAP notifications or on-call integrations.
+
+### Files
+
+```
+Ansible/
+├── 4thealth_healthcheck.yml          Main playbook
+├── inventory.example.yml             Inventory reference (use AAP inventory in production)
+├── group_vars/
+│   └── 4thealth_prod.yml             Default variable values — override in AAP extra_vars
+└── templates/
+    └── healthcheck_email.html.j2     HTML email report template
+```
+
+### Quick setup in AAP
+
+1. **Add the project** — create a new AAP Project pointing at this Git repository.
+
+2. **Create an inventory** — add a host for your production server (FQDN or IP) in an inventory group named `4thealth_prod`.
+
+3. **Create a machine credential** — add an SSH key or password credential for the `deploy` user on the target host. The user needs `sudo` access to run `systemctl`, `journalctl`, `ss`, and `openssl`.
+
+4. **Set required variables** — in the Job Template or as extra_vars (use a Vault credential for secrets):
+
+   | Variable | Example value |
+   |---|---|
+   | `app_host` | `4thealth-prod.yourdomain.com` |
+   | `smtp_host` | `smtp.yourdomain.com` |
+   | `email_from` | `noreply-monitoring@yourdomain.com` |
+   | `email_to` | `network-ops-team@yourdomain.com` |
+
+   All other variables have sensible defaults in `group_vars/4thealth_prod.yml`.
+
+5. **Create the Job Template** — point it at the project and playbook `Ansible/4thealth_healthcheck.yml`, select the inventory and machine credential, and enable **Privilege Escalation**.
+
+6. **Schedule it** — in the Job Template, click **Schedules → Add** and set your desired recurrence (e.g. every hour, or every 6 hours during business hours).
+
+7. **Wire up notifications (optional)** — add an AAP Notification on job failure to send a Slack message, PagerDuty alert, or additional email if the job itself fails (i.e. a CRITICAL finding was detected).
+
+### Running locally (without AAP)
+
+```bash
+cd Ansible
+# Install community.general for the mail module
+ansible-galaxy collection install community.general
+
+ansible-playbook 4thealth_healthcheck.yml \
+  -i inventory.example.yml \
+  -e app_host=4thealth-prod.yourdomain.com \
+  -e smtp_host=smtp.yourdomain.com \
+  -e email_from=noreply@yourdomain.com \
+  -e email_to=your-team@yourdomain.com \
+  --become
+```
 
 ---
 
