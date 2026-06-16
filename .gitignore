@@ -47,3 +47,11 @@ docker-compose.override.yml
 MEMORY.md
 memory/
 
+# Ansible — never commit real credentials or local variable overrides
+Ansible/group_vars/*_vault.yml
+Ansible/group_vars/*_secrets.yml
+Ansible/host_vars/
+Ansible/*.local.yml
+Ansible/vars_*.yml
+Ansible/.vault_pass*
+
