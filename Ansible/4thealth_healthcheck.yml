@@ -14,7 +14,32 @@
 #   6. Recent error log lines  — journald errors in the last check_window_minutes
 #   7. Summary job status      — last run age and firewall/rule counts via /api/summary
 #
-# Required variables (set in group_vars/4thealth.yml or as AAP extra_vars):
+# Target host SSH user requirements:
+#   The connecting user (ansible_user) must have passwordless sudo for:
+#     /bin/systemctl status 4thealth
+#     /bin/systemctl status nginx
+#     /bin/systemctl restart 4thealth
+#     /usr/bin/journalctl
+#     /usr/bin/ss
+#     /usr/bin/openssl
+#
+#   Add to /etc/sudoers.d/4thealth-deploy on the server (see production.md §8.2):
+#     deploy ALL=(root) NOPASSWD: \
+#       /bin/systemctl status 4thealth, \
+#       /bin/systemctl status nginx, \
+#       /bin/systemctl restart 4thealth, \
+#       /usr/bin/journalctl, \
+#       /usr/bin/ss, \
+#       /usr/bin/openssl
+#
+# Credentials / secrets — NEVER commit real values to git:
+#   smtp_host, email_from, email_to must be supplied via:
+#     - AAP extra_vars (Survey or Job Template variables), or
+#     - An Ansible Vault-encrypted file (gitignored — see .gitignore)
+#   The group_vars/4thealth_prod.yml file in this repo contains only
+#   safe defaults and commented-out placeholders — it is safe to commit.
+#
+# Required variables (set in group_vars/4thealth_prod.yml or as AAP extra_vars):
 #   app_host            FQDN or IP of the 4THealth server (used for curl and TLS checks)
 #   app_port            Internal Gunicorn port (default: 8100)
 #   app_https_port      Public HTTPS port (default: 443)
@@ -28,10 +53,10 @@
 #   cert_crit_days      TLS cert days-remaining that triggers a CRITICAL (default: 7)
 #   check_window_minutes  How many minutes of journald to scan for errors (default: 60)
 #   summary_stale_hours   How many hours before the summary job is considered stale (default: 26)
-#   smtp_host           SMTP relay hostname
+#   smtp_host           SMTP relay hostname              ← supply via AAP / Vault, not group_vars
 #   smtp_port           SMTP port (default: 25)
-#   email_from          Sender address
-#   email_to            Recipient address or distribution list
+#   email_from          Sender address                  ← supply via AAP / Vault, not group_vars
+#   email_to            Recipient address or DL         ← supply via AAP / Vault, not group_vars
 #   email_subject_prefix Subject prefix (default: "[4THealth]")
 
 - name: 4THealth Production Health Check
