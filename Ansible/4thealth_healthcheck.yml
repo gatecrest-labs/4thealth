@@ -314,11 +314,20 @@
         to: "{{ email_to }}"
         subject: >-
           {{ email_subject_prefix }} Health Check — {{ overall_status }}
-          [{{ ansible_hostname }}] {{ report_timestamp.stdout }}
+          [{{ ansible_facts['hostname'] }}] {{ report_timestamp.stdout }}
         subtype: html
         body: "{{ lookup('file', '/tmp/4thealth_healthcheck_report.html') }}"
       delegate_to: localhost
       become: false
+      when: smtp_host | default('') | length > 0
+
+    - name: Print report path (email skipped — smtp_host not configured)
+      ansible.builtin.debug:
+        msg: >-
+          Email skipped (smtp_host not set).
+          Overall status: {{ overall_status }}.
+          Report saved at /tmp/4thealth_healthcheck_report.html
+      when: smtp_host | default('') | length == 0
 
     - name: Clean up temporary report file
       ansible.builtin.file:
