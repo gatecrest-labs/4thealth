@@ -729,6 +729,90 @@ The file is written atomically by the app on each admin edit, so backups are saf
 - [ ] Zone Policy Edit Database tab is restricted to `admin` role (enforced by `@admin_required` — no config needed)
 - [ ] `us-states.json` in `app/static/vendor/` is present (committed to repo — no action needed)
 
+### 6.11 External API (Zone Policy for FW-Analyst or other programs)
+
+The External API exposes read-only zone policy data over HTTP to programs that cannot use a browser session. It is **disabled by default** and must be explicitly enabled by an admin.
+
+#### Enabling the External API
+
+1. Log in as an admin.
+2. Navigate to **Admin → External API**.
+3. Check **External API enabled** and click **Save**.
+
+This writes `{"external_api_enabled": true}` to `app_settings.json` in the project root.
+
+#### Creating a bearer token
+
+1. In **Admin → External API → Bearer Tokens**, click **+ New Token**.
+2. Enter a descriptive name (e.g. `FW-Analyst-Prod`).
+3. Copy the token value from the reveal dialog — **it is shown only once**.
+4. Configure your external program to send the token as:
+   ```
+   Authorization: Bearer 4th_<your-token>
+   ```
+
+Tokens can be revoked at any time from the same panel. Revocation is immediate — the token is deleted from `api_tokens.json` and any in-flight requests using it receive 401 on the next call.
+
+#### Available endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/external/api/zone/query` | Query src→dst flows; returns ALLOWED/BLOCKED/UNKNOWN verdicts |
+| GET  | `/external/api/zone/zones` | List all zones and subnets |
+| GET  | `/external/api/zone/policies` | List all segmentation policies |
+
+All endpoints return 503 when the feature is disabled and 401 when the token is missing or invalid.
+
+#### Example call (Python)
+
+```python
+import requests
+
+BASE = "https://4thealth.yourdomain.com"
+TOKEN = "4th_<your-token>"
+
+resp = requests.post(
+    f"{BASE}/external/api/zone/query",
+    headers={"Authorization": f"Bearer {TOKEN}"},
+    json={"src": "10.1.0.5", "dst": "10.2.0.10", "service": "443"},
+    verify=False,  # set to True or supply CA bundle in production
+)
+resp.raise_for_status()
+print(resp.json())
+```
+
+#### Securing runtime files
+
+```bash
+# Create empty files if they don't exist yet (app creates them automatically on first use)
+sudo -u 4thealth cp /opt/4thealth/app_settings.example.json /opt/4thealth/app_settings.json
+sudo -u 4thealth cp /opt/4thealth/api_tokens.example.json  /opt/4thealth/api_tokens.json
+
+sudo chmod 640 /opt/4thealth/app_settings.json
+sudo chown 4thealth:4thealth /opt/4thealth/app_settings.json
+
+sudo chmod 640 /opt/4thealth/api_tokens.json
+sudo chown 4thealth:4thealth /opt/4thealth/api_tokens.json
+```
+
+Block direct HTTP access in Nginx — add to the server block:
+
+```nginx
+location /app_settings.json { deny all; return 404; }
+location /api_tokens.json   { deny all; return 404; }
+```
+
+**Security checklist additions for External API:**
+
+- [ ] External API is disabled (`external_api_enabled: false`) unless actively needed
+- [ ] `app_settings.json` permission is `640`, owner `4thealth`
+- [ ] `app_settings.json` is blocked in Nginx (`deny all; return 404`)
+- [ ] `api_tokens.json` permission is `640`, owner `4thealth`
+- [ ] `api_tokens.json` is blocked in Nginx (`deny all; return 404`)
+- [ ] Token names are descriptive (e.g. `FW-Analyst-Prod`) so revocation is unambiguous
+- [ ] Unused tokens are revoked promptly via Admin → External API
+- [ ] External API calls originate from a known internal IP — restrict at the network layer if possible
+
 ## Phase 7 - Monitoring, Updates and Maintenance
 
 Goal: Keep the service running, up-to-date, and observable in production.

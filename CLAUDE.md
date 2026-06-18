@@ -69,6 +69,8 @@ app/
   adom_cache.py        # Background cache: ADOM list from FortiManager, refreshed every 30 min
   groups.py            # Group management: tab permissions + ADOM access control (groups.json)
   decorators.py        # login_required, tab_required, admin_required, check_adom_access
+  app_settings.py      # Persistent app settings (app_settings.json); used for external_api_enabled toggle
+  api_tokens.py        # Bearer token CRUD for the external API; SHA-256 hashes stored in api_tokens.json
   routes/
     auth_routes.py            # /login, /logout
     dashboard_routes.py       # /, /firewalls, /versions (Jinja2 pages)
@@ -77,10 +79,13 @@ app/
     rule_review_routes.py     # /rule-review page + /api/rule-review/* endpoints
     zone_routes.py            # /zone-policy page + /api/zone/* endpoints
     device_review_routes.py   # /device-review page + /api/device-review/* endpoints
-    admin_routes.py           # /admin page + /admin/api/* group/user/log/ADOM endpoints
+    admin_routes.py           # /admin page + /admin/api/* group/user/log/ADOM/settings/token endpoints
+    external_api_routes.py    # /external/api/* bearer-token endpoints for FW-Analyst integration
 wsgi.py                # Entry point; SSL context wiring
 policy_db.json         # Network segmentation policy database (gitignored — runtime data)
 groups.json            # Group definitions (gitignored — copy from groups.example.json); includes tab and ADOM permissions
+app_settings.json      # App feature flags (gitignored — copy from app_settings.example.json)
+api_tokens.json        # Hashed bearer tokens (gitignored — copy from api_tokens.example.json)
 ```
 
 ### ADOM filtering convention
@@ -246,6 +251,33 @@ Runtime data file (gitignored). Copy from a known-good source or build from scra
 3. Set `SECRET_KEY` and optionally `FMG_PRIMARY_HOST` in `.env`
 4. Generate TLS certs: `openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes`
 5. Run: `gunicorn --workers 2 --threads 4 --worker-class gthread --bind 0.0.0.0:5443 wsgi:app`
+
+### External API
+
+`app/routes/external_api_routes.py` — blueprint at `/external/api/`
+
+Provides read-only zone policy access to external programs (e.g. FW-Analyst) via bearer token authentication. No browser session is required.
+
+**Feature gate:** The external API is disabled by default. Enable it in **Admin → External API** — this writes `{"external_api_enabled": true}` to `app_settings.json`. Disabling it returns 503 on all `/external/api/` requests without touching token records.
+
+**Authentication:** Every request must include `Authorization: Bearer <token>`. Tokens are created in Admin → External API → New Token. Plaintext is shown once; only the SHA-256 hash is stored in `api_tokens.json`.
+
+**Endpoints (all read-only):**
+- `POST /external/api/zone/query` — same payload/response as internal `/api/zone/query`
+- `GET  /external/api/zone/zones` — zone list
+- `GET  /external/api/zone/policies` — policy list
+
+**CSRF:** `/external/api/` requests are exempt from CSRF validation (bearer token is the auth mechanism, no session cookie exists).
+
+**Supporting modules:**
+- `app/app_settings.py` — atomic read/write of `app_settings.json` (feature flags)
+- `app/api_tokens.py` — token create/list/revoke/validate; tokens stored as SHA-256 hashes
+
+**Admin endpoints added to `admin_routes.py`:**
+- `GET/PUT /admin/api/settings` — get/set `external_api_enabled`
+- `GET /admin/api/tokens` — list tokens
+- `POST /admin/api/tokens` — create token (returns plaintext once)
+- `DELETE /admin/api/tokens/<id>` — revoke token
 
 ## Dependency management
 

@@ -26,6 +26,7 @@ JSON-RPC API** — no direct device connections are made.
 - [Device Review](#device-review)
 - [Rule Validation](#rule-validation)
 - [Zone Policy](#zone-policy)
+- [External API](#external-api)
 - [Map (Beta)](#map-beta)
 - [Security Notes](#security-notes)
 - [Automated Monitoring (Ansible / AAP)](#automated-monitoring-ansible--aap)
@@ -102,7 +103,10 @@ JSON-RPC API** — no direct device connections are made.
 │   │   ├── device_review_routes.py   /device-review  /api/device-review/*
 │   │   ├── rule_review_routes.py     /rule-review  /api/rule-review/*
 │   │   ├── zone_routes.py            /zone-policy  /api/zone/*
-│   │   └── map_routes.py             /map  /api/map/*
+│   │   ├── map_routes.py             /map  /api/map/*
+│   │   └── external_api_routes.py    /external/api/*  (bearer-token, no session required)
+│   ├── app_settings.py          Feature-flag settings backed by app_settings.json
+│   ├── api_tokens.py            Bearer token CRUD for the External API
 │   ├── templates/               Jinja2 templates (one per page, all extend base.html)
 │   └── static/
 │       ├── css/style.css        CSS custom properties — light & dark themes
@@ -400,6 +404,21 @@ All endpoints require an authenticated session (HTTP 401 otherwise).
 | GET | `/admin/api/logs` `*` | Fetch log entries (filter by level and component) |
 | POST | `/admin/api/logs/level` `*` | Change the active log capture level at runtime |
 | DELETE | `/admin/api/logs` `*` | Clear the in-memory log buffer |
+| GET | `/admin/api/settings` `*` | Get app feature flags (e.g. `external_api_enabled`) |
+| PUT | `/admin/api/settings` `*` | Update app feature flags |
+| GET | `/admin/api/tokens` `*` | List external API bearer tokens |
+| POST | `/admin/api/tokens` `*` | Create a new bearer token (plaintext returned once) |
+| DELETE | `/admin/api/tokens/<id>` `*` | Revoke a bearer token |
+
+### External API (bearer-token, no session required)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/external/api/zone/query` | Query src→dst flows against the zone policy DB |
+| GET | `/external/api/zone/zones` | List all zones and subnets |
+| GET | `/external/api/zone/policies` | List all segmentation policies |
+
+All external API endpoints require `Authorization: Bearer <token>` and return 503 when the feature is disabled. See the [External API](#external-api) section below for setup details.
 
 ---
 
@@ -638,6 +657,60 @@ Changes are written to `map_regions.json` in the project root and take effect on
 ### ADOM access control
 
 `/api/map/devices` applies the same ADOM filter as all other device endpoints — restricted users only see devices from their allowed ADOMs.
+
+---
+
+## External API
+
+The External API allows programs like **FW-Analyst** to query zone policy data programmatically without a browser session. All endpoints are read-only.
+
+### Enabling
+
+1. Log in as an admin and go to **Admin → External API**.
+2. Check **External API enabled** and click **Save**.
+
+When disabled (the default), all `/external/api/` requests return `503 {"error": "External API is disabled"}`.
+
+### Token management
+
+1. Click **+ New Token**, enter a descriptive name (e.g. `FW-Analyst-Prod`), and click **Generate Token**.
+2. Copy the token value — **it is shown only once**.
+3. Tokens can be revoked at any time from the same panel.
+
+### Making requests
+
+```http
+POST /external/api/zone/query
+Authorization: Bearer 4th_<your-token>
+Content-Type: application/json
+
+{"src": "10.1.0.5", "dst": "10.2.0.10", "service": "443"}
+```
+
+Response format is identical to the internal `/api/zone/query` endpoint.
+
+### Python example
+
+```python
+import requests
+
+resp = requests.post(
+    "https://4thealth.yourdomain.com/external/api/zone/query",
+    headers={"Authorization": "Bearer 4th_<your-token>"},
+    json={"src": "10.1.0.5", "dst": "10.2.0.10", "service": "443"},
+    verify=False,
+)
+data = resp.json()
+```
+
+### Runtime files
+
+| File | Purpose |
+|---|---|
+| `app_settings.json` | Stores `external_api_enabled` flag (gitignored — created automatically) |
+| `api_tokens.json` | Stores SHA-256 token hashes (gitignored — created automatically) |
+
+Both files are created automatically on first use. Copy from the bundled `*.example.json` files to pre-create them with correct permissions before running the app.
 
 ---
 
