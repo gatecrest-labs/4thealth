@@ -26,6 +26,15 @@ Logs API (JSON):
 
 Tab registry:
   GET    /admin/api/tabs             known tab keys + display names
+
+App settings (JSON):
+  GET    /admin/api/settings         {"external_api_enabled": bool}
+  PUT    /admin/api/settings         {"external_api_enabled": bool}
+
+External API tokens (JSON):
+  GET    /admin/api/tokens           list tokens (hashes never returned)
+  POST   /admin/api/tokens           {"name": str} — create token; plaintext returned once
+  DELETE /admin/api/tokens/<id>      revoke token
 """
 
 from flask import Blueprint, render_template, session, jsonify, request
@@ -36,6 +45,8 @@ from app.auth import list_users
 from app.app_logger import (
     app_log, get_log_entries, get_log_level, get_log_levels, set_log_level, clear_log_entries,
 )
+from app.app_settings import get_all as get_all_settings, set_setting
+from app.api_tokens import create_token, list_tokens, revoke_token
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -211,3 +222,53 @@ def api_logs_clear():
     clear_log_entries()
     app_log("INFO", "admin", "Log buffer cleared", by=session["user"])
     return jsonify({"cleared": True})
+
+
+# ── App settings API ──────────────────────────────────────────────────────────
+
+@bp.route("/api/settings")
+@_admin_required
+def api_settings_get():
+    return jsonify(get_all_settings())
+
+
+@bp.route("/api/settings", methods=["PUT"])
+@_admin_required
+def api_settings_put():
+    data = request.get_json(silent=True) or {}
+    if "external_api_enabled" in data:
+        enabled = bool(data["external_api_enabled"])
+        set_setting("external_api_enabled", enabled)
+        app_log("INFO", "admin", "External API toggled",
+                by=session["user"], enabled=enabled)
+    return jsonify(get_all_settings())
+
+
+# ── External API tokens ───────────────────────────────────────────────────────
+
+@bp.route("/api/tokens")
+@_admin_required
+def api_tokens_list():
+    return jsonify(list_tokens())
+
+
+@bp.route("/api/tokens", methods=["POST"])
+@_admin_required
+def api_tokens_create():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    raw, record = create_token(name, created_by=session["user"])
+    app_log("INFO", "admin", "API token created", by=session["user"],
+            token_name=name, token_id=record["id"])
+    return jsonify({"token": raw, **record}), 201
+
+
+@bp.route("/api/tokens/<token_id>", methods=["DELETE"])
+@_admin_required
+def api_tokens_revoke(token_id: str):
+    if not revoke_token(token_id):
+        return jsonify({"error": "Token not found"}), 404
+    app_log("INFO", "admin", "API token revoked", by=session["user"], token_id=token_id)
+    return jsonify({"revoked": token_id})

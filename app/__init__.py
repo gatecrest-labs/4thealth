@@ -15,6 +15,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.rule_review_routes",
     "app.routes.zone_routes",
     "app.routes.map_routes",
+    "app.routes.external_api_routes",
     # "app.routes.my_new_module",  ← add future modules here
 ]
 
@@ -28,6 +29,9 @@ def create_app() -> Flask:
         ensure_csrf_token()
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if request.endpoint == "static":
+                return None
+            # External API uses bearer-token auth — no CSRF cookie available
+            if request.path.startswith("/external/api/"):
                 return None
             if not validate_csrf_request():
                 return csrf_error_response()
@@ -60,7 +64,9 @@ def create_app() -> Flask:
 
     @app.errorhandler(RequestEntityTooLarge)
     def _file_too_large(_exc):
-        if request.path.startswith("/api/") or request.path.startswith("/admin/api/"):
+        if (request.path.startswith("/api/")
+                or request.path.startswith("/admin/api/")
+                or request.path.startswith("/external/api/")):
             return jsonify({"error": "Uploaded file is too large"}), 413
         return "Uploaded file is too large", 413
 

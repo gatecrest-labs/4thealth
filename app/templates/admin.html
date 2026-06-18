@@ -12,6 +12,7 @@
 <div class="admin-tabs" id="adminTabs">
   <button class="admin-tab active" data-panel="groups">Groups &amp; Permissions</button>
   <button class="admin-tab" data-panel="map-regions">Map Region Colors</button>
+  <button class="admin-tab" data-panel="external-api">External API</button>
   <button class="admin-tab" data-panel="logs">Application Logs</button>
 </div>
 
@@ -83,6 +84,57 @@
     </tbody>
   </table>
 
+</div>
+
+<!-- ══════════════════════  EXTERNAL API PANEL  ══════════════════════ -->
+<div class="admin-panel" id="panel-external-api">
+
+  <div class="admin-panel-header">
+    <div>
+      <h3>External API</h3>
+      <p class="text-muted" style="font-size:.85rem;margin-top:.2rem">
+        Enable bearer-token access to the Zone Policy data for external programs (e.g. FW-Analyst).
+        When enabled, callers can query <code>/external/api/zone/*</code> without a browser session.
+      </p>
+    </div>
+  </div>
+
+  <!-- Enable / Disable toggle -->
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;padding:.75rem 1rem;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px">
+    <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;font-weight:500">
+      <input type="checkbox" id="extApiEnabled" style="width:1.1rem;height:1.1rem" />
+      External API enabled
+    </label>
+    <button class="btn btn-primary btn-sm" id="btnSaveExtApiToggle">Save</button>
+    <span id="extApiToggleMsg" style="font-size:.83rem"></span>
+  </div>
+
+  <!-- Token management -->
+  <div class="admin-panel-header" style="margin-top:1rem">
+    <div>
+      <h4 style="margin:0">Bearer Tokens</h4>
+      <p class="text-muted" style="font-size:.82rem;margin-top:.2rem">
+        Each token grants read-only access to the Zone Policy external endpoints.
+        A token's value is shown <strong>once</strong> at creation time — store it securely.
+      </p>
+    </div>
+    <button class="btn btn-primary" id="btnNewToken">+ New Token</button>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="data-table" id="tokensTable">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Created By</th>
+          <th style="width:110px">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="tokensTbody">
+        <tr><td colspan="3" class="loading-placeholder">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <!-- ═══════════════════════  LOGS PANEL  ═══════════════════════ -->
@@ -211,6 +263,53 @@
   </div>
 </div>
 
+<!-- ════════════════  NEW TOKEN MODAL  ════════════════ -->
+<div class="modal-overlay hidden" id="newTokenModal">
+  <div class="modal-dialog" style="max-width:420px">
+    <div class="modal-header">
+      <h3>New API Token</h3>
+      <button class="modal-close" id="newTokenModalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="newTokenName">Token Name</label>
+        <input type="text" class="form-control" id="newTokenName" placeholder="e.g. FW-Analyst-Prod" />
+      </div>
+      <div id="newTokenError" class="alert alert-danger hidden"></div>
+      <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem">
+        <button class="btn" id="newTokenCancel" style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">Cancel</button>
+        <button class="btn btn-primary" id="newTokenSave">Generate Token</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════  TOKEN REVEAL MODAL  ════════════════ -->
+<div class="modal-overlay hidden" id="tokenRevealModal">
+  <div class="modal-dialog" style="max-width:520px">
+    <div class="modal-header">
+      <h3>Token Created</h3>
+      <button class="modal-close" id="tokenRevealClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--warning);font-weight:500;margin-bottom:.75rem">
+        &#9888; Copy this token now — it will not be shown again.
+      </p>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <code id="tokenRevealValue"
+              style="flex:1;background:var(--surface-alt);border:1px solid var(--border);border-radius:4px;padding:.5rem .75rem;font-size:.82rem;word-break:break-all;user-select:all"></code>
+        <button class="btn btn-sm" id="btnCopyToken"
+                style="background:var(--surface-alt);border:1px solid var(--border);color:var(--text);white-space:nowrap">
+          Copy
+        </button>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:1.25rem">
+        <button class="btn btn-primary" id="tokenRevealDone">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════  DELETE CONFIRM MODAL  ═══════════════ -->
 <div class="modal-overlay hidden" id="deleteModal">
   <div class="modal-dialog" style="max-width:420px">
@@ -230,5 +329,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=7"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=8"></script>
 {% endblock %}

@@ -11,6 +11,7 @@
       document.getElementById('panel-' + btn.dataset.panel).classList.add('active');
       if (btn.dataset.panel === 'logs') loadLogs();
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
+      if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
     });
   });
 
@@ -305,6 +306,145 @@
   });
   document.getElementById('deleteModal').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeDeleteModal();
+  });
+
+
+  // ══════════════════════  EXTERNAL API  ════════════════════════════════════
+
+  let _extApiLoaded = false;
+
+  async function loadExtApi() {
+    const [settingsRes, tokensRes] = await Promise.all([
+      fetch('/admin/api/settings'),
+      fetch('/admin/api/tokens'),
+    ]);
+    if (!settingsRes.ok) return;
+    const settings = await settingsRes.json();
+    document.getElementById('extApiEnabled').checked = !!settings.external_api_enabled;
+
+    if (tokensRes.ok) {
+      const tokens = await tokensRes.json();
+      renderTokens(tokens);
+    }
+    _extApiLoaded = true;
+  }
+
+  function renderTokens(tokens) {
+    const tbody = document.getElementById('tokensTbody');
+    if (!tokens.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state" style="padding:.85rem 1rem">No tokens yet — click <strong>+ New Token</strong> to create one.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = tokens.map(t => `
+      <tr>
+        <td><strong>${esc(t.name)}</strong></td>
+        <td>${esc(t.created_by || '—')}</td>
+        <td>
+          <button class="btn btn-sm"
+                  style="background:rgba(220,53,69,.1);color:var(--danger);border:1px solid rgba(220,53,69,.25)"
+                  data-action="revoke" data-token-id="${esc(t.id)}">Revoke</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function reloadTokens() {
+    const res = await fetch('/admin/api/tokens');
+    if (res.ok) renderTokens(await res.json());
+  }
+
+  // Save toggle
+  document.getElementById('btnSaveExtApiToggle').addEventListener('click', async () => {
+    const enabled = document.getElementById('extApiEnabled').checked;
+    const msgEl = document.getElementById('extApiToggleMsg');
+    const res = await fetch('/admin/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ external_api_enabled: enabled }),
+    });
+    if (res.ok) {
+      msgEl.textContent = enabled ? 'External API enabled.' : 'External API disabled.';
+      msgEl.style.color = enabled ? 'var(--success)' : 'var(--warning)';
+    } else {
+      msgEl.textContent = 'Failed to save.';
+      msgEl.style.color = 'var(--danger)';
+    }
+    setTimeout(() => { msgEl.textContent = ''; }, 3000);
+  });
+
+  // Revoke via event delegation
+  document.getElementById('tokensTbody').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-action="revoke"]');
+    if (!btn) return;
+    if (!confirm('Revoke this token? Any program using it will lose access immediately.')) return;
+    const res = await fetch(`/admin/api/tokens/${encodeURIComponent(btn.dataset.tokenId)}`, { method: 'DELETE' });
+    if (res.ok) reloadTokens();
+  });
+
+  // New token modal
+  function openNewTokenModal() {
+    document.getElementById('newTokenName').value = '';
+    document.getElementById('newTokenError').classList.add('hidden');
+    document.getElementById('newTokenModal').classList.remove('hidden');
+    document.getElementById('newTokenName').focus();
+  }
+  function closeNewTokenModal() {
+    document.getElementById('newTokenModal').classList.add('hidden');
+  }
+
+  document.getElementById('btnNewToken').addEventListener('click', openNewTokenModal);
+  document.getElementById('newTokenModalClose').addEventListener('click', closeNewTokenModal);
+  document.getElementById('newTokenCancel').addEventListener('click', closeNewTokenModal);
+  document.getElementById('newTokenModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeNewTokenModal();
+  });
+
+  document.getElementById('newTokenSave').addEventListener('click', async () => {
+    const name = document.getElementById('newTokenName').value.trim();
+    const errEl = document.getElementById('newTokenError');
+    errEl.classList.add('hidden');
+    if (!name) { errEl.textContent = 'Name is required.'; errEl.classList.remove('hidden'); return; }
+
+    const res = await fetch('/admin/api/tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      errEl.textContent = d.error || 'Failed to create token.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    const data = await res.json();
+    closeNewTokenModal();
+    reloadTokens();
+    // Show the plaintext token once
+    document.getElementById('tokenRevealValue').textContent = data.token;
+    document.getElementById('tokenRevealModal').classList.remove('hidden');
+  });
+
+  // Token reveal modal
+  document.getElementById('tokenRevealClose').addEventListener('click', () => {
+    document.getElementById('tokenRevealModal').classList.add('hidden');
+  });
+  document.getElementById('tokenRevealDone').addEventListener('click', () => {
+    document.getElementById('tokenRevealModal').classList.add('hidden');
+  });
+  document.getElementById('tokenRevealModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) document.getElementById('tokenRevealModal').classList.add('hidden');
+  });
+  document.getElementById('btnCopyToken').addEventListener('click', () => {
+    const val = document.getElementById('tokenRevealValue').textContent;
+    navigator.clipboard.writeText(val).then(() => {
+      const btn = document.getElementById('btnCopyToken');
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+    });
+  });
+
+  // Enter key in new-token name field
+  document.getElementById('newTokenName').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('newTokenSave').click(); }
   });
 
 
