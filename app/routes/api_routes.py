@@ -460,7 +460,12 @@ def devices(adom: str):
 
 
 def _assemble_health(
-    adom: str, device_name: str, dev_rec: dict, vdoms_raw: list, raw: dict
+    adom: str,
+    device_name: str,
+    dev_rec: dict,
+    vdoms_raw: list,
+    raw: dict,
+    policy_packages: list | None = None,
 ) -> dict:
     """Build the health response dict from pre-fetched dvmdb + proxy data."""
     # ── Inventory fields from dvmdb ───────────────────────────────────
@@ -600,6 +605,16 @@ def _assemble_health(
         else ([ipsec_raw] if isinstance(ipsec_raw, dict) and ipsec_raw else [])
     )
 
+    # Build display string; include vdom when it's non-root or there are multiple entries
+    pkgs = policy_packages or []
+    show_vdom = len(pkgs) > 1 or any(
+        p.get("vdom", "root") not in ("root", "") for p in pkgs
+    )
+    policy_package = ", ".join(
+        f"{p['name']} ({p['vdom']})" if show_vdom and p.get("vdom") else p["name"]
+        for p in pkgs
+    )
+
     return {
         "name": hostname,
         "adom": adom,
@@ -614,6 +629,7 @@ def _assemble_health(
         "mem": mem_val,
         "status": _health_status(cpu_val, mem_val),
         "ha": ha_raw,
+        "policy_package": policy_package,
         "vdom_mode": vdom_mode,
         "vdoms": vdoms,
         "interfaces": interfaces,
@@ -640,7 +656,10 @@ def device_health(adom: str, device_name: str):
             dev_rec = client.get_device(adom, device_name)
             vdoms_raw = client.get_device_vdoms(adom, device_name)
             raw = client.get_device_health(adom, device_name)
-        return jsonify(_assemble_health(adom, device_name, dev_rec, vdoms_raw, raw))
+            pkgs = client.get_device_policy_package(adom, device_name)
+        return jsonify(
+            _assemble_health(adom, device_name, dev_rec, vdoms_raw, raw, pkgs)
+        )
     except FMGError as exc:
         return upstream_api_error("api", exc)
     except Exception as exc:
@@ -660,9 +679,10 @@ def device_health_stream(adom: str, device_name: str):
             with _make_client() as client:
                 dev_rec = client.get_device(adom, device_name)
                 vdoms_raw = client.get_device_vdoms(adom, device_name)
+                pkgs = client.get_device_policy_package(adom, device_name)
                 raw: dict = {}
-                # Two inventory calls count as the first two steps; proxy calls follow
-                inv_steps = 2
+                # Three inventory calls (device, vdoms, policy package) precede proxy calls
+                inv_steps = 3
                 total = inv_steps + len(PROXY_ENDPOINTS)
                 yield f"data: {json.dumps({'done': inv_steps, 'total': total, 'label': 'Inventory'})}\n\n"
                 for done_idx, _total, label, key, result in client.stream_device_health(
@@ -670,7 +690,7 @@ def device_health_stream(adom: str, device_name: str):
                 ):
                     raw[key] = result
                     yield f"data: {json.dumps({'done': inv_steps + done_idx, 'total': total, 'label': label})}\n\n"
-            payload = _assemble_health(adom, device_name, dev_rec, vdoms_raw, raw)
+            payload = _assemble_health(adom, device_name, dev_rec, vdoms_raw, raw, pkgs)
             yield f"event: done\ndata: {json.dumps(payload)}\n\n"
         except Exception as exc:
             yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"

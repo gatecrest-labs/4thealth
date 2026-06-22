@@ -463,6 +463,31 @@ class FMGClient:
         except Exception:
             return []
 
+    def get_device_policy_package(self, adom: str, device_name: str) -> list[dict]:
+        """Return policy packages installed on a device.
+
+        Uses the scope member list already embedded in each package dict returned by
+        get_policy_packages() — no additional API calls are made.
+        Returns a list of {"name": pkg_name, "vdom": vdom} dicts (usually one entry);
+        [] if none found or on error.
+        """
+        try:
+            packages = self.get_policy_packages(adom)
+            matched = []
+            for pkg in packages:
+                scope = pkg.get("scope member") or pkg.get("scope_member") or []
+                if not isinstance(scope, list):
+                    continue
+                for m in scope:
+                    if (
+                        isinstance(m, dict)
+                        and m.get("name", "").lower() == device_name.lower()
+                    ):
+                        matched.append({"name": pkg["name"], "vdom": m.get("vdom", "")})
+            return matched
+        except Exception:
+            return []
+
     def get_device_interfaces(self, adom: str, device_name: str) -> list:
         """Return interface list from live device via FMG proxy (root VDOM only)."""
         try:
