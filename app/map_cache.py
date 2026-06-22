@@ -21,14 +21,14 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 _store: dict = {
-    "devices":       [],
-    "last_updated":  None,
-    "status":        "pending",
-    "error":         None,
+    "devices": [],
+    "last_updated": None,
+    "status": "pending",
+    "error": None,
     "adom_progress": {},
 }
 
-_lock    = threading.Lock()
+_lock = threading.Lock()
 _running = threading.Event()
 
 
@@ -45,7 +45,7 @@ def _run_job(app):
     _running.set()
     with _lock:
         _store["status"] = "running"
-        _store["error"]  = None
+        _store["error"] = None
         _store["adom_progress"] = {}
 
     logger.info("map_cache: starting refresh")
@@ -56,12 +56,15 @@ def _run_job(app):
 
         result = []
         with make_client() as client:
-            adoms_raw  = client.get_adoms()
+            adoms_raw = client.get_adoms()
             adom_names = [
-                a.get("name", "") for a in adoms_raw
+                a.get("name", "")
+                for a in adoms_raw
                 if isinstance(a, dict) and a.get("name")
             ]
-            adom_names = [n for n in adom_names if n and not n.lower().startswith("forti")]
+            adom_names = [
+                n for n in adom_names if n and not n.lower().startswith("forti")
+            ]
 
             with _lock:
                 _store["adom_progress"] = {n: "pending" for n in adom_names}
@@ -74,7 +77,7 @@ def _run_job(app):
                     for d in raw:
                         if not isinstance(d, dict):
                             continue
-                        lat_str = d.get("latitude",  "")
+                        lat_str = d.get("latitude", "")
                         lon_str = d.get("longitude", "")
                         try:
                             lat = float(lat_str)
@@ -86,9 +89,13 @@ def _run_job(app):
                             continue
 
                         os_ver = d.get("os_ver", 0)
-                        mr     = d.get("mr")
-                        patch  = d.get("patch")
-                        major  = int(os_ver) // 100 if str(os_ver).isdigit() and int(os_ver) >= 100 else os_ver
+                        mr = d.get("mr")
+                        patch = d.get("patch")
+                        major = (
+                            int(os_ver) // 100
+                            if str(os_ver).isdigit() and int(os_ver) >= 100
+                            else os_ver
+                        )
                         if mr is not None and patch is not None and int(patch) >= 0:
                             version = f"v{major}.{mr}.{patch}"
                         elif mr is not None:
@@ -96,19 +103,25 @@ def _run_job(app):
                         else:
                             version = "n/a"
 
-                        conn_status = d.get("conn_status", d.get("connection_status", -1))
+                        conn_status = d.get(
+                            "conn_status", d.get("connection_status", -1)
+                        )
                         status = "green" if conn_status == 1 else "offline"
 
-                        result.append({
-                            "name":     d.get("name", ""),
-                            "adom":     adom,
-                            "lat":      lat,
-                            "lon":      lon,
-                            "platform": d.get("platform_str", d.get("platform", "n/a")),
-                            "version":  version,
-                            "status":   status,
-                            "desc":     (d.get("desc") or "").strip(),
-                        })
+                        result.append(
+                            {
+                                "name": d.get("name", ""),
+                                "adom": adom,
+                                "lat": lat,
+                                "lon": lon,
+                                "platform": d.get(
+                                    "platform_str", d.get("platform", "n/a")
+                                ),
+                                "version": version,
+                                "status": status,
+                                "desc": (d.get("desc") or "").strip(),
+                            }
+                        )
                     with _lock:
                         _store["adom_progress"][adom] = "ok"
                 except Exception as exc:
@@ -117,27 +130,33 @@ def _run_job(app):
                         _store["adom_progress"][adom] = "error"
 
         elapsed = round(_time.monotonic() - t0, 1)
-        logger.info("map_cache: done in %ss — %d devices with coords across %d ADOMs",
-                    elapsed, len(result), len(adom_names))
+        logger.info(
+            "map_cache: done in %ss — %d devices with coords across %d ADOMs",
+            elapsed,
+            len(result),
+            len(adom_names),
+        )
 
         with _lock:
-            _store["devices"]      = result
+            _store["devices"] = result
             _store["last_updated"] = datetime.now(timezone.utc).isoformat()
-            _store["status"]       = "ok"
-            _store["error"]        = None
+            _store["status"] = "ok"
+            _store["error"] = None
 
     except Exception as exc:
         logger.exception("map_cache: unhandled error: %s", exc)
         with _lock:
             _store["status"] = "error"
-            _store["error"]  = str(exc)
+            _store["error"] = str(exc)
     finally:
         _running.clear()
 
 
 def refresh_now(app):
     """Trigger an immediate background refresh (non-blocking)."""
-    t = threading.Thread(target=_run_job, args=[app], name="map_cache_refresh", daemon=True)
+    t = threading.Thread(
+        target=_run_job, args=[app], name="map_cache_refresh", daemon=True
+    )
     t.start()
 
 

@@ -33,13 +33,13 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-_ACCESS_REQUEST      = 1
-_ACCESS_ACCEPT       = 2
-_ATTR_USER_NAME      = 1
-_ATTR_USER_PASSWORD  = 2
-_ATTR_FILTER_ID      = 11
+_ACCESS_REQUEST = 1
+_ACCESS_ACCEPT = 2
+_ATTR_USER_NAME = 1
+_ATTR_USER_PASSWORD = 2
+_ATTR_FILTER_ID = 11
 _ATTR_NAS_IDENTIFIER = 32
-_ATTR_CLASS          = 25
+_ATTR_CLASS = 25
 
 
 def _encrypt_pap_password(password: str, secret: bytes, authenticator: bytes) -> bytes:
@@ -49,9 +49,9 @@ def _encrypt_pap_password(password: str, secret: bytes, authenticator: bytes) ->
     result, last = b"", authenticator
     for i in range(0, len(padded), 16):
         digest = hashlib.md5(secret + last).digest()
-        block  = bytes(a ^ b for a, b in zip(padded[i:i + 16], digest))
+        block = bytes(a ^ b for a, b in zip(padded[i : i + 16], digest))
         result += block
-        last    = block
+        last = block
     return result
 
 
@@ -66,7 +66,7 @@ def _parse_attrs(data: bytes) -> dict:
         t, length = data[pos], data[pos + 1]
         if length < 2 or pos + length > len(data):
             break
-        attrs.setdefault(t, []).append(data[pos + 2:pos + length])
+        attrs.setdefault(t, []).append(data[pos + 2 : pos + length])
         pos += length
     return attrs
 
@@ -86,15 +86,19 @@ def _try_one_server(
     here — the caller interprets the code.
     """
     identifier = os.urandom(1)[0]
-    req_auth   = os.urandom(16)
+    req_auth = os.urandom(16)
 
     body = (
-        _attr(_ATTR_USER_NAME,      username.encode("utf-8"))
-        + _attr(_ATTR_USER_PASSWORD, _encrypt_pap_password(password, secret_b, req_auth))
+        _attr(_ATTR_USER_NAME, username.encode("utf-8"))
+        + _attr(
+            _ATTR_USER_PASSWORD, _encrypt_pap_password(password, secret_b, req_auth)
+        )
         + _attr(_ATTR_NAS_IDENTIFIER, b"4thealth")
     )
     length = 20 + len(body)
-    packet = struct.pack("!BBH16s", _ACCESS_REQUEST, identifier, length, req_auth) + body
+    packet = (
+        struct.pack("!BBH16s", _ACCESS_REQUEST, identifier, length, req_auth) + body
+    )
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -103,7 +107,9 @@ def _try_one_server(
             reply, _ = sock.recvfrom(4096)
         return (reply, req_auth, secret_b)
     except OSError as exc:
-        log.warning("RADIUS server %s:%d unreachable for %r: %s", host, port, username, exc)
+        log.warning(
+            "RADIUS server %s:%d unreachable for %r: %s", host, port, username, exc
+        )
         return None
 
 
@@ -137,9 +143,13 @@ def authenticate(
     for srv_host, srv_port in servers:
         raw = _try_one_server(username, password, srv_host, srv_port, secret_b, timeout)
         if raw is not None:
-            log.debug("RADIUS: got reply from %s:%d for %r", srv_host, srv_port, username)
+            log.debug(
+                "RADIUS: got reply from %s:%d for %r", srv_host, srv_port, username
+            )
             break
-        log.warning("RADIUS: no reply from %s:%d, trying next server", srv_host, srv_port)
+        log.warning(
+            "RADIUS: no reply from %s:%d, trying next server", srv_host, srv_port
+        )
 
     if raw is None:
         log.error("RADIUS: all servers unreachable for %r", username)
@@ -157,11 +167,16 @@ def authenticate(
 
     # Verify reply authenticator (RFC 2865 §3)
     expected = hashlib.md5(
-        bytes([code, reply_id]) + struct.pack("!H", reply_len)
-        + req_auth + attrs_data + secret_b
+        bytes([code, reply_id])
+        + struct.pack("!H", reply_len)
+        + req_auth
+        + attrs_data
+        + secret_b
     ).digest()
     if not hmac.compare_digest(expected, reply_auth):
-        log.warning("RADIUS authenticator mismatch for %r — check shared secret", username)
+        log.warning(
+            "RADIUS authenticator mismatch for %r — check shared secret", username
+        )
         return None
 
     if code != _ACCESS_ACCEPT:
@@ -169,7 +184,7 @@ def authenticate(
         return None
 
     # Extract all group names from Filter-Id and Class attributes
-    attrs     = _parse_attrs(attrs_data)
+    attrs = _parse_attrs(attrs_data)
     ad_groups = [
         v.decode("utf-8", errors="ignore").strip("\x00 ")
         for t in (_ATTR_FILTER_ID, _ATTR_CLASS)
@@ -185,7 +200,10 @@ def authenticate(
         log.warning(
             "RADIUS user %r authenticated but no role group matched. "
             "Groups received: %s. Expected admin=%r viewer=%r",
-            username, ad_groups, group_admin, group_viewer,
+            username,
+            ad_groups,
+            group_admin,
+            group_viewer,
         )
         return None
 

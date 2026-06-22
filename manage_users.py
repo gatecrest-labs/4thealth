@@ -8,6 +8,7 @@ import sys
 def cmd_add(args):
     from app.auth import add_user
     import getpass
+
     password = args.password or getpass.getpass(f"Password for {args.username}: ")
     if not password:
         print("Password cannot be empty.", file=sys.stderr)
@@ -22,6 +23,7 @@ def cmd_add(args):
 
 def cmd_delete(args):
     from app.auth import delete_user
+
     if delete_user(args.username):
         print(f"User '{args.username}' deleted.")
     else:
@@ -31,6 +33,7 @@ def cmd_delete(args):
 
 def cmd_list(_):
     from app.auth import list_users
+
     users = list_users()
     if not users:
         print("No users configured.")
@@ -43,6 +46,7 @@ def cmd_list(_):
 
 def cmd_secret(_):
     from app.auth import generate_secret_key
+
     key = generate_secret_key()
     print(f"Generated SECRET_KEY:\n{key}")
     print("\nAdd this to your .env file as:\nSECRET_KEY=" + key)

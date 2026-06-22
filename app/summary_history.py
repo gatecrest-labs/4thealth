@@ -60,7 +60,9 @@ def record_today(firewalls: int, rules: int) -> None:
         records.append({"date": today, "firewalls": firewalls, "rules": rules})
         records = _prune(records)
         _save(records)
-        logger.info("summary_history: recorded %s — fw=%d rules=%d", today, firewalls, rules)
+        logger.info(
+            "summary_history: recorded %s — fw=%d rules=%d", today, firewalls, rules
+        )
 
 
 def get_history() -> list[dict]:

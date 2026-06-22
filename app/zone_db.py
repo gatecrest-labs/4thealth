@@ -16,31 +16,40 @@ from pathlib import Path
 DB_PATH = Path(__file__).parent.parent / "policy_db.json"
 
 VALID_ACCESS_TYPES: set[str] = {"allow all", "block all", "block only"}
-VALID_SEVERITIES:   set[str] = {"high", "critical"}
-ZONE_MUTABLE_FIELDS: set[str]   = {"domain", "description", "is_shared"}
+VALID_SEVERITIES: set[str] = {"high", "critical"}
+ZONE_MUTABLE_FIELDS: set[str] = {"domain", "description", "is_shared"}
 POLICY_MUTABLE_FIELDS: set[str] = {
-    "policy_set", "from_domain", "from_zone", "to_domain", "to_zone",
-    "severity", "access_type", "services", "rule_properties", "flows", "description",
+    "policy_set",
+    "from_domain",
+    "from_zone",
+    "to_domain",
+    "to_zone",
+    "severity",
+    "access_type",
+    "services",
+    "rule_properties",
+    "flows",
+    "description",
 }
 
 # Port → well-known service name(s)
 _PORT_TO_NAMES: dict[int, list[str]] = {
-    20:   ["ftp-data", "ftp"],
-    21:   ["ftp"],
-    22:   ["ssh"],
-    23:   ["telnet"],
-    25:   ["smtp"],
-    53:   ["dns"],
-    80:   ["http"],
-    110:  ["pop3"],
-    143:  ["imap"],
-    161:  ["snmp"],
-    162:  ["snmp-trap", "snmp"],
-    389:  ["ldap"],
-    443:  ["https"],
-    445:  ["smb", "cifs"],
-    514:  ["syslog"],
-    636:  ["ldaps"],
+    20: ["ftp-data", "ftp"],
+    21: ["ftp"],
+    22: ["ssh"],
+    23: ["telnet"],
+    25: ["smtp"],
+    53: ["dns"],
+    80: ["http"],
+    110: ["pop3"],
+    143: ["imap"],
+    161: ["snmp"],
+    162: ["snmp-trap", "snmp"],
+    389: ["ldap"],
+    443: ["https"],
+    445: ["smb", "cifs"],
+    514: ["syslog"],
+    636: ["ldaps"],
     1433: ["mssql", "sql"],
     1521: ["oracle"],
     3306: ["mysql"],
@@ -53,6 +62,7 @@ _PORT_TO_NAMES: dict[int, list[str]] = {
 
 
 # ── I/O ───────────────────────────────────────────────────────────────────────
+
 
 def load_db() -> dict:
     if not DB_PATH.exists():
@@ -106,6 +116,7 @@ def normalize_service_list(services: list[str]) -> list[str]:
 
 
 # ── IP / zone resolution ──────────────────────────────────────────────────────
+
 
 def parse_endpoint(raw: str):
     raw = raw.strip()
@@ -161,6 +172,7 @@ def zones_for_endpoint(raw: str, zones: dict) -> list[str]:
 
 # ── Zone hierarchy ────────────────────────────────────────────────────────────
 
+
 def ancestor_zones(zone_name: str, zones: dict) -> list[str]:
     result: list[str] = []
     visited: set[str] = set()
@@ -177,6 +189,7 @@ def ancestor_zones(zone_name: str, zones: dict) -> list[str]:
 
 
 # ── Policy matching ───────────────────────────────────────────────────────────
+
 
 def find_matching_policies(
     src_zones: list[str],
@@ -210,12 +223,19 @@ def find_matching_policies(
                 if key in seen:
                     continue
                 seen.add(key)
-                matched.append({**policy, "matched_from_zone": src_name, "matched_to_zone": dst_name})
+                matched.append(
+                    {
+                        **policy,
+                        "matched_from_zone": src_name,
+                        "matched_to_zone": dst_name,
+                    }
+                )
 
     return matched
 
 
 # ── Verdict ───────────────────────────────────────────────────────────────────
+
 
 def evaluate(
     policies: list[dict],
@@ -237,7 +257,9 @@ def evaluate(
                 if any(_is_wildcard(s) for s in policy_svcs):
                     return "BLOCKED", [p]
                 rn = [s.lower() for s in policy_svcs]
-                if any(alias.lower() in rn for aliases in alias_sets for alias in aliases):
+                if any(
+                    alias.lower() in rn for aliases in alias_sets for alias in aliases
+                ):
                     return "BLOCKED", [p]
 
     for p in policies:
@@ -249,6 +271,7 @@ def evaluate(
 
 # ── High-level query (used by routes and rule_review) ─────────────────────────
 
+
 def run_query(
     src_list: list[str],
     dst_list: list[str],
@@ -257,11 +280,15 @@ def run_query(
 ) -> list[dict]:
     """Evaluate all src×dst combinations and return structured results."""
     db = load_db()
-    zones    = db["zones"]
+    zones = db["zones"]
     policies = db["policies"]
 
-    src_zone_map: dict[str, list[str]] = {s: zones_for_endpoint(s, zones) for s in src_list}
-    dst_zone_map: dict[str, list[str]] = {d: zones_for_endpoint(d, zones) for d in dst_list}
+    src_zone_map: dict[str, list[str]] = {
+        s: zones_for_endpoint(s, zones) for s in src_list
+    }
+    dst_zone_map: dict[str, list[str]] = {
+        d: zones_for_endpoint(d, zones) for d in dst_list
+    }
     svc_tokens = parse_service_tokens(service)
 
     results = []
@@ -271,16 +298,18 @@ def run_query(
             dst_zones = dst_zone_map[dst]
             all_matched = find_matching_policies(src_zones, dst_zones, zones, policies)
             verdict, governing = evaluate(all_matched, svc_tokens)
-            results.append({
-                "src":          src,
-                "dst":          dst,
-                "service":      ", ".join(svc_tokens),
-                "verdict":      verdict,
-                "src_zones":    src_zones,
-                "dst_zones":    dst_zones,
-                "governing":    governing,
-                "all_policies": all_matched if verbose else [],
-            })
+            results.append(
+                {
+                    "src": src,
+                    "dst": dst,
+                    "service": ", ".join(svc_tokens),
+                    "verdict": verdict,
+                    "src_zones": src_zones,
+                    "dst_zones": dst_zones,
+                    "governing": governing,
+                    "all_policies": all_matched if verbose else [],
+                }
+            )
     return results
 
 
@@ -292,11 +321,12 @@ def query_single(src: str, dst: str, service: str) -> dict:
 
 # ── Validation ────────────────────────────────────────────────────────────────
 
+
 def validate_db(db: dict) -> dict:
     """Return a structured validation report dict."""
-    errors:   list[str] = []
+    errors: list[str] = []
     warnings: list[str] = []
-    zones    = db.get("zones", {})
+    zones = db.get("zones", {})
     policies = db.get("policies", [])
 
     if not isinstance(zones, dict):
@@ -332,10 +362,10 @@ def validate_db(db: dict) -> dict:
 
     total_subnets = sum(len(z.get("subnets", [])) for z in zones.values())
     return {
-        "ok":           len(errors) == 0,
-        "errors":       errors,
-        "warnings":     warnings,
-        "zone_count":   len(zones),
+        "ok": len(errors) == 0,
+        "errors": errors,
+        "warnings": warnings,
+        "zone_count": len(zones),
         "policy_count": len(policies),
         "subnet_count": total_subnets,
     }
@@ -343,13 +373,23 @@ def validate_db(db: dict) -> dict:
 
 # ── Zone mutations ────────────────────────────────────────────────────────────
 
-def zone_add(db: dict, name: str, domain: str = "Default",
-             description: str = "", is_shared: bool = False) -> str:
+
+def zone_add(
+    db: dict,
+    name: str,
+    domain: str = "Default",
+    description: str = "",
+    is_shared: bool = False,
+) -> str:
     if name in db["zones"]:
         raise ValueError(f"Zone '{name}' already exists.")
     db["zones"][name] = {
-        "domain": domain, "is_shared": is_shared,
-        "description": description, "subnets": [], "children": [], "parents": [],
+        "domain": domain,
+        "is_shared": is_shared,
+        "description": description,
+        "subnets": [],
+        "children": [],
+        "parents": [],
     }
     save_db(db)
     return f"Zone '{name}' added."
@@ -360,7 +400,7 @@ def zone_remove(db: dict, name: str) -> str:
         raise KeyError(f"Zone '{name}' not found.")
     for z in db["zones"].values():
         z.get("children", []).remove(name) if name in z.get("children", []) else None
-        z.get("parents",  []).remove(name) if name in z.get("parents",  []) else None
+        z.get("parents", []).remove(name) if name in z.get("parents", []) else None
     del db["zones"][name]
     save_db(db)
     return f"Zone '{name}' removed."
@@ -386,7 +426,9 @@ def subnet_add(db: dict, zone_name: str, subnet: str, description: str = "") -> 
         raise ValueError(f"'{subnet}' is not a valid subnet.")
     if any(e["subnet"] == subnet for e in db["zones"][zone_name]["subnets"]):
         raise ValueError(f"Subnet '{subnet}' already exists in '{zone_name}'.")
-    db["zones"][zone_name]["subnets"].append({"subnet": subnet, "description": description})
+    db["zones"][zone_name]["subnets"].append(
+        {"subnet": subnet, "description": description}
+    )
     save_db(db)
     return f"Subnet '{subnet}' added to '{zone_name}'."
 
@@ -406,6 +448,7 @@ def subnet_remove(db: dict, zone_name: str, subnet: str) -> str:
 
 # ── Policy mutations ──────────────────────────────────────────────────────────
 
+
 def policy_add(
     db: dict,
     policy_set: str,
@@ -421,12 +464,21 @@ def policy_add(
     services = normalize_service_list(services or [])
     if access_type == "block only" and not services:
         raise ValueError("'block only' requires at least one service.")
-    db["policies"].append({
-        "policy_set": policy_set, "from_domain": "All Domains", "from_zone": from_zone,
-        "to_domain": "All Domains", "to_zone": to_zone, "severity": severity,
-        "access_type": access_type, "services": services,
-        "rule_properties": "", "flows": "", "description": description,
-    })
+    db["policies"].append(
+        {
+            "policy_set": policy_set,
+            "from_domain": "All Domains",
+            "from_zone": from_zone,
+            "to_domain": "All Domains",
+            "to_zone": to_zone,
+            "severity": severity,
+            "access_type": access_type,
+            "services": services,
+            "rule_properties": "",
+            "flows": "",
+            "description": description,
+        }
+    )
     save_db(db)
     return f"Policy added: {from_zone} → {to_zone} ({access_type})."
 
@@ -444,7 +496,11 @@ def policy_modify(db: dict, index: int, field: str, value: str) -> str:
         raise IndexError(f"Index {index} out of range.")
     if field not in POLICY_MUTABLE_FIELDS:
         raise ValueError(f"Field '{field}' is not editable.")
-    coerced = normalize_service_list([s.strip() for s in value.split(",") if s.strip()]) if field == "services" else value
+    coerced = (
+        normalize_service_list([s.strip() for s in value.split(",") if s.strip()])
+        if field == "services"
+        else value
+    )
     db["policies"][index][field] = coerced
     save_db(db)
     return f"Policy #{index}: {field} updated."

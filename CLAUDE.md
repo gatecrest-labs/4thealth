@@ -155,19 +155,22 @@ Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `ser
 
 `GET /device-review` → `device_review.html` + `device_review.js`
 
-Runs configurable security checks against the management-plane interfaces of every device in a selected ADOM.
+Runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
 
 **Workflow:**
-1. Select ADOM → device list loads automatically (all selected by default).
-2. Filter/deselect devices using the searchable grid.
-3. Choose which checks to run (all checked by default).
-4. Click **Run Analysis** — findings appear in a filterable, paginated table.
-5. Export results as CSV, JSON, or PDF (PDF includes ADOM, date/time, device count — suitable as compliance evidence).
+1. Select ADOM → device list loads automatically.
+2. Choose which checks to run (all checked by default).
+3. For parameterised CIS checks, a **Check Parameters** panel appears — enter expected IPs before running.
+4. Click **Run Analysis** — a per-device progress loop fires, findings appear in a filterable, paginated table.
+5. Export results as CSV, JSON, or PDF.
 
-**Result severity levels:**
-- `INSECURE` — red highlight: cleartext protocols (HTTP, Telnet) are enabled
-- `WARN` — yellow: no secure management alternative (HTTPS/SSH) present
-- `INFO` — blue: informational findings (e.g. PING enabled)
+**Result values:**
+- `INSECURE` — red: cleartext protocols (HTTP, Telnet) are enabled
+- `FAIL` — red: CIS check failed (server missing, sync disabled, etc.)
+- `WARN` — yellow: no secure management alternative present
+- `CONFIG_MISSING` — yellow: CIS check ran but no expected values were supplied; device value shown for information
+- `PASS` — green: CIS check passed
+- `INFO` — blue: informational finding (e.g. PING enabled)
 
 **Check engine — `app/device_review.py`:**
 
@@ -175,19 +178,34 @@ The check registry (`CHECKS` list) is the single place to add new checks. Each e
 
 ```python
 {
-    "key":         "my_check",           # unique ID used in API + permissions
-    "name":        "Display Name",       # shown in UI checkbox list
-    "description": "One-line summary",   # tooltip
-    "severity":    "INSECURE|WARN|INFO", # drives badge colour
-    "run":         _my_check_function,   # callable(device_name, interfaces) -> list[Finding]
+    "key":          "my_check",           # unique ID used in API + JS
+    "name":         "Display Name",       # shown in UI checkbox list
+    "description":  "One-line summary",   # tooltip
+    "data_keys":    ["interfaces"],       # which device data blobs to fetch
+                                          # ("interfaces", "ntp", "syslog")
+    "params_schema": [],                  # [] = binary check, no user input
+                                          # or list of input descriptors:
+                                          # [{"key","label","type","placeholder","required"}]
+    "run":          _my_check_function,   # callable(device_name, device_data, params) -> list[Row]
 }
 ```
 
-A `Finding` dict must contain `device`, `interface`, `ip`, `check`, `result`, `detail`, and optionally `protocols`.
+`device_data` is a dict populated by the route from the `data_keys` list — only the keys needed by selected checks are fetched per device. `params` is the user-supplied values for that check (empty dict for binary checks).
+
+A `Row` dict must contain: `device`, `interface` (or `"system"` for device-level checks), `vdom`, `ip`, `type` (or `"system"`), `status`, `check`, `result`, `detail`, `protocols`, `has_insecure`, `has_secure`.
+
+`CHECKS_META` (serialisable — no `run` key) is passed to both the page template and the frontend as `CHECK_DEFS`, driving the params panel UI dynamically.
 
 **API endpoints:**
 - `GET  /api/device-review/adoms/<adom>/devices` — list devices in an ADOM
-- `POST /api/device-review/run` — body: `{ adom, devices: [...], checks: [...] }` — run selected checks; `devices: []` means all devices, `checks` absent means all checks
+- `POST /api/device-review/run/device` — body: `{ adom, device, checks, check_params }` — single device (used by progress loop)
+- `POST /api/device-review/run` — body: `{ adom, devices, checks, check_params }` — bulk run; `devices: []` means all, `checks` absent means all, `check_params` maps check key → param dict
+
+**Adding a new CIS check (binary example):**
+1. Add a proxy method to `fmg_client.py` if new data is needed (e.g. `get_device_admin_settings`).
+2. Write `_run_my_check(device_name, device_data, params) -> list[Row]` in `device_review.py`.
+3. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
+No route or frontend changes are needed for binary checks.
 
 ### Rule Validation tab
 

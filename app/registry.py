@@ -15,6 +15,7 @@ Adding a new nav tab therefore requires NO changes to base.html,
 groups.py, or admin.py — just a register() call in the new blueprint
 and one line in __init__._BLUEPRINT_MODULES.
 """
+
 from __future__ import annotations
 
 _registry: dict[str, dict] = {}

@@ -12,12 +12,12 @@ from app import registry
 # In-memory sliding-window rate limiter for /login
 # Limits: 10 attempts per IP per 10 minutes, 5 attempts per username per 10 minutes.
 # ---------------------------------------------------------------------------
-_WINDOW_SECONDS = 600   # 10 minutes
-_IP_MAX         = 10    # max failures per IP per window
-_USER_MAX       = 5     # max failures per username per window
+_WINDOW_SECONDS = 600  # 10 minutes
+_IP_MAX = 10  # max failures per IP per window
+_USER_MAX = 5  # max failures per username per window
 
-_lock         = threading.Lock()
-_ip_failures:   dict[str, list[float]] = defaultdict(list)
+_lock = threading.Lock()
+_ip_failures: dict[str, list[float]] = defaultdict(list)
 _user_failures: dict[str, list[float]] = defaultdict(list)
 
 
@@ -25,11 +25,11 @@ def _is_rate_limited(ip: str, username: str) -> bool:
     now = time.monotonic()
     cutoff = now - _WINDOW_SECONDS
     with _lock:
-        _ip_failures[ip]       = [t for t in _ip_failures[ip]       if t > cutoff]
+        _ip_failures[ip] = [t for t in _ip_failures[ip] if t > cutoff]
         _user_failures[username] = [t for t in _user_failures[username] if t > cutoff]
         return (
-            len(_ip_failures[ip])       >= _IP_MAX or
-            len(_user_failures[username]) >= _USER_MAX
+            len(_ip_failures[ip]) >= _IP_MAX
+            or len(_user_failures[username]) >= _USER_MAX
         )
 
 
@@ -80,7 +80,9 @@ def login():
         ip = request.remote_addr or ""
         if _is_rate_limited(ip, username):
             app_log("WARN", "auth", "Login rate-limited", username=username, remote=ip)
-            flash("Too many failed attempts. Please wait before trying again.", "danger")
+            flash(
+                "Too many failed attempts. Please wait before trying again.", "danger"
+            )
             return render_template("login.html"), 429
 
         auth_result = authenticate(username, password)
@@ -93,7 +95,13 @@ def login():
             session["ad_groups"] = ad_groups
             allowed = list(get_allowed_tabs(username, ad_groups=ad_groups))
             session["allowed_tabs"] = allowed
-            app_log("INFO", "auth", "Login successful", username=username, role=session["role"])
+            app_log(
+                "INFO",
+                "auth",
+                "Login successful",
+                username=username,
+                role=session["role"],
+            )
             next_url = request.args.get("next", "").strip()
             if next_url and _safe_redirect(next_url):
                 return redirect(next_url)

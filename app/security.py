@@ -24,9 +24,7 @@ def validate_csrf_request() -> bool:
     if not expected:
         return False
     provided = (
-        request.headers.get("X-CSRF-Token")
-        or request.form.get("csrf_token")
-        or ""
+        request.headers.get("X-CSRF-Token") or request.form.get("csrf_token") or ""
     )
     return hmac.compare_digest(expected, provided)
 

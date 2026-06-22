@@ -35,6 +35,7 @@ registry.register("zone_policy", "Zone Policy", "zone_policy.zone_policy_page")
 
 # ── Page ──────────────────────────────────────────────────────────────────────
 
+
 @bp.route("/zone-policy")
 @tab_required("zone_policy")
 def zone_policy_page():
@@ -46,6 +47,7 @@ def zone_policy_page():
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _ok(message: str, **extra):
     return jsonify({"ok": True, "message": message, **extra})
@@ -62,14 +64,15 @@ def _parse_endpoints(raw: str) -> list[str]:
 
 # ── Query ─────────────────────────────────────────────────────────────────────
 
+
 @bp.route("/api/zone/query", methods=["POST"])
 @tab_required("zone_policy")
 def api_query():
     data = request.get_json(silent=True) or {}
-    src_raw  = data.get("src", "")
-    dst_raw  = data.get("dst", "")
-    service  = data.get("service", "")
-    verbose  = bool(data.get("verbose", True))
+    src_raw = data.get("src", "")
+    dst_raw = data.get("dst", "")
+    service = data.get("service", "")
+    verbose = bool(data.get("verbose", True))
 
     src_list = _parse_endpoints(src_raw) if isinstance(src_raw, str) else src_raw
     dst_list = _parse_endpoints(dst_raw) if isinstance(dst_raw, str) else dst_raw
@@ -89,6 +92,7 @@ def api_query():
 
 # ── Browse ────────────────────────────────────────────────────────────────────
 
+
 @bp.route("/api/zone/zones")
 @tab_required("zone_policy")
 def api_zones():
@@ -100,13 +104,13 @@ def api_zones():
         total_subnets = sum(len(z.get("subnets", [])) for z in zones.values())
         zone_list = [
             {
-                "name":        name,
-                "domain":      z.get("domain", ""),
-                "is_shared":   z.get("is_shared", False),
+                "name": name,
+                "domain": z.get("domain", ""),
+                "is_shared": z.get("is_shared", False),
                 "description": z.get("description", ""),
-                "subnets":     z.get("subnets", []),
-                "children":    z.get("children", []),
-                "parents":     z.get("parents", []),
+                "subnets": z.get("subnets", []),
+                "children": z.get("children", []),
+                "parents": z.get("parents", []),
             }
             for name, z in sorted(zones.items())
         ]
@@ -130,6 +134,7 @@ def api_policies():
 
 # ── Validate ──────────────────────────────────────────────────────────────────
 
+
 @bp.route("/api/zone/validate")
 @tab_required("zone_policy")
 def api_validate():
@@ -143,6 +148,7 @@ def api_validate():
 
 
 # ── Backup ────────────────────────────────────────────────────────────────────
+
 
 @bp.route("/api/zone/backup", methods=["POST"])
 @admin_required
@@ -168,6 +174,7 @@ def api_backup():
 
 # ── Zone mutations (admin only) ───────────────────────────────────────────────
 
+
 @bp.route("/api/zone/zone/add", methods=["POST"])
 @admin_required
 def api_zone_add():
@@ -176,11 +183,14 @@ def api_zone_add():
     if not name:
         return _err("name is required")
     try:
-        db  = zdb.load_db()
-        msg = zdb.zone_add(db, name,
-                           domain=d.get("domain", "Default"),
-                           description=d.get("description", ""),
-                           is_shared=bool(d.get("is_shared", False)))
+        db = zdb.load_db()
+        msg = zdb.zone_add(
+            db,
+            name,
+            domain=d.get("domain", "Default"),
+            description=d.get("description", ""),
+            is_shared=bool(d.get("is_shared", False)),
+        )
         return _ok(msg)
     except (ValueError, KeyError) as exc:
         return _err(str(exc))
@@ -191,12 +201,12 @@ def api_zone_add():
 @bp.route("/api/zone/zone/remove", methods=["POST"])
 @admin_required
 def api_zone_remove():
-    d    = request.get_json(silent=True) or {}
+    d = request.get_json(silent=True) or {}
     name = (d.get("name") or "").strip()
     if not name:
         return _err("name is required")
     try:
-        db  = zdb.load_db()
+        db = zdb.load_db()
         msg = zdb.zone_remove(db, name)
         return _ok(msg)
     except (KeyError, ValueError) as exc:
@@ -208,14 +218,14 @@ def api_zone_remove():
 @bp.route("/api/zone/zone/modify", methods=["POST"])
 @admin_required
 def api_zone_modify():
-    d     = request.get_json(silent=True) or {}
-    name  = (d.get("name")  or "").strip()
+    d = request.get_json(silent=True) or {}
+    name = (d.get("name") or "").strip()
     field = (d.get("field") or "").strip()
     value = str(d.get("value", "")).strip()
     if not name or not field:
         return _err("name and field are required")
     try:
-        db  = zdb.load_db()
+        db = zdb.load_db()
         msg = zdb.zone_modify(db, name, field, value)
         return _ok(msg)
     except (KeyError, ValueError) as exc:
@@ -227,14 +237,14 @@ def api_zone_modify():
 @bp.route("/api/zone/subnet/add", methods=["POST"])
 @admin_required
 def api_subnet_add():
-    d       = request.get_json(silent=True) or {}
-    zone    = (d.get("zone") or "").strip()
-    subnet  = (d.get("subnet") or "").strip()
-    desc    = (d.get("description") or "").strip()
+    d = request.get_json(silent=True) or {}
+    zone = (d.get("zone") or "").strip()
+    subnet = (d.get("subnet") or "").strip()
+    desc = (d.get("description") or "").strip()
     if not zone or not subnet:
         return _err("zone and subnet are required")
     try:
-        db  = zdb.load_db()
+        db = zdb.load_db()
         msg = zdb.subnet_add(db, zone, subnet, desc)
         return _ok(msg)
     except (KeyError, ValueError) as exc:
@@ -246,13 +256,13 @@ def api_subnet_add():
 @bp.route("/api/zone/subnet/remove", methods=["POST"])
 @admin_required
 def api_subnet_remove():
-    d      = request.get_json(silent=True) or {}
-    zone   = (d.get("zone")   or "").strip()
+    d = request.get_json(silent=True) or {}
+    zone = (d.get("zone") or "").strip()
     subnet = (d.get("subnet") or "").strip()
     if not zone or not subnet:
         return _err("zone and subnet are required")
     try:
-        db  = zdb.load_db()
+        db = zdb.load_db()
         msg = zdb.subnet_remove(db, zone, subnet)
         return _ok(msg)
     except (KeyError, ValueError) as exc:
@@ -263,20 +273,23 @@ def api_subnet_remove():
 
 # ── Policy mutations (admin only) ─────────────────────────────────────────────
 
+
 @bp.route("/api/zone/policy/add", methods=["POST"])
 @admin_required
 def api_policy_add():
     d = request.get_json(silent=True) or {}
     required = ("policy_set", "from_zone", "to_zone", "access_type")
-    missing  = [k for k in required if not (d.get(k) or "").strip()]
+    missing = [k for k in required if not (d.get(k) or "").strip()]
     if missing:
         return _err(f"Missing fields: {', '.join(missing)}")
-    raw_svc  = d.get("services", "")
+    raw_svc = d.get("services", "")
     svc_list = zdb.normalize_service_list(
-        [s.strip() for s in raw_svc.split(",") if s.strip()] if isinstance(raw_svc, str) else raw_svc
+        [s.strip() for s in raw_svc.split(",") if s.strip()]
+        if isinstance(raw_svc, str)
+        else raw_svc
     )
     try:
-        db  = zdb.load_db()
+        db = zdb.load_db()
         msg = zdb.policy_add(
             db,
             policy_set=d["policy_set"].strip(),
@@ -303,7 +316,7 @@ def api_policy_remove():
     except (TypeError, ValueError):
         return _err("index must be an integer")
     try:
-        db  = zdb.load_db()
+        db = zdb.load_db()
         msg = zdb.policy_remove(db, idx)
         return _ok(msg)
     except (IndexError, ValueError) as exc:
@@ -315,7 +328,7 @@ def api_policy_remove():
 @bp.route("/api/zone/policy/modify", methods=["POST"])
 @admin_required
 def api_policy_modify():
-    d     = request.get_json(silent=True) or {}
+    d = request.get_json(silent=True) or {}
     field = (d.get("field") or "").strip()
     value = str(d.get("value", "")).strip()
     if not field:
@@ -325,7 +338,7 @@ def api_policy_modify():
     except (TypeError, ValueError):
         return _err("index must be an integer")
     try:
-        db  = zdb.load_db()
+        db = zdb.load_db()
         msg = zdb.policy_modify(db, idx, field, value)
         return _ok(msg)
     except (IndexError, ValueError, KeyError) as exc:

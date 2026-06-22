@@ -26,17 +26,21 @@ def map_devices():
     cached = get_cached()
     devices = cached.get("devices", [])
 
-    allowed = get_allowed_adoms(session.get("user", ""), ad_groups=session.get("ad_groups", []))
+    allowed = get_allowed_adoms(
+        session.get("user", ""), ad_groups=session.get("ad_groups", [])
+    )
     if allowed is not None:
         devices = [d for d in devices if d.get("adom") in allowed]
 
-    return jsonify({
-        "devices":      devices,
-        "last_updated": cached.get("last_updated"),
-        "status":       cached.get("status"),
-        "error":        cached.get("error"),
-        "adom_progress": cached.get("adom_progress", {}),
-    })
+    return jsonify(
+        {
+            "devices": devices,
+            "last_updated": cached.get("last_updated"),
+            "status": cached.get("status"),
+            "error": cached.get("error"),
+            "adom_progress": cached.get("adom_progress", {}),
+        }
+    )
 
 
 @bp.route("/api/map/refresh", methods=["POST"])
@@ -44,6 +48,7 @@ def map_devices():
 def map_refresh():
     """Trigger an immediate cache refresh (non-blocking)."""
     from app.map_cache import refresh_now
+
     refresh_now(current_app._get_current_object())
     return jsonify({"queued": True})
 
@@ -53,6 +58,7 @@ def map_refresh():
 def map_regions():
     """Return region definitions (name, states, color) used by the map legend."""
     from app.map_regions import load
+
     return jsonify(load())
 
 
@@ -61,11 +67,14 @@ def map_regions():
 def map_status():
     """Return cache status only (lightweight poll during a refresh)."""
     from app.map_cache import get_cached
+
     cached = get_cached()
-    return jsonify({
-        "status":        cached.get("status"),
-        "last_updated":  cached.get("last_updated"),
-        "error":         cached.get("error"),
-        "device_count":  len(cached.get("devices", [])),
-        "adom_progress": cached.get("adom_progress", {}),
-    })
+    return jsonify(
+        {
+            "status": cached.get("status"),
+            "last_updated": cached.get("last_updated"),
+            "error": cached.get("error"),
+            "device_count": len(cached.get("devices", [])),
+            "adom_progress": cached.get("adom_progress", {}),
+        }
+    )
