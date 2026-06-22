@@ -57,3 +57,4 @@ Ansible/*.local.yml
 Ansible/vars_*.yml
 Ansible/.vault_pass*
 
+todo.md
