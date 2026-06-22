@@ -6,19 +6,18 @@ Usage:
     python debug_policy.py --all-blank            # shows every policy with empty srcaddr/dstaddr/service
 """
 
-import json
 import os
 import sys
 import warnings
 
 import requests
 import urllib3
+from dotenv import load_dotenv
 
 warnings.filterwarnings("ignore", category=urllib3.exceptions.InsecureRequestWarning)
 
 # ── Config from .env ──────────────────────────────────────────────────────────
 
-from dotenv import load_dotenv
 load_dotenv()
 
 HOST       = os.environ["FMG_PRIMARY_HOST"]
