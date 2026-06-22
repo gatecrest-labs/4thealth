@@ -7,6 +7,7 @@ Import this instead of duplicating _make_client() in every blueprint::
     with make_client() as client:
         devices = client.get_devices("root")
 """
+
 from app.fmg_client import FMGClient
 from app.config import Config
 

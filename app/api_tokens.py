@@ -47,11 +47,11 @@ def create_token(name: str, created_by: str) -> tuple[str, dict]:
     """Create a new token. Returns (plaintext, record) — plaintext is shown once."""
     raw = TOKEN_PREFIX + secrets.token_hex(32)
     record = {
-        "id":          str(uuid.uuid4()),
-        "name":        name.strip(),
-        "token_hash":  _hash(raw),
-        "created_by":  created_by,
-        "enabled":     True,
+        "id": str(uuid.uuid4()),
+        "name": name.strip(),
+        "token_hash": _hash(raw),
+        "created_by": created_by,
+        "enabled": True,
     }
     with _lock:
         tokens = _load()

@@ -36,6 +36,7 @@ def authenticate(username: str, password: str) -> "tuple[str, list] | None":
                 "RADIUS_ENABLED=true but RADIUS_HOST or RADIUS_SECRET is not set in .env"
             )
         from app.radius_auth import authenticate as radius_authenticate
+
         result = radius_authenticate(
             username=username,
             password=password,
@@ -95,7 +96,10 @@ def delete_user(username: str) -> bool:
 
 
 def list_users() -> list:
-    return [{"username": u, "role": v.get("role", "viewer")} for u, v in _load_users().items()]
+    return [
+        {"username": u, "role": v.get("role", "viewer")}
+        for u, v in _load_users().items()
+    ]
 
 
 def get_user_role(username: str) -> str:

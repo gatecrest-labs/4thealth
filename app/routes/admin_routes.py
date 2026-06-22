@@ -43,7 +43,12 @@ from app.groups import list_groups, get_group, create_group, update_group, delet
 from app import registry
 from app.auth import list_users
 from app.app_logger import (
-    app_log, get_log_entries, get_log_level, get_log_levels, set_log_level, clear_log_entries,
+    app_log,
+    get_log_entries,
+    get_log_level,
+    get_log_levels,
+    set_log_level,
+    clear_log_entries,
 )
 from app.app_settings import get_all as get_all_settings, set_setting
 from app.api_tokens import create_token, list_tokens, revoke_token
@@ -53,6 +58,7 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 # ── Page ─────────────────────────────────────────────────────────────────────
 
+
 @bp.route("/")
 @_admin_required
 def admin_page():
@@ -61,6 +67,7 @@ def admin_page():
 
 
 # ── Groups API ────────────────────────────────────────────────────────────────
+
 
 @bp.route("/api/groups")
 @_admin_required
@@ -75,13 +82,15 @@ def api_groups_create():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name is required"}), 400
-    members       = data.get("members", [])
-    ad_groups     = data.get("ad_groups", [])
-    allowed_tabs  = data.get("allowed_tabs", [])
+    members = data.get("members", [])
+    ad_groups = data.get("ad_groups", [])
+    allowed_tabs = data.get("allowed_tabs", [])
     adom_restrict = bool(data.get("adom_restrict", False))
     allowed_adoms = data.get("allowed_adoms", [])
     try:
-        ok = create_group(name, members, ad_groups, allowed_tabs, adom_restrict, allowed_adoms)
+        ok = create_group(
+            name, members, ad_groups, allowed_tabs, adom_restrict, allowed_adoms
+        )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     if not ok:
@@ -94,12 +103,14 @@ def api_groups_create():
 @_admin_required
 def api_groups_update(name: str):
     data = request.get_json(silent=True) or {}
-    members       = data.get("members", [])
-    ad_groups     = data.get("ad_groups", [])
-    allowed_tabs  = data.get("allowed_tabs", [])
+    members = data.get("members", [])
+    ad_groups = data.get("ad_groups", [])
+    allowed_tabs = data.get("allowed_tabs", [])
     adom_restrict = bool(data.get("adom_restrict", False))
     allowed_adoms = data.get("allowed_adoms", [])
-    if not update_group(name, members, allowed_tabs, adom_restrict, allowed_adoms, ad_groups=ad_groups):
+    if not update_group(
+        name, members, allowed_tabs, adom_restrict, allowed_adoms, ad_groups=ad_groups
+    ):
         return jsonify({"error": f"Group '{name}' not found"}), 404
     app_log("INFO", "admin", "Group updated", by=session["user"], group=name)
     return jsonify(get_group(name))
@@ -116,20 +127,25 @@ def api_groups_delete(name: str):
 
 # ── ADOM cache (for ADOM access picker) ──────────────────────────────────────
 
+
 @bp.route("/api/adoms")
 @_admin_required
 def api_adoms_list():
     """Return the cached list of known ADOMs (used by the group editor)."""
     from app.adom_cache import get_cached
+
     cached = get_cached()
-    return jsonify({
-        "adoms":        cached["adoms"],
-        "last_updated": cached["last_updated"],
-        "status":       cached["status"],
-    })
+    return jsonify(
+        {
+            "adoms": cached["adoms"],
+            "last_updated": cached["last_updated"],
+            "status": cached["status"],
+        }
+    )
 
 
 # ── Users API (for member picker) ─────────────────────────────────────────────
+
 
 @bp.route("/api/users")
 @_admin_required
@@ -139,6 +155,7 @@ def api_users_list():
 
 # ── Tabs registry ─────────────────────────────────────────────────────────────
 
+
 @bp.route("/api/tabs")
 @_admin_required
 def api_tabs_list():
@@ -147,11 +164,13 @@ def api_tabs_list():
 
 # ── Map Regions API ───────────────────────────────────────────────────────────
 
+
 @bp.route("/api/map-regions")
 @_admin_required
 def api_map_regions_get():
     """Return current region config (names, states, colors)."""
     from app.map_regions import load
+
     return jsonify(load())
 
 
@@ -160,6 +179,7 @@ def api_map_regions_get():
 def api_map_regions_put():
     """Update region colours and state assignments."""
     from app.map_regions import load, save, is_valid_color, validate_regions
+
     data = request.get_json(silent=True) or {}
     current = load()
 
@@ -168,7 +188,11 @@ def api_map_regions_put():
         if err:
             return jsonify({"error": err}), 400
         current["regions"] = [
-            {"name": r["name"].strip(), "color": r["color"], "states": r.get("states", [])}
+            {
+                "name": r["name"].strip(),
+                "color": r["color"],
+                "states": r.get("states", []),
+            }
             for r in data["regions"]
         ]
 
@@ -185,6 +209,7 @@ def api_map_regions_put():
 
 # ── Logs API ──────────────────────────────────────────────────────────────────
 
+
 @bp.route("/api/logs")
 @_admin_required
 def api_logs_get():
@@ -195,12 +220,14 @@ def api_logs_get():
     except ValueError:
         limit = 500
     entries = get_log_entries(level=level, component=component, limit=limit)
-    return jsonify({
-        "current_level": get_log_level(),
-        "levels": get_log_levels(),
-        "count": len(entries),
-        "entries": entries,
-    })
+    return jsonify(
+        {
+            "current_level": get_log_level(),
+            "levels": get_log_levels(),
+            "count": len(entries),
+            "entries": entries,
+        }
+    )
 
 
 @bp.route("/api/logs/level", methods=["POST"])
@@ -226,6 +253,7 @@ def api_logs_clear():
 
 # ── App settings API ──────────────────────────────────────────────────────────
 
+
 @bp.route("/api/settings")
 @_admin_required
 def api_settings_get():
@@ -239,12 +267,14 @@ def api_settings_put():
     if "external_api_enabled" in data:
         enabled = bool(data["external_api_enabled"])
         set_setting("external_api_enabled", enabled)
-        app_log("INFO", "admin", "External API toggled",
-                by=session["user"], enabled=enabled)
+        app_log(
+            "INFO", "admin", "External API toggled", by=session["user"], enabled=enabled
+        )
     return jsonify(get_all_settings())
 
 
 # ── External API tokens ───────────────────────────────────────────────────────
+
 
 @bp.route("/api/tokens")
 @_admin_required
@@ -260,8 +290,14 @@ def api_tokens_create():
     if not name:
         return jsonify({"error": "name is required"}), 400
     raw, record = create_token(name, created_by=session["user"])
-    app_log("INFO", "admin", "API token created", by=session["user"],
-            token_name=name, token_id=record["id"])
+    app_log(
+        "INFO",
+        "admin",
+        "API token created",
+        by=session["user"],
+        token_name=name,
+        token_id=record["id"],
+    )
     return jsonify({"token": raw, **record}), 201
 
 

@@ -19,21 +19,21 @@ from datetime import datetime, timezone
 # ── Check registry ────────────────────────────────────────────────────────────
 
 CHECKS: dict[str, str] = {
-    "unnamed":        "Unnamed Rules (no comment/name)",
-    "unlogged":       "Unlogged Rules (logging disabled)",
-    "shadow":         "Shadow Rules (hidden by broader rule above)",
-    "disabled":       "Disabled / Inactive Rules",
-    "expired":        "Expired Rules (past schedule end-date)",
-    "unhit":          "Unused / Un-Hit Rules (zero hit count)",
+    "unnamed": "Unnamed Rules (no comment/name)",
+    "unlogged": "Unlogged Rules (logging disabled)",
+    "shadow": "Shadow Rules (hidden by broader rule above)",
+    "disabled": "Disabled / Inactive Rules",
+    "expired": "Expired Rules (past schedule end-date)",
+    "unhit": "Unused / Un-Hit Rules (zero hit count)",
 }
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # FMG returns many policy fields as integers rather than strings.
-_STATUS_MAP    = {0: "disable",  1: "enable"}
-_ACTION_MAP    = {0: "deny",     1: "accept",  2: "ipsec"}
-_LOGTRAFFIC_MAP = {0: "disable", 1: "utm",     2: "all"}
+_STATUS_MAP = {0: "disable", 1: "enable"}
+_ACTION_MAP = {0: "deny", 1: "accept", 2: "ipsec"}
+_LOGTRAFFIC_MAP = {0: "disable", 1: "utm", 2: "all"}
 
 
 def _fstr(val, default: str = "") -> str:
@@ -131,15 +131,15 @@ def _identity_set(p: dict) -> frozenset:
 def _rule_summary(p: dict) -> dict:
     """Return a compact summary of a policy for use in shadow-finding detail payloads."""
     return {
-        "id":          str(p.get("policyid", "?")),
-        "name":        str(p.get("name") or ""),
-        "status":      _status(p),
-        "action":      _action(p),
-        "srcaddr":     _addr_list(p.get("srcaddr") or p.get("src_addr")),
-        "dstaddr":     _addr_list(p.get("dstaddr") or p.get("dst_addr")),
-        "service":     _addr_list(p.get("service") or p.get("services")),
+        "id": str(p.get("policyid", "?")),
+        "name": str(p.get("name") or ""),
+        "status": _status(p),
+        "action": _action(p),
+        "srcaddr": _addr_list(p.get("srcaddr") or p.get("src_addr")),
+        "dstaddr": _addr_list(p.get("dstaddr") or p.get("dst_addr")),
+        "service": _addr_list(p.get("service") or p.get("services")),
         "fsso_groups": _addr_list(p.get("fsso-groups")),
-        "comment":     str(p.get("comments") or p.get("comment") or ""),
+        "comment": str(p.get("comments") or p.get("comment") or ""),
     }
 
 
@@ -160,39 +160,46 @@ def _covers(a_names: set[str], b_names: set[str]) -> bool:
 
 # ── Individual check functions ────────────────────────────────────────────────
 
+
 def check_unnamed(policies: list[dict]) -> list[dict]:
     """Rules that lack a name, a comment/description, or both."""
     findings = []
     for idx, p in enumerate(policies):
         if _is_policy_block(p):
             continue
-        name    = str(p.get("name") or "").strip()
+        name = str(p.get("name") or "").strip()
         comment = str(p.get("comments") or p.get("comment") or "").strip()
-        pid     = p.get("policyid", idx + 1)
+        pid = p.get("policyid", idx + 1)
         if not name and not comment:
-            findings.append({
-                "policy_id":   str(pid),
-                "policy_name": f"Policy #{pid}",
-                "seq":         _seq(p, idx),
-                "check":       "unnamed",
-                "detail":      "Rule has no name and no comment.",
-            })
+            findings.append(
+                {
+                    "policy_id": str(pid),
+                    "policy_name": f"Policy #{pid}",
+                    "seq": _seq(p, idx),
+                    "check": "unnamed",
+                    "detail": "Rule has no name and no comment.",
+                }
+            )
         elif not name:
-            findings.append({
-                "policy_id":   str(pid),
-                "policy_name": f"Policy #{pid}",
-                "seq":         _seq(p, idx),
-                "check":       "unnamed",
-                "detail":      f"Rule has no name (only a comment: '{comment[:80]}').",
-            })
+            findings.append(
+                {
+                    "policy_id": str(pid),
+                    "policy_name": f"Policy #{pid}",
+                    "seq": _seq(p, idx),
+                    "check": "unnamed",
+                    "detail": f"Rule has no name (only a comment: '{comment[:80]}').",
+                }
+            )
         elif not comment:
-            findings.append({
-                "policy_id":   str(pid),
-                "policy_name": name,
-                "seq":         _seq(p, idx),
-                "check":       "unnamed",
-                "detail":      "Rule has a name but no comment/description.",
-            })
+            findings.append(
+                {
+                    "policy_id": str(pid),
+                    "policy_name": name,
+                    "seq": _seq(p, idx),
+                    "check": "unnamed",
+                    "detail": "Rule has a name but no comment/description.",
+                }
+            )
     return findings
 
 
@@ -205,13 +212,15 @@ def check_unlogged(policies: list[dict]) -> list[dict]:
         log = _logtraffic(p)
         # FortiOS values: "all", "utm", "disable" (or int 0/1/2)
         if log in ("disable", "disabled", "") or not log:
-            findings.append({
-                "policy_id":   str(p.get("policyid", idx + 1)),
-                "policy_name": _name(p),
-                "seq":         _seq(p, idx),
-                "check":       "unlogged",
-                "detail":      f"logtraffic = '{log or 'not set'}' — no traffic logging.",
-            })
+            findings.append(
+                {
+                    "policy_id": str(p.get("policyid", idx + 1)),
+                    "policy_name": _name(p),
+                    "seq": _seq(p, idx),
+                    "check": "unlogged",
+                    "detail": f"logtraffic = '{log or 'not set'}' — no traffic logging.",
+                }
+            )
     return findings
 
 
@@ -239,23 +248,29 @@ def check_shadow(policies: list[dict]) -> list[dict]:
     'any'/'all' wildcards are checked.
     """
     findings = []
-    enabled = [p for p in policies if _status(p) != "disable" and not _is_policy_block(p)]
+    enabled = [
+        p for p in policies if _status(p) != "disable" and not _is_policy_block(p)
+    ]
 
     for j, b in enumerate(enabled):
-        b_src  = set(_addr_list(b.get("srcaddr") or b.get("src_addr")))
-        b_dst  = set(_addr_list(b.get("dstaddr") or b.get("dst_addr")))
-        b_svc  = set(_addr_list(b.get("service") or b.get("services")))
-        b_action  = _action(b)
+        b_src = set(_addr_list(b.get("srcaddr") or b.get("src_addr")))
+        b_dst = set(_addr_list(b.get("dstaddr") or b.get("dst_addr")))
+        b_svc = set(_addr_list(b.get("service") or b.get("services")))
+        b_action = _action(b)
         b_identity = _identity_set(b)
 
         for a in enabled[:j]:
-            a_src  = set(_addr_list(a.get("srcaddr") or a.get("src_addr")))
-            a_dst  = set(_addr_list(a.get("dstaddr") or a.get("dst_addr")))
-            a_svc  = set(_addr_list(a.get("service") or a.get("services")))
-            a_action  = _action(a)
+            a_src = set(_addr_list(a.get("srcaddr") or a.get("src_addr")))
+            a_dst = set(_addr_list(a.get("dstaddr") or a.get("dst_addr")))
+            a_svc = set(_addr_list(a.get("service") or a.get("services")))
+            a_action = _action(a)
             a_identity = _identity_set(a)
 
-            if not (_covers(a_src, b_src) and _covers(a_dst, b_dst) and _covers(a_svc, b_svc)):
+            if not (
+                _covers(a_src, b_src)
+                and _covers(a_dst, b_dst)
+                and _covers(a_svc, b_svc)
+            ):
                 continue
 
             # Identity mismatch: if either rule restricts to specific AD/FSSO groups
@@ -265,20 +280,23 @@ def check_shadow(policies: list[dict]) -> list[dict]:
 
             action_note = (
                 f" Note: actions differ (shadowing={a_action}, shadowed={b_action}) — possible policy ordering mistake."
-                if a_action != b_action else ""
+                if a_action != b_action
+                else ""
             )
-            findings.append({
-                "policy_id":       str(b.get("policyid", j + 1)),
-                "policy_name":     _name(b),
-                "seq":             _seq(b, j),
-                "check":           "shadow",
-                "detail":          (
-                    f"Fully shadowed by rule '{_name(a)}' (id {a.get('policyid', '?')}) "
-                    f"which appears earlier and covers the same src/dst/service scope.{action_note}"
-                ),
-                "shadow_rule":     _rule_summary(b),
-                "shadowing_rule":  _rule_summary(a),
-            })
+            findings.append(
+                {
+                    "policy_id": str(b.get("policyid", j + 1)),
+                    "policy_name": _name(b),
+                    "seq": _seq(b, j),
+                    "check": "shadow",
+                    "detail": (
+                        f"Fully shadowed by rule '{_name(a)}' (id {a.get('policyid', '?')}) "
+                        f"which appears earlier and covers the same src/dst/service scope.{action_note}"
+                    ),
+                    "shadow_rule": _rule_summary(b),
+                    "shadowing_rule": _rule_summary(a),
+                }
+            )
             break  # report only the first shadowing rule
     return findings
 
@@ -290,13 +308,15 @@ def check_disabled(policies: list[dict]) -> list[dict]:
         if _is_policy_block(p):
             continue
         if _status(p) == "disable":
-            findings.append({
-                "policy_id":   str(p.get("policyid", idx + 1)),
-                "policy_name": _name(p),
-                "seq":         _seq(p, idx),
-                "check":       "disabled",
-                "detail":      f"Rule status = '{_status(p)}'.",
-            })
+            findings.append(
+                {
+                    "policy_id": str(p.get("policyid", idx + 1)),
+                    "policy_name": _name(p),
+                    "seq": _seq(p, idx),
+                    "check": "disabled",
+                    "detail": f"Rule status = '{_status(p)}'.",
+                }
+            )
     return findings
 
 
@@ -317,7 +337,11 @@ def check_expired(policies: list[dict]) -> list[dict]:
             continue
         sched = p.get("schedule") or p.get("schedule_timeout") or ""
         if isinstance(sched, list) and sched:
-            sched = sched[0] if isinstance(sched[0], str) else (sched[0].get("name", "") if isinstance(sched[0], dict) else "")
+            sched = (
+                sched[0]
+                if isinstance(sched[0], str)
+                else (sched[0].get("name", "") if isinstance(sched[0], dict) else "")
+            )
 
         sched_str = str(sched).strip().lower()
         if not sched_str or sched_str in ("always", "", "none"):
@@ -334,22 +358,26 @@ def check_expired(policies: list[dict]) -> list[dict]:
 
         if parsed:
             if parsed < now:
-                findings.append({
-                    "policy_id":   str(p.get("policyid", idx + 1)),
-                    "policy_name": _name(p),
-                    "seq":         _seq(p, idx),
-                    "check":       "expired",
-                    "detail":      f"Schedule end-date '{sched_str}' is in the past.",
-                })
+                findings.append(
+                    {
+                        "policy_id": str(p.get("policyid", idx + 1)),
+                        "policy_name": _name(p),
+                        "seq": _seq(p, idx),
+                        "check": "expired",
+                        "detail": f"Schedule end-date '{sched_str}' is in the past.",
+                    }
+                )
         else:
             # Named schedule — flag for manual review
-            findings.append({
-                "policy_id":   str(p.get("policyid", idx + 1)),
-                "policy_name": _name(p),
-                "seq":         _seq(p, idx),
-                "check":       "expired",
-                "detail":      f"References time-based schedule '{sched}' — verify it has not expired.",
-            })
+            findings.append(
+                {
+                    "policy_id": str(p.get("policyid", idx + 1)),
+                    "policy_name": _name(p),
+                    "seq": _seq(p, idx),
+                    "check": "expired",
+                    "detail": f"References time-based schedule '{sched}' — verify it has not expired.",
+                }
+            )
     return findings
 
 
@@ -366,24 +394,31 @@ def check_unhit(policies: list[dict]) -> list[dict]:
             continue
         # FMG uses underscore-prefixed names; also check plain names for safety
         hit = (
-            p.get("_hitcount") if p.get("_hitcount") is not None else
-            p.get("_pkts")     if p.get("_pkts")     is not None else
-            p.get("hitcount")  if p.get("hitcount")  is not None else
-            p.get("hit_count") if p.get("hit_count") is not None else
-            p.get("pkts")      if p.get("pkts")       is not None else
-            p.get("bytes")
+            p.get("_hitcount")
+            if p.get("_hitcount") is not None
+            else p.get("_pkts")
+            if p.get("_pkts") is not None
+            else p.get("hitcount")
+            if p.get("hitcount") is not None
+            else p.get("hit_count")
+            if p.get("hit_count") is not None
+            else p.get("pkts")
+            if p.get("pkts") is not None
+            else p.get("bytes")
         )
         if hit is None:
             continue
         try:
             if int(hit) == 0:
-                findings.append({
-                    "policy_id":   str(p.get("policyid", idx + 1)),
-                    "policy_name": _name(p),
-                    "seq":         _seq(p, idx),
-                    "check":       "unhit",
-                    "detail":      "Hit count is 0 — rule has never matched traffic.",
-                })
+                findings.append(
+                    {
+                        "policy_id": str(p.get("policyid", idx + 1)),
+                        "policy_name": _name(p),
+                        "seq": _seq(p, idx),
+                        "check": "unhit",
+                        "detail": "Hit count is 0 — rule has never matched traffic.",
+                    }
+                )
         except (TypeError, ValueError):
             pass
     return findings
@@ -392,12 +427,12 @@ def check_unhit(policies: list[dict]) -> list[dict]:
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 _CHECK_FNS = {
-    "unnamed":     check_unnamed,
-    "unlogged":    check_unlogged,
-    "shadow":      check_shadow,
-    "disabled":    check_disabled,
-    "expired":     check_expired,
-    "unhit":       check_unhit,
+    "unnamed": check_unnamed,
+    "unlogged": check_unlogged,
+    "shadow": check_shadow,
+    "disabled": check_disabled,
+    "expired": check_expired,
+    "unhit": check_unhit,
 }
 
 

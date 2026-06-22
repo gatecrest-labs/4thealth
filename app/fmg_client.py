@@ -7,22 +7,89 @@ import requests
 import urllib3
 
 if os.environ.get("FMG_SUPPRESS_INSECURE_WARNING", "true").lower() == "true":
-    warnings.filterwarnings("ignore", category=urllib3.exceptions.InsecureRequestWarning)
+    warnings.filterwarnings(
+        "ignore", category=urllib3.exceptions.InsecureRequestWarning
+    )
 
 PROXY_ENDPOINTS = [
-    {"key": "system_status",  "label": "System status",    "resource": "/api/v2/monitor/system/status?vdom=root",                                         "required": True},
-    {"key": "cpu",            "label": "CPU usage",         "resource": "/api/v2/monitor/system/resource/usage?resource=cpu&interval=1-min&vdom=root",     "required": True},
-    {"key": "mem",            "label": "Memory usage",      "resource": "/api/v2/monitor/system/resource/usage?resource=mem&interval=1-min&vdom=root",     "required": True},
-    {"key": "interfaces",     "label": "Interfaces",        "resource": "/api/v2/monitor/system/interface?vdom=root",                                      "required": False},
-    {"key": "interfaces_cfg", "label": "Interface config",  "resource": "/api/v2/cmdb/system/interface?vdom=root",                                         "required": False},
-    {"key": "performance",    "label": "Performance",       "resource": "/api/v2/monitor/system/performance/status?vdom=root",                             "required": False},
-    {"key": "ha_status",      "label": "HA status",         "resource": "/api/v2/monitor/system/ha-status?vdom=root",                                      "required": False},
-    {"key": "ipv4_routes",    "label": "IPv4 routes",       "resource": "/api/v2/monitor/router/ipv4?vdom=*",                                              "required": False},
-    {"key": "ipv6_routes",    "label": "IPv6 routes",       "resource": "/api/v2/monitor/router/ipv6?vdom=*",                                              "required": False},
-    {"key": "bgp_neighbors",  "label": "BGP neighbors",     "resource": "/api/v2/monitor/router/bgp/neighbors?vdom=*",                                     "required": False},
-    {"key": "bgp_paths",      "label": "BGP paths",         "resource": "/api/v2/monitor/router/bgp/paths?vdom=*",                                         "required": False},
-    {"key": "ospf_neighbors", "label": "OSPF neighbors",    "resource": "/api/v2/monitor/router/ospf/neighbors?vdom=*",                                    "required": False},
-    {"key": "ipsec",          "label": "IPsec tunnels",     "resource": "/api/v2/monitor/vpn/ipsec?vdom=root",                                             "required": False},
+    {
+        "key": "system_status",
+        "label": "System status",
+        "resource": "/api/v2/monitor/system/status?vdom=root",
+        "required": True,
+    },
+    {
+        "key": "cpu",
+        "label": "CPU usage",
+        "resource": "/api/v2/monitor/system/resource/usage?resource=cpu&interval=1-min&vdom=root",
+        "required": True,
+    },
+    {
+        "key": "mem",
+        "label": "Memory usage",
+        "resource": "/api/v2/monitor/system/resource/usage?resource=mem&interval=1-min&vdom=root",
+        "required": True,
+    },
+    {
+        "key": "interfaces",
+        "label": "Interfaces",
+        "resource": "/api/v2/monitor/system/interface?vdom=root",
+        "required": False,
+    },
+    {
+        "key": "interfaces_cfg",
+        "label": "Interface config",
+        "resource": "/api/v2/cmdb/system/interface?vdom=root",
+        "required": False,
+    },
+    {
+        "key": "performance",
+        "label": "Performance",
+        "resource": "/api/v2/monitor/system/performance/status?vdom=root",
+        "required": False,
+    },
+    {
+        "key": "ha_status",
+        "label": "HA status",
+        "resource": "/api/v2/monitor/system/ha-status?vdom=root",
+        "required": False,
+    },
+    {
+        "key": "ipv4_routes",
+        "label": "IPv4 routes",
+        "resource": "/api/v2/monitor/router/ipv4?vdom=*",
+        "required": False,
+    },
+    {
+        "key": "ipv6_routes",
+        "label": "IPv6 routes",
+        "resource": "/api/v2/monitor/router/ipv6?vdom=*",
+        "required": False,
+    },
+    {
+        "key": "bgp_neighbors",
+        "label": "BGP neighbors",
+        "resource": "/api/v2/monitor/router/bgp/neighbors?vdom=*",
+        "required": False,
+    },
+    {
+        "key": "bgp_paths",
+        "label": "BGP paths",
+        "resource": "/api/v2/monitor/router/bgp/paths?vdom=*",
+        "required": False,
+    },
+    {
+        "key": "ospf_neighbors",
+        "label": "OSPF neighbors",
+        "resource": "/api/v2/monitor/router/ospf/neighbors?vdom=*",
+        "required": False,
+    },
+    {
+        "key": "ipsec",
+        "label": "IPsec tunnels",
+        "resource": "/api/v2/monitor/vpn/ipsec?vdom=root",
+        "required": False,
+    },
 ]
 
 
@@ -31,8 +98,15 @@ class FMGError(Exception):
 
 
 class FMGClient:
-    def __init__(self, host: str, username: str = "", password: str = "",
-                 token: str = "", verify_ssl: bool = True, timeout: int = 30):
+    def __init__(
+        self,
+        host: str,
+        username: str = "",
+        password: str = "",
+        token: str = "",
+        verify_ssl: bool = True,
+        timeout: int = 30,
+    ):
         self.base_url = f"https://{host}/jsonrpc"
         self.username = username
         self.password = password
@@ -67,7 +141,12 @@ class FMGClient:
         body = {
             "id": self._next_id(),
             "method": "exec",
-            "params": [{"url": "/sys/login/user", "data": {"user": self.username, "passwd": self.password}}],
+            "params": [
+                {
+                    "url": "/sys/login/user",
+                    "data": {"user": self.username, "passwd": self.password},
+                }
+            ],
         }
         data = self._post(body)
         result = data.get("result", [{}])[0]
@@ -82,8 +161,14 @@ class FMGClient:
         if not self.session:
             return
         try:
-            self._post({"id": self._next_id(), "method": "exec", "session": self.session,
-                        "params": [{"url": "/sys/logout"}]})
+            self._post(
+                {
+                    "id": self._next_id(),
+                    "method": "exec",
+                    "session": self.session,
+                    "params": [{"url": "/sys/logout"}],
+                }
+            )
         except Exception:
             pass
         self.session = None
@@ -137,14 +222,16 @@ class FMGClient:
         body = {
             "id": self._next_id(),
             "method": "exec",
-            "params": [{
-                "url": "/sys/proxy/json",
-                "data": {
-                    "action": "get",
-                    "resource": resource,
-                    "target": [f"adom/{adom}/device/{device}"],
-                },
-            }],
+            "params": [
+                {
+                    "url": "/sys/proxy/json",
+                    "data": {
+                        "action": "get",
+                        "resource": resource,
+                        "target": [f"adom/{adom}/device/{device}"],
+                    },
+                }
+            ],
         }
         if self.session:
             body["session"] = self.session
@@ -169,13 +256,18 @@ class FMGClient:
             device_wrapper = {}
 
         # Step 2: pull http_status from the wrapper (before diving into response)
-        http_status = int(device_wrapper.get("http_status", device_wrapper.get("http_status_code", 200)))
+        http_status = int(
+            device_wrapper.get(
+                "http_status", device_wrapper.get("http_status_code", 200)
+            )
+        )
 
         # Step 3: unwrap .response — may be a dict or a JSON-encoded string
         response = device_wrapper.get("response", device_wrapper)
         if isinstance(response, str):
             try:
                 import json as _json
+
                 response = _json.loads(response)
             except Exception:
                 response = {}
@@ -291,7 +383,9 @@ class FMGClient:
             offset += page_size
         return all_policies
 
-    def get_live_policy_hits(self, adom: str, device_name: str, vdom: str = "root") -> dict:
+    def get_live_policy_hits(
+        self, adom: str, device_name: str, vdom: str = "root"
+    ) -> dict:
         """Return live per-policy hit counts from the device via FMG proxy.
 
         FMG's stored _hitcount is updated only when FMG syncs stats from the
@@ -303,7 +397,9 @@ class FMGClient:
         callers can fall back to FMG-cached values gracefully.
         """
         try:
-            r = self._proxy(adom, device_name, f"/api/v2/monitor/firewall/policy?vdom={vdom}")
+            r = self._proxy(
+                adom, device_name, f"/api/v2/monitor/firewall/policy?vdom={vdom}"
+            )
             payload = r.get("payload", [])
             if not isinstance(payload, list):
                 return {}
@@ -330,10 +426,12 @@ class FMGClient:
             body = {
                 "id": self._next_id(),
                 "method": "get",
-                "params": [{
-                    "url": f"/pm/config/adom/{adom}/pkg/{pkg_path}/firewall/policy",
-                    "fields": ["policyid"],
-                }],
+                "params": [
+                    {
+                        "url": f"/pm/config/adom/{adom}/pkg/{pkg_path}/firewall/policy",
+                        "fields": ["policyid"],
+                    }
+                ],
             }
             if self.session:
                 body["session"] = self.session
@@ -368,7 +466,9 @@ class FMGClient:
     def get_device_interfaces(self, adom: str, device_name: str) -> list:
         """Return interface list from live device via FMG proxy (root VDOM only)."""
         try:
-            r = self._proxy(adom, device_name, "/api/v2/monitor/system/interface?vdom=root")
+            r = self._proxy(
+                adom, device_name, "/api/v2/monitor/system/interface?vdom=root"
+            )
             payload = r.get("payload", {})
             if isinstance(payload, list):
                 return payload
@@ -441,6 +541,53 @@ class FMGClient:
         except Exception:
             return []
 
+    def get_device_ntp(self, adom: str, device_name: str) -> dict:
+        """Return NTP configuration from the device via FMG proxy.
+
+        Returns the raw CMDB dict for system/ntp (keys: ntpsync, type,
+        ntpserver list, etc.), or an empty dict on failure.
+        """
+        try:
+            r = self._proxy(adom, device_name, "/api/v2/cmdb/system/ntp?vdom=root")
+            payload = r.get("payload", {})
+            if isinstance(payload, list) and payload:
+                return payload[0] if isinstance(payload[0], dict) else {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception:
+            return {}
+
+    def get_device_syslog(self, adom: str, device_name: str) -> list:
+        """Return all enabled remote syslog servers configured on the device.
+
+        FortiOS supports up to 4 syslog profiles (syslogd … syslogd4).  Each
+        enabled profile is returned as a dict with at least ``server`` and
+        ``status`` keys.  Disabled or unreachable profiles are omitted.
+        """
+        profiles = [
+            "/api/v2/cmdb/log.syslogd/setting?vdom=root",
+            "/api/v2/cmdb/log.syslogd2/setting?vdom=root",
+            "/api/v2/cmdb/log.syslogd3/setting?vdom=root",
+            "/api/v2/cmdb/log.syslogd4/setting?vdom=root",
+        ]
+        servers: list[dict] = []
+        for resource in profiles:
+            try:
+                r = self._proxy(adom, device_name, resource)
+                payload = r.get("payload", {})
+                if isinstance(payload, list) and payload:
+                    cfg = payload[0] if isinstance(payload[0], dict) else {}
+                elif isinstance(payload, dict):
+                    cfg = payload
+                else:
+                    continue
+                if cfg.get("status") == "enable" and cfg.get("server"):
+                    servers.append(cfg)
+            except Exception:
+                continue
+        return servers
+
     def _get_paged(self, url: str, page_size: int = 1000) -> list:
         """Paginated GET for endpoints that may return large lists.
 
@@ -459,11 +606,17 @@ class FMGClient:
             if self.session:
                 body["session"] = self.session
             import requests as _req
+
             headers = {"Content-Type": "application/json", "Accept": "application/json"}
             if self.token:
                 headers["Authorization"] = f"Bearer {self.token}"
-            resp = _req.post(self.base_url, json=body, verify=self.verify_ssl,
-                             timeout=120, headers=headers)
+            resp = _req.post(
+                self.base_url,
+                json=body,
+                verify=self.verify_ssl,
+                timeout=120,
+                headers=headers,
+            )
             resp.raise_for_status()
             data = resp.json()
             result = data.get("result", [{}])[0]
@@ -534,17 +687,20 @@ class FMGClient:
         this endpoint.
         """
         import time as _time
+
         since = int(_time.time()) - (hours * 3600)
         try:
             body = {
                 "id": self._next_id(),
                 "method": "get",
-                "params": [{
-                    "url": "/sys/audit-log",
-                    "filter": [["timestamp", ">=", since]],
-                    "sortings": [{"timestamp": -1}],
-                    "range": [0, 5000],
-                }],
+                "params": [
+                    {
+                        "url": "/sys/audit-log",
+                        "filter": [["timestamp", ">=", since]],
+                        "sortings": [{"timestamp": -1}],
+                        "range": [0, 5000],
+                    }
+                ],
             }
             if self.session:
                 body["session"] = self.session
@@ -565,7 +721,12 @@ class FMGClient:
                 r = self._proxy(adom, device_name, ep["resource"])
                 results[key] = r
             except Exception as exc:
-                results[key] = {"rpc_code": -1, "http_status": 500, "payload": {}, "error": str(exc)}
+                results[key] = {
+                    "rpc_code": -1,
+                    "http_status": 500,
+                    "payload": {},
+                    "error": str(exc),
+                }
         return results
 
     def stream_device_health(self, adom: str, device_name: str):
@@ -577,5 +738,10 @@ class FMGClient:
             try:
                 r = self._proxy(adom, device_name, ep["resource"])
             except Exception as exc:
-                r = {"rpc_code": -1, "http_status": 500, "payload": {}, "error": str(exc)}
+                r = {
+                    "rpc_code": -1,
+                    "http_status": 500,
+                    "payload": {},
+                    "error": str(exc),
+                }
             yield i + 1, total, label, key, r

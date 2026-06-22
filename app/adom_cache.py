@@ -18,16 +18,17 @@ from flask import Flask
 _lock = threading.RLock()
 
 _state: dict = {
-    "adoms":        [],          # list[str] — sorted ADOM names (forti* filtered out)
-    "last_updated": None,        # ISO-8601 string or None
-    "status":       "pending",   # "pending" | "ok" | "error"
-    "error":        None,        # last error message, or None
+    "adoms": [],  # list[str] — sorted ADOM names (forti* filtered out)
+    "last_updated": None,  # ISO-8601 string or None
+    "status": "pending",  # "pending" | "ok" | "error"
+    "error": None,  # last error message, or None
 }
 
 _REFRESH_MINUTES = 30
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def get_cached() -> dict:
     """Return a shallow copy of the current cache state."""
@@ -43,10 +44,12 @@ def get_adom_names() -> list[str]:
 
 # ── Refresh logic ─────────────────────────────────────────────────────────────
 
+
 def _run_refresh(app: Flask) -> None:
     with app.app_context():
         try:
             from app.fmg_helpers import make_client
+
             with make_client() as client:
                 raw = client.get_adoms()
             names = sorted(
@@ -57,14 +60,16 @@ def _run_refresh(app: Flask) -> None:
                 and not a.get("name", a.get("adom", "")).lower().startswith("forti")
             )
             with _lock:
-                _state["adoms"]        = names
-                _state["last_updated"] = datetime.datetime.now().isoformat(timespec="seconds")
-                _state["status"]       = "ok"
-                _state["error"]        = None
+                _state["adoms"] = names
+                _state["last_updated"] = datetime.datetime.now().isoformat(
+                    timespec="seconds"
+                )
+                _state["status"] = "ok"
+                _state["error"] = None
         except Exception as exc:
             with _lock:
                 _state["status"] = "error"
-                _state["error"]  = str(exc)
+                _state["error"] = str(exc)
 
 
 def refresh_now(app: Flask) -> None:
@@ -80,11 +85,12 @@ def refresh_now(app: Flask) -> None:
 
 # ── Scheduler init ────────────────────────────────────────────────────────────
 
+
 def init_scheduler(app: Flask) -> None:
     """Register a recurring APScheduler job and run the first fetch immediately."""
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    refresh_now(app)   # initial load at startup
+    refresh_now(app)  # initial load at startup
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(

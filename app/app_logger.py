@@ -27,7 +27,9 @@ def set_log_level(level: str) -> None:
     global _current_level
     level = level.upper()
     if level not in _LEVEL_RANK:
-        raise ValueError(f"Invalid log level '{level}'. Choose from: {', '.join(_LEVELS)}")
+        raise ValueError(
+            f"Invalid log level '{level}'. Choose from: {', '.join(_LEVELS)}"
+        )
     _current_level = level
 
 
@@ -55,7 +57,9 @@ def app_log(level: str, component: str, message: str, **extra) -> None:
         _buffer.append(entry)
 
 
-def get_log_entries(level: str | None = None, component: str | None = None, limit: int = 500) -> list[dict]:
+def get_log_entries(
+    level: str | None = None, component: str | None = None, limit: int = 500
+) -> list[dict]:
     with _lock:
         entries = list(_buffer)
     if level:

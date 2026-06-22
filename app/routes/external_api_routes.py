@@ -35,6 +35,7 @@ bp = Blueprint("external_api", __name__, url_prefix="/external/api")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _feature_enabled():
     return get_setting("external_api_enabled", False)
 
@@ -65,6 +66,7 @@ def _parse_endpoints(raw: str) -> list:
 
 # ── Zone query ────────────────────────────────────────────────────────────────
 
+
 @bp.route("/zone/query", methods=["POST"])
 def ext_zone_query():
     err = _gate()
@@ -88,9 +90,14 @@ def ext_zone_query():
 
     try:
         token = _authenticate()
-        app_log("DEBUG", "external_api", "Zone query",
-                token_name=token.get("name") if token else "?",
-                src=src_list[:3], dst=dst_list[:3])
+        app_log(
+            "DEBUG",
+            "external_api",
+            "Zone query",
+            token_name=token.get("name") if token else "?",
+            src=src_list[:3],
+            dst=dst_list[:3],
+        )
         results = zdb.run_query(src_list, dst_list, service or None, verbose=verbose)
         return jsonify(results)
     except Exception as exc:
@@ -98,6 +105,7 @@ def ext_zone_query():
 
 
 # ── Zone list ─────────────────────────────────────────────────────────────────
+
 
 @bp.route("/zone/zones")
 def ext_zone_zones():
@@ -114,13 +122,13 @@ def ext_zone_zones():
         total_subnets = sum(len(z.get("subnets", [])) for z in zones.values())
         zone_list = [
             {
-                "name":        name,
-                "domain":      z.get("domain", ""),
-                "is_shared":   z.get("is_shared", False),
+                "name": name,
+                "domain": z.get("domain", ""),
+                "is_shared": z.get("is_shared", False),
                 "description": z.get("description", ""),
-                "subnets":     z.get("subnets", []),
-                "children":    z.get("children", []),
-                "parents":     z.get("parents", []),
+                "subnets": z.get("subnets", []),
+                "children": z.get("children", []),
+                "parents": z.get("parents", []),
             }
             for name, z in sorted(zones.items())
         ]
@@ -130,6 +138,7 @@ def ext_zone_zones():
 
 
 # ── Policy list ───────────────────────────────────────────────────────────────
+
 
 @bp.route("/zone/policies")
 def ext_zone_policies():

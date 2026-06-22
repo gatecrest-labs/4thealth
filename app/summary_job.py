@@ -20,15 +20,15 @@ logger = logging.getLogger(__name__)
 # ── Shared state ──────────────────────────────────────────────────────────────
 
 _store: dict = {
-    "firewalls_total":       None,
-    "rules_total":           None,
-    "last_updated":          None,   # ISO-8601 UTC string
-    "status":                "pending",   # pending | running | ok | error
-    "error":                 None,
+    "firewalls_total": None,
+    "rules_total": None,
+    "last_updated": None,  # ISO-8601 UTC string
+    "status": "pending",  # pending | running | ok | error
+    "error": None,
 }
 
 _lock = threading.Lock()
-_running = threading.Event()   # set while a job is executing; prevents overlaps
+_running = threading.Event()  # set while a job is executing; prevents overlaps
 
 
 def get_summary() -> dict:
@@ -39,6 +39,7 @@ def get_summary() -> dict:
 
 # ── Core calculation ──────────────────────────────────────────────────────────
 
+
 def _run_job(app):
     """Calculate managed firewall and policy-rule totals."""
     if _running.is_set():
@@ -48,7 +49,7 @@ def _run_job(app):
     _running.set()
     with _lock:
         _store["status"] = "running"
-        _store["error"]  = None
+        _store["error"] = None
 
     logger.info("summary_job: starting calculation")
     t0 = _time.monotonic()
@@ -56,15 +57,17 @@ def _run_job(app):
     try:
         from app.fmg_helpers import make_client
 
-        firewalls_total       = 0
-        rules_total           = 0
+        firewalls_total = 0
+        rules_total = 0
 
         with make_client() as client:
             # ── Step 1: enumerate ADOMs ───────────────────────────────────
             adoms_raw = client.get_adoms()
             adom_names = [
-                a.get("name", "") for a in adoms_raw
-                if isinstance(a, dict) and a.get("name")
+                a.get("name", "")
+                for a in adoms_raw
+                if isinstance(a, dict)
+                and a.get("name")
                 and not a.get("name", "").lower().startswith("forti")
             ]
             logger.info("summary_job: %d ADOMs found: %s", len(adom_names), adom_names)
@@ -83,7 +86,9 @@ def _run_job(app):
 
             logger.info(
                 "summary_job: %d firewalls across %d ADOMs with devices: %s",
-                firewalls_total, len(adoms_with_devices), adoms_with_devices,
+                firewalls_total,
+                len(adoms_with_devices),
+                adoms_with_devices,
             )
 
             # ── Step 3: count policy rules — only ADOMs that have devices ─
@@ -91,7 +96,9 @@ def _run_job(app):
                 try:
                     packages = client.get_policy_packages(adom)
                     logger.info(
-                        "summary_job: ADOM %s — %d packages to count", adom, len(packages)
+                        "summary_job: ADOM %s — %d packages to count",
+                        adom,
+                        len(packages),
                     )
                     for pkg in packages:
                         pkg_path = pkg.get("path", pkg.get("name", ""))
@@ -100,27 +107,34 @@ def _run_job(app):
                         count = client.get_policy_count(adom, pkg_path)
                         rules_total += count
                 except Exception as exc:
-                    logger.warning("summary_job: policy count for ADOM %s failed: %s", adom, exc)
+                    logger.warning(
+                        "summary_job: policy count for ADOM %s failed: %s", adom, exc
+                    )
 
         elapsed = round(_time.monotonic() - t0, 1)
         logger.info(
             "summary_job: done in %ss — %d firewalls, %d rules",
-            elapsed, firewalls_total, rules_total,
+            elapsed,
+            firewalls_total,
+            rules_total,
         )
 
         with _lock:
-            _store.update({
-                "firewalls_total":       firewalls_total,
-                "rules_total":           rules_total,
-                "last_updated":          datetime.now(timezone.utc).isoformat(),
-                "status":                "ok",
-                "error":                 None,
-            })
+            _store.update(
+                {
+                    "firewalls_total": firewalls_total,
+                    "rules_total": rules_total,
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                    "status": "ok",
+                    "error": None,
+                }
+            )
 
         # Persist today's totals for the 30-day trend graphs.
         # record_today() is idempotent — safe to call on startup runs too.
         try:
             from app.summary_history import record_today
+
             record_today(firewalls_total, rules_total)
         except Exception as exc:
             logger.warning("summary_history: record_today failed: %s", exc)
@@ -129,12 +143,13 @@ def _run_job(app):
         logger.exception("summary_job: unhandled error: %s", exc)
         with _lock:
             _store["status"] = "error"
-            _store["error"]  = str(exc)
+            _store["error"] = str(exc)
     finally:
         _running.clear()
 
 
 # ── Scheduler wiring ──────────────────────────────────────────────────────────
+
 
 def init_scheduler(app):
     """Register the summary job with APScheduler and fire it once immediately.
@@ -143,7 +158,7 @@ def init_scheduler(app):
     """
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    refresh_hour   = int(os.environ.get("SUMMARY_REFRESH_HOUR",   "1"))
+    refresh_hour = int(os.environ.get("SUMMARY_REFRESH_HOUR", "1"))
     refresh_minute = int(os.environ.get("SUMMARY_REFRESH_MINUTE", "0"))
 
     scheduler = BackgroundScheduler(daemon=True)
@@ -159,7 +174,8 @@ def init_scheduler(app):
     scheduler.start()
     logger.info(
         "summary_job: scheduler started — daily at %02d:%02d local time",
-        refresh_hour, refresh_minute,
+        refresh_hour,
+        refresh_minute,
     )
 
     # Fire immediately in a background thread so the first page load has data ASAP.

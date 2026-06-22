@@ -6,7 +6,7 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-/* ── Protocol badge rendering (mirrors firewalls.js) ───────────────────────── */
+/* ── Protocol badge rendering ───────────────────────────────────────────────── */
 function protoBadgeHtml(proto) {
   const base = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:.75rem;font-weight:600;border:1px solid;margin:1px 2px';
   const label = proto.name.toUpperCase();
@@ -22,27 +22,39 @@ function protoListHtml(protocols) {
   return protocols.map(protoBadgeHtml).join('');
 }
 
-function statusBadgeHtml(status) {
-  const base = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:.75rem;font-weight:600;border:1px solid';
-  if ((status || '') === 'up')
-    return `<span style="${base};color:#2d6a2d;border-color:#5a9e5a;background:#f4faf4">UP</span>`;
-  if ((status || '') === 'down')
-    return `<span style="${base};color:#888;border-color:#ccc;background:#f5f5f5">DOWN</span>`;
-  return `<span style="${base};color:#555;border-color:#aaa;background:#f8f8f8">${esc(status || '?')}</span>`;
+/* ── Result badge rendering (CIS and interface checks unified) ──────────────── */
+function resultBadgeHtml(result) {
+  const base = 'display:inline-block;padding:2px 8px;border-radius:3px;font-size:.75rem;font-weight:700;border:1px solid';
+  switch ((result || '').toUpperCase()) {
+    case 'INSECURE':
+      return `<span style="${base};color:#dc3545;border-color:#dc3545;background:#fff5f5">INSECURE</span>`;
+    case 'FAIL':
+      return `<span style="${base};color:#b91c1c;border-color:#fca5a5;background:#fee2e2">FAIL</span>`;
+    case 'WARN':
+      return `<span style="${base};color:#b45309;border-color:#fcd34d;background:#fffbeb">WARN</span>`;
+    case 'CONFIG_MISSING':
+      return `<span style="${base};color:#92400e;border-color:#fde68a;background:#fef3c7">CONFIG MISSING</span>`;
+    case 'PASS':
+      return `<span style="${base};color:#166534;border-color:#86efac;background:#dcfce7">PASS</span>`;
+    case 'INFO':
+      return `<span style="${base};color:#1d4ed8;border-color:#93c5fd;background:#eff6ff">INFO</span>`;
+    default:
+      return `<span style="${base};color:#555;border-color:#aaa;background:#f8f8f8">${esc(result || '?')}</span>`;
+  }
 }
 
 /* ── State ──────────────────────────────────────────────────────────────────── */
-let allRows      = [];
-let lastMeta     = null;
-let currentPage  = 1;
-let pageSize     = 25;
-let filterText   = '';
-let filterDevice = '';
-let filterStatus = 'up';        // 'up' = only up interfaces; 'all' = include down
-let activeProtos = new Set();   // protocol names currently checked; empty = show all
-let _protoMeta   = {};          // proto name → secure (true/false/null)
-let _abortRun    = false;       // set to true to cancel in-flight per-device loop
-let _knownDevices = [];         // populated when ADOM is selected
+let allRows       = [];
+let lastMeta      = null;
+let currentPage   = 1;
+let pageSize      = 25;
+let filterText    = '';
+let filterDevice  = '';
+let filterResult  = '';
+let activeProtos  = new Set();
+let _protoMeta    = {};
+let _abortRun     = false;
+let _knownDevices = [];
 
 /* ── Error/clear ────────────────────────────────────────────────────────────── */
 function showError(msg) {
@@ -75,6 +87,67 @@ function showProgress(done, total, currentDevice) {
 function hideProgress() {
   const wrap = document.getElementById('drProgressWrap');
   if (wrap) wrap.style.display = 'none';
+}
+
+/* ── Check parameter panel ──────────────────────────────────────────────────── */
+function updateParamsPanel() {
+  const checkedKeys = new Set(
+    [...document.querySelectorAll('input[name="dr_check"]:checked')].map(cb => cb.value)
+  );
+  const panel  = document.getElementById('drParamsPanel');
+  const fields = document.getElementById('drParamsFields');
+
+  // Find all parameterised checks that are currently selected
+  const active = (CHECK_DEFS || []).filter(
+    c => checkedKeys.has(c.key) && c.params_schema && c.params_schema.length > 0
+  );
+
+  if (!active.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = '';
+  fields.innerHTML = '';
+
+  active.forEach(check => {
+    check.params_schema.forEach(param => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem;flex-wrap:wrap';
+
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'min-width:180px;font-size:.88rem;font-weight:500';
+      lbl.textContent = `${check.name} — ${param.label}:`;
+      lbl.setAttribute('for', `drParam_${check.key}_${param.key}`);
+
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.id   = `drParam_${check.key}_${param.key}`;
+      inp.dataset.checkKey = check.key;
+      inp.dataset.paramKey = param.key;
+      inp.placeholder = param.placeholder || '';
+      inp.className   = 'form-control dr-param-input';
+      inp.style.cssText = 'max-width:360px;font-size:.88rem';
+
+      row.appendChild(lbl);
+      row.appendChild(inp);
+      fields.appendChild(row);
+    });
+  });
+}
+
+function collectCheckParams() {
+  const params = {};
+  document.querySelectorAll('.dr-param-input').forEach(inp => {
+    const ck = inp.dataset.checkKey;
+    const pk = inp.dataset.paramKey;
+    const val = (inp.value || '').trim();
+    if (!params[ck]) params[ck] = {};
+    params[ck][pk] = val
+      ? val.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)
+      : [];
+  });
+  return params;
 }
 
 /* ── ADOM loader ────────────────────────────────────────────────────────────── */
@@ -134,6 +207,8 @@ async function runAnalysis() {
   const deviceList = _knownDevices.map(d => d.name).filter(Boolean);
   if (!deviceList.length) { showError('No devices found in this ADOM.'); return; }
 
+  const checkParams = collectCheckParams();
+
   _abortRun = false;
   document.getElementById('drRunBtn').disabled        = true;
   const cancelBtn = document.getElementById('drCancelBtn');
@@ -158,7 +233,7 @@ async function runAnalysis() {
       const resp = await fetch('/api/device-review/run/device', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ adom, device, checks }),
+        body:    JSON.stringify({ adom, device, checks, check_params: checkParams }),
       });
       if (resp.status === 401) { location.href = '/login'; return; }
       const data = await resp.json();
@@ -181,27 +256,33 @@ async function runAnalysis() {
     device_count: reviewed.length,
     checks_run:   checks,
     devices:      reviewed,
+    check_params: checkParams,
   };
 
   // Reset filters
   filterText   = '';
   filterDevice = '';
-  filterStatus = 'up';
+  filterResult = '';
   currentPage  = 1;
-  document.getElementById('drFilter').value        = '';
-  document.getElementById('drDeviceFilter').value  = '';
-  document.getElementById('drStatusFilter').value  = 'up';
+  document.getElementById('drFilter').value       = '';
+  document.getElementById('drDeviceFilter').value = '';
+  document.getElementById('drResultFilter').value = '';
 
   populateDeviceFilter(reviewed);
   buildProtoCheckboxes();
   renderTable();
 
   document.getElementById('drResults').style.display = '';
-  const insCount = allRows.filter(r => r.has_insecure).length;
-  document.getElementById('drLastRunLabel').textContent =
-    `Last run: ${runAt} — ${reviewed.length} device(s) · ${allRows.length} interface(s)` +
-    (insCount ? ` · ${insCount} with insecure protocol(s)` : '') +
-    (_abortRun ? ' (cancelled)' : '');
+
+  const failCount = allRows.filter(r => r.result === 'FAIL' || r.result === 'INSECURE').length;
+  const passCount = allRows.filter(r => r.result === 'PASS').length;
+  const warnCount = allRows.filter(r => r.result === 'WARN' || r.result === 'CONFIG_MISSING').length;
+  let label = `Last run: ${runAt} — ${reviewed.length} device(s) · ${allRows.length} finding(s)`;
+  if (failCount) label += ` · ${failCount} fail/insecure`;
+  if (warnCount) label += ` · ${warnCount} warn/missing`;
+  if (passCount) label += ` · ${passCount} pass`;
+  if (_abortRun) label += ' (cancelled)';
+  document.getElementById('drLastRunLabel').textContent = label;
 
   document.getElementById('drRunBtn').disabled        = false;
   cancelBtn.style.display  = 'none';
@@ -211,7 +292,7 @@ async function runAnalysis() {
   setTimeout(hideProgress, 2000);
 }
 
-/* ── Protocol checkbox panel ────────────────────────────────────────────────── */
+/* ── Protocol checkbox panel (interface check only) ─────────────────────────── */
 function buildProtoCheckboxes() {
   _protoMeta = {};
   allRows.forEach(row => {
@@ -219,6 +300,13 @@ function buildProtoCheckboxes() {
       if (!(p.name in _protoMeta)) _protoMeta[p.name] = p.secure;
     });
   });
+
+  const panel = document.getElementById('drProtoPanel');
+  if (!Object.keys(_protoMeta).length) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
 
   const sorted = Object.keys(_protoMeta).sort((a, b) => {
     const rank = v => v === false ? 0 : v === true ? 1 : 2;
@@ -287,30 +375,34 @@ function populateDeviceFilter(deviceNames) {
 function filtered() {
   const q = filterText.toLowerCase();
   return allRows.filter(row => {
-    if (filterStatus === 'up' && (row.status || '') !== 'up') return false;
     if (filterDevice && row.device !== filterDevice) return false;
-    if (activeProtos.size > 0) {
+    if (filterResult && (row.result || '') !== filterResult) return false;
+
+    // For interface-protocol rows, apply protocol visibility filter
+    if (row.protocols && row.protocols.length > 0 && activeProtos.size > 0) {
       const rowProtos = new Set((row.protocols || []).map(p => p.name));
       if (![...activeProtos].some(p => rowProtos.has(p))) return false;
     }
+
     if (!q) return true;
     const protoNames = (row.protocols || []).map(p => p.name).join(' ').toLowerCase();
     return (
       (row.device    || '').toLowerCase().includes(q) ||
+      (row.check     || '').toLowerCase().includes(q) ||
+      (row.result    || '').toLowerCase().includes(q) ||
+      (row.detail    || '').toLowerCase().includes(q) ||
       (row.interface || '').toLowerCase().includes(q) ||
-      (row.vdom      || '').toLowerCase().includes(q) ||
       (row.ip        || '').toLowerCase().includes(q) ||
-      (row.type      || '').toLowerCase().includes(q) ||
-      (row.status    || '').toLowerCase().includes(q) ||
       protoNames.includes(q)
     );
   });
 }
 
 function visibleProtocols(row) {
+  if (!row.protocols || !row.protocols.length) return [];
   return activeProtos.size > 0
-    ? (row.protocols || []).filter(p => activeProtos.has(p.name))
-    : (row.protocols || []);
+    ? row.protocols.filter(p => activeProtos.has(p.name))
+    : row.protocols;
 }
 
 /* ── Render table ───────────────────────────────────────────────────────────── */
@@ -321,25 +413,51 @@ function renderTable() {
   const tbody = document.getElementById('drTbody');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">No interfaces match the current filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No results match the current filters.</td></tr>';
     document.getElementById('drPager').innerHTML    = '';
     document.getElementById('drSummary').textContent = buildSummary(rows);
     return;
   }
 
   tbody.innerHTML = page.map(row => {
-    const rowClass    = row.has_insecure ? ' class="dr-row-insecure"' : '';
-    const vdom        = row.vdom && row.vdom !== 'root' ? row.vdom : '';
-    const visProtos   = visibleProtocols(row);
-    const statusBadge = statusBadgeHtml(row.status);
-    return `<tr${rowClass}>
+    const isCis      = row.type === 'system';
+    const resultBadge = resultBadgeHtml(row.result);
+
+    // Scope column: interface + vdom for interface rows; "device-level" for CIS
+    let scopeHtml;
+    if (isCis) {
+      scopeHtml = '<span style="color:var(--text-muted);font-size:.82rem">device-level</span>';
+    } else {
+      const vdom = row.vdom && row.vdom !== 'root' ? row.vdom : '';
+      scopeHtml  =
+        `<code>${esc(row.interface)}</code>` +
+        (vdom ? ` <span class="dr-vdom-badge">${esc(vdom)}</span>` : '');
+    }
+
+    // Detail column: protocol badges for interface rows, plain text for CIS
+    let detailHtml;
+    if (isCis) {
+      detailHtml = row.detail
+        ? `<span style="font-size:.84rem">${esc(row.detail)}</span>`
+        : '<span style="color:var(--text-muted)">—</span>';
+    } else {
+      const visProtos = visibleProtocols(row);
+      detailHtml = protoListHtml(visProtos);
+    }
+
+    // Row highlight
+    let rowStyle = '';
+    const r = (row.result || '').toUpperCase();
+    if (r === 'INSECURE' || r === 'FAIL') rowStyle = ' style="background:#fff8f8"';
+    else if (r === 'PASS')                rowStyle = ' style="background:#f6fff8"';
+
+    return `<tr${rowStyle}>
       <td><strong>${esc(row.device)}</strong></td>
-      <td><code>${esc(row.interface)}</code></td>
-      <td>${vdom ? `<span class="dr-vdom-badge">${esc(vdom)}</span>` : '<span style="color:var(--text-muted)">root</span>'}</td>
-      <td><span class="dr-type-badge">${esc(row.type || 'physical')}</span></td>
-      <td>${statusBadge}</td>
-      <td><code>${esc(row.ip)}</code></td>
-      <td>${protoListHtml(visProtos)}</td>
+      <td style="font-size:.85rem">${esc(row.check || '')}</td>
+      <td>${resultBadge}</td>
+      <td>${scopeHtml}</td>
+      <td><code>${esc(row.ip || '—')}</code></td>
+      <td>${detailHtml}</td>
     </tr>`;
   }).join('');
 
@@ -348,10 +466,14 @@ function renderTable() {
 }
 
 function buildSummary(rows) {
-  const insecure = rows.filter(r => r.has_insecure).length;
-  const devices  = new Set(rows.map(r => r.device)).size;
-  let s = `${rows.length} interface(s) · ${devices} device(s)`;
-  if (insecure) s += ` · ${insecure} with insecure protocol(s)`;
+  const fail    = rows.filter(r => r.result === 'FAIL' || r.result === 'INSECURE').length;
+  const pass    = rows.filter(r => r.result === 'PASS').length;
+  const missing = rows.filter(r => r.result === 'CONFIG_MISSING').length;
+  const devices = new Set(rows.map(r => r.device)).size;
+  let s = `${rows.length} finding(s) · ${devices} device(s)`;
+  if (fail)    s += ` · ${fail} fail/insecure`;
+  if (missing) s += ` · ${missing} config missing`;
+  if (pass)    s += ` · ${pass} pass`;
   return s;
 }
 
@@ -388,15 +510,19 @@ function exportCsv() {
     `ADOM,${meta.adom || ''}`,
     `Date/Time,${meta.run_at || ''}`,
     `Devices Reviewed,${meta.device_count ?? ''}`,
-    `Total Interfaces,${rows.length}`,
+    `Total Findings,${rows.length}`,
     '',
   ].join('\r\n');
-  const cols = ['Device', 'Interface', 'VDOM', 'Type', 'Status', 'IP Address', 'Protocols', 'Has Insecure'];
+  const cols = ['Device', 'Check', 'Result', 'Interface/Scope', 'IP Address', 'Detail/Protocols'];
   const body = [cols.join(','), ...rows.map(r => [
-    r.device, r.interface, r.vdom, r.type, r.status || '',
-    r.ip,
-    visibleProtocols(r).map(p => p.name).join(' '),
-    r.has_insecure ? 'YES' : 'no',
+    r.device,
+    r.check || '',
+    r.result || '',
+    r.type === 'system' ? 'device-level' : r.interface,
+    r.ip || '',
+    r.type === 'system'
+      ? (r.detail || '')
+      : visibleProtocols(r).map(p => p.name).join(' '),
   ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\r\n');
   download(`device-review-${meta.adom || 'export'}.csv`, header + body, 'text/csv');
 }
@@ -419,50 +545,45 @@ function exportPdf() {
   clearError();
   const meta        = lastMeta || {};
   const ts          = meta.run_at || new Date().toLocaleString();
-  const title       = `Interface Protocol Review — ADOM: ${meta.adom || ''}`;
-  const insecCount  = rows.filter(r => r.has_insecure).length;
+  const title       = `Device Review — ADOM: ${meta.adom || ''}`;
+  const failCount   = rows.filter(r => r.result === 'FAIL' || r.result === 'INSECURE').length;
+  const passCount   = rows.filter(r => r.result === 'PASS').length;
   const deviceCount = new Set(rows.map(r => r.device)).size;
 
-  const protoCell = protos => {
-    if (!protos || !protos.length) return '—';
-    return protos.map(p => {
-      const style = p.secure === false
-        ? 'color:#b91c1c;font-weight:700;background:#fee2e2;padding:0 4px;border-radius:2px;margin:0 1px'
-        : p.secure === true
-          ? 'color:#166534;font-weight:600;background:#dcfce7;padding:0 4px;border-radius:2px;margin:0 1px'
-          : 'color:#374151;background:#f3f4f6;padding:0 4px;border-radius:2px;margin:0 1px';
-      return `<span style="${style}">${esc(p.name.toUpperCase())}</span>`;
-    }).join('');
+  const resultCell = result => {
+    switch ((result || '').toUpperCase()) {
+      case 'INSECURE':      return '<span style="color:#b91c1c;font-weight:700;background:#fee2e2;padding:0 5px;border-radius:2px">INSECURE</span>';
+      case 'FAIL':          return '<span style="color:#b91c1c;font-weight:700;background:#fee2e2;padding:0 5px;border-radius:2px">FAIL</span>';
+      case 'WARN':          return '<span style="color:#92400e;background:#fef3c7;padding:0 5px;border-radius:2px">WARN</span>';
+      case 'CONFIG_MISSING':return '<span style="color:#92400e;background:#fef3c7;padding:0 5px;border-radius:2px">CONFIG MISSING</span>';
+      case 'PASS':          return '<span style="color:#166534;background:#dcfce7;padding:0 5px;border-radius:2px">PASS</span>';
+      case 'INFO':          return '<span style="color:#1d4ed8;background:#eff6ff;padding:0 5px;border-radius:2px">INFO</span>';
+      default: return esc(result || '?');
+    }
   };
 
   const tableRows = rows.map(r => {
-    const rowStyle  = r.has_insecure ? 'background:#fff5f5' : '';
-    const vdom      = r.vdom && r.vdom !== 'root' ? r.vdom : 'root';
-    const visProtos = visibleProtocols(r);
-    const st = (r.status || '').toUpperCase() || '—';
-    const stStyle = r.status === 'up'
-      ? 'color:#166534;font-weight:700'
-      : r.status === 'down' ? 'color:#888' : 'color:#374151';
+    const rowStyle  = (r.result === 'FAIL' || r.result === 'INSECURE') ? 'background:#fff5f5' : '';
+    const scope     = r.type === 'system' ? 'device-level' : r.interface;
+    const detailStr = r.type === 'system'
+      ? esc(r.detail || '—')
+      : visibleProtocols(r).map(p => {
+          const s = p.secure === false
+            ? 'color:#b91c1c;font-weight:700;background:#fee2e2;padding:0 4px;border-radius:2px;margin:0 1px'
+            : p.secure === true
+              ? 'color:#166534;font-weight:600;background:#dcfce7;padding:0 4px;border-radius:2px;margin:0 1px'
+              : 'color:#374151;background:#f3f4f6;padding:0 4px;border-radius:2px;margin:0 1px';
+          return `<span style="${s}">${esc(p.name.toUpperCase())}</span>`;
+        }).join('') || '—';
     return `<tr style="${rowStyle}">
       <td>${esc(r.device)}</td>
-      <td><code>${esc(r.interface)}</code></td>
-      <td>${esc(vdom)}</td>
-      <td>${esc(r.type || '')}</td>
-      <td style="${stStyle}">${esc(st)}</td>
-      <td><code>${esc(r.ip)}</code></td>
-      <td>${protoCell(visProtos)}</td>
+      <td style="font-size:9px">${esc(r.check || '')}</td>
+      <td>${resultCell(r.result)}</td>
+      <td><code>${esc(scope)}</code></td>
+      <td><code>${esc(r.ip || '—')}</code></td>
+      <td>${detailStr}</td>
     </tr>`;
   }).join('');
-
-  const protoLegend = [...activeProtos].sort().map(n => {
-    const s = _protoMeta[n];
-    const style = s === false
-      ? 'color:#b91c1c;background:#fee2e2;border:1px solid #fca5a5;padding:0 5px;border-radius:2px;font-weight:700;font-size:10px'
-      : s === true
-        ? 'color:#166534;background:#dcfce7;border:1px solid #86efac;padding:0 5px;border-radius:2px;font-size:10px'
-        : 'color:#374151;background:#f3f4f6;border:1px solid #d1d5db;padding:0 5px;border-radius:2px;font-size:10px';
-    return `<span style="${style}">${esc(n.toUpperCase())}</span>`;
-  }).join(' ');
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>${esc(title)}</title>
@@ -476,7 +597,8 @@ function exportPdf() {
   .stats{display:flex;gap:12px;margin-bottom:14px}
   .stat{padding:4px 12px;border-radius:4px;font-size:11px;font-weight:700}
   .stat-total{background:#f3f4f6;color:#374151}
-  .stat-insecure{background:#fee2e2;color:#991b1b}
+  .stat-fail{background:#fee2e2;color:#991b1b}
+  .stat-pass{background:#dcfce7;color:#166534}
   table.main{width:100%;border-collapse:collapse}
   th{background:#eef1f5;text-align:left;padding:5px 8px;font-size:10px;text-transform:uppercase;border-bottom:2px solid #d0d7e2}
   td{padding:4px 8px;border-bottom:1px solid #e5e7eb;vertical-align:middle}
@@ -488,18 +610,18 @@ function exportPdf() {
   <table>
     <tr><td>ADOM</td><td>${esc(meta.adom || '')}</td></tr>
     <tr><td>Date / Time</td><td>${esc(ts)}</td></tr>
-    <tr><td>Devices in ADOM</td><td>${meta.device_count ?? 0}</td></tr>
+    <tr><td>Devices Reviewed</td><td>${meta.device_count ?? 0}</td></tr>
     <tr><td>Devices in Report</td><td>${deviceCount}</td></tr>
-    <tr><td>Interfaces in Report</td><td>${rows.length}</td></tr>
-    <tr><td>Protocols Shown</td><td>${protoLegend || '—'}</td></tr>
+    <tr><td>Findings in Report</td><td>${rows.length}</td></tr>
   </table>
 </div>
 <div class="stats">
-  <span class="stat stat-total">Interfaces: ${rows.length}</span>
-  ${insecCount ? `<span class="stat stat-insecure">&#9888; Insecure: ${insecCount}</span>` : ''}
+  <span class="stat stat-total">Findings: ${rows.length}</span>
+  ${failCount ? `<span class="stat stat-fail">&#9888; Fail/Insecure: ${failCount}</span>` : ''}
+  ${passCount ? `<span class="stat stat-pass">&#10003; Pass: ${passCount}</span>` : ''}
 </div>
 <table class="main">
-  <thead><tr><th>Device</th><th>Interface</th><th>VDOM</th><th>Type</th><th>Status</th><th>IP Address</th><th>Protocols</th></tr></thead>
+  <thead><tr><th>Device</th><th>Check</th><th>Result</th><th>Interface/Scope</th><th>IP</th><th>Detail / Protocols</th></tr></thead>
   <tbody>${tableRows}</tbody>
 </table>
 </body></html>`;
@@ -540,8 +662,8 @@ document.getElementById('drDeviceFilter').addEventListener('change', e => {
   renderTable();
 });
 
-document.getElementById('drStatusFilter').addEventListener('change', e => {
-  filterStatus = e.target.value;
+document.getElementById('drResultFilter').addEventListener('change', e => {
+  filterResult = e.target.value;
   currentPage  = 1;
   renderTable();
 });
@@ -566,5 +688,9 @@ document.getElementById('drExportCsv').addEventListener('click', exportCsv);
 document.getElementById('drExportJson').addEventListener('click', exportJson);
 document.getElementById('drExportPdf').addEventListener('click', exportPdf);
 
+// Update params panel whenever a check checkbox changes
+document.getElementById('drChecks').addEventListener('change', updateParamsPanel);
+
 /* ── Init ───────────────────────────────────────────────────────────────────── */
 loadAdoms();
+updateParamsPanel();

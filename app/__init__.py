@@ -43,9 +43,7 @@ def create_app() -> Flask:
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-        resp.headers[
-            "Content-Security-Policy"
-        ] = (
+        resp.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
@@ -59,20 +57,25 @@ def create_app() -> Flask:
         )
         forwarded_proto = request.headers.get("X-Forwarded-Proto", "")
         if request.is_secure or forwarded_proto.lower() == "https":
-            resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            resp.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
         return resp
 
     @app.errorhandler(RequestEntityTooLarge)
     def _file_too_large(_exc):
-        if (request.path.startswith("/api/")
-                or request.path.startswith("/admin/api/")
-                or request.path.startswith("/external/api/")):
+        if (
+            request.path.startswith("/api/")
+            or request.path.startswith("/admin/api/")
+            or request.path.startswith("/external/api/")
+        ):
             return jsonify({"error": "Uploaded file is too large"}), 413
         return "Uploaded file is too large", 413
 
     # Import every blueprint module (triggers registry.register() calls)
     # then pull the bp object out and register it with Flask.
     import importlib
+
     for module_path in _BLUEPRINT_MODULES:
         mod = importlib.import_module(module_path)
         if hasattr(mod, "bp"):
@@ -82,27 +85,32 @@ def create_app() -> Flask:
     # always reflect whatever tabs are currently registered.
     from app import registry
     from app import groups
+
     groups.KNOWN_TABS = registry.known_tabs()
 
     # Start background jobs — guard against re-registration on Flask debug reload.
     if not app.config.get("TESTING") and not app.config.get("_SUMMARY_STARTED"):
         app.config["_SUMMARY_STARTED"] = True
         from app.summary_job import init_scheduler
+
         init_scheduler(app)
 
     if not app.config.get("TESTING") and not app.config.get("_VERSIONS_CACHE_STARTED"):
         app.config["_VERSIONS_CACHE_STARTED"] = True
         from app.versions_cache import init_scheduler as init_versions_scheduler
+
         init_versions_scheduler(app)
 
     if not app.config.get("TESTING") and not app.config.get("_ADOM_CACHE_STARTED"):
         app.config["_ADOM_CACHE_STARTED"] = True
         from app.adom_cache import init_scheduler as init_adom_scheduler
+
         init_adom_scheduler(app)
 
     if not app.config.get("TESTING") and not app.config.get("_MAP_CACHE_STARTED"):
         app.config["_MAP_CACHE_STARTED"] = True
         from app.map_cache import init_scheduler as init_map_scheduler
+
         init_map_scheduler(app)
 
     @app.context_processor

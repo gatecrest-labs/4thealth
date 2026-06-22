@@ -54,12 +54,13 @@ def _save(data: dict) -> None:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+
 def _group_to_dict(name: str, g: dict) -> dict:
     return {
-        "name":          name,
-        "members":       g.get("members", []),
-        "ad_groups":     g.get("ad_groups", []),
-        "allowed_tabs":  g.get("allowed_tabs", []),
+        "name": name,
+        "members": g.get("members", []),
+        "ad_groups": g.get("ad_groups", []),
+        "allowed_tabs": g.get("allowed_tabs", []),
         "adom_restrict": bool(g.get("adom_restrict", False)),
         "allowed_adoms": g.get("allowed_adoms", []),
     }
@@ -97,9 +98,9 @@ def create_group(
         if name in groups:
             return False
         groups[name] = {
-            "members":       list(members or []),
-            "ad_groups":     list(ad_groups or []),
-            "allowed_tabs":  list(allowed_tabs or []),
+            "members": list(members or []),
+            "ad_groups": list(ad_groups or []),
+            "allowed_tabs": list(allowed_tabs or []),
             "adom_restrict": bool(adom_restrict),
             "allowed_adoms": list(allowed_adoms or []),
         }
@@ -120,7 +121,7 @@ def update_group(
         groups = _load()
         if name not in groups:
             return False
-        groups[name]["members"]   = list(members)
+        groups[name]["members"] = list(members)
         groups[name]["ad_groups"] = list(ad_groups or [])
         # Only filter against KNOWN_TABS when the registry has been populated
         # (it's empty before the Flask app factory runs — skip filtering in that case
@@ -157,6 +158,7 @@ def get_allowed_tabs(username: str, ad_groups: list[str] | None = None) -> set[s
     - If a user is in no group they get no tabs (empty set).
     """
     from app.auth import _load_users  # local import to avoid circular
+
     users = _load_users()
     user_entry = users.get(username, {})
     if user_entry.get("role") == "admin":
@@ -177,7 +179,9 @@ def user_can_access_tab(username: str, tab_key: str) -> bool:
     return tab_key in get_allowed_tabs(username)
 
 
-def get_allowed_adoms(username: str, ad_groups: list[str] | None = None) -> list[str] | None:
+def get_allowed_adoms(
+    username: str, ad_groups: list[str] | None = None
+) -> list[str] | None:
     """Return the list of ADOM names the user may access, or None for unrestricted.
 
     Rules:
@@ -191,6 +195,7 @@ def get_allowed_adoms(username: str, ad_groups: list[str] | None = None) -> list
     overlap between ad_groups and group['ad_groups'].
     """
     from app.auth import _load_users  # local import to avoid circular
+
     users = _load_users()
     user_entry = users.get(username, {})
     if user_entry.get("role") == "admin":
@@ -201,7 +206,8 @@ def get_allowed_adoms(username: str, ad_groups: list[str] | None = None) -> list
 
     ad_set = set(ad_groups or [])
     user_groups = [
-        g for g in groups.values()
+        g
+        for g in groups.values()
         if username in g.get("members", []) or ad_set & set(g.get("ad_groups", []))
     ]
 
@@ -219,7 +225,9 @@ def get_allowed_adoms(username: str, ad_groups: list[str] | None = None) -> list
     return sorted(allowed)
 
 
-def user_can_access_adom(username: str, adom: str, ad_groups: list[str] | None = None) -> bool:
+def user_can_access_adom(
+    username: str, adom: str, ad_groups: list[str] | None = None
+) -> bool:
     """Return True if the user may access the given ADOM."""
     allowed = get_allowed_adoms(username, ad_groups=ad_groups)
     if allowed is None:
