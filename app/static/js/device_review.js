@@ -116,7 +116,7 @@ function updateParamsPanel() {
       row.style.cssText = 'display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem;flex-wrap:wrap';
 
       const lbl = document.createElement('label');
-      lbl.style.cssText = 'min-width:180px;font-size:.88rem;font-weight:500';
+      lbl.style.cssText = 'min-width:180px;font-size:.88rem;font-weight:600;color:var(--text)';
       lbl.textContent = `${check.name} — ${param.label}:`;
       lbl.setAttribute('for', `drParam_${check.key}_${param.key}`);
 
