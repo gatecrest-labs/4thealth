@@ -203,56 +203,81 @@ def hygiene_policies():
         if n and subnet:
             addr_detail_map[n] = subnet
 
+    def _expand_addr(names):
+        result = []
+        for n in names:
+            if n in addr_grp_map:
+                result.append({"name": n, "type": "group", "members": addr_grp_map[n]})
+            else:
+                detail = addr_detail_map.get(n, "")
+                result.append({"name": n, "type": "object", "detail": detail})
+        return result
+
+    def _expand_svc(names):
+        result = []
+        for n in names:
+            if n in svc_grp_map:
+                result.append({"name": n, "type": "group", "members": svc_grp_map[n]})
+            else:
+                result.append({"name": n, "type": "object"})
+        return result
+
+    def _build_rule(p, idx):
+        srcaddr = _names(p.get("srcaddr") or p.get("src_addr"))
+        dstaddr = _names(p.get("dstaddr") or p.get("dst_addr"))
+        service = _names(p.get("service") or p.get("services"))
+        return {
+            "seq": p.get("policyid", idx + 1),
+            "id": str(p.get("policyid", idx + 1)),
+            "name": p.get("name") or "",
+            "status": _status(p),
+            "action": _action(p),
+            "srcaddr": srcaddr,
+            "dstaddr": dstaddr,
+            "service": service,
+            "srcaddr_exp": _expand_addr(srcaddr),
+            "dstaddr_exp": _expand_addr(dstaddr),
+            "service_exp": _expand_svc(service),
+            "fsso_groups": _names(p.get("fsso-groups")),
+            "comment": p.get("comments") or p.get("comment") or "",
+            "srcintf": _names(p.get("srcintf")),
+            "dstintf": _names(p.get("dstintf")),
+        }
+
+    # Cache fetched global blocks so duplicate block names only hit FMG once
+    global_block_cache: dict[str, list] = {}
+
     policies = []
     for idx, p in enumerate(raw):
         if not isinstance(p, dict):
             continue
-        srcaddr = _names(p.get("srcaddr") or p.get("src_addr"))
-        dstaddr = _names(p.get("dstaddr") or p.get("dst_addr"))
-        service = _names(p.get("service") or p.get("services"))
 
-        def _expand_addr(names):
-            result = []
-            for n in names:
-                if n in addr_grp_map:
-                    result.append(
-                        {"name": n, "type": "group", "members": addr_grp_map[n]}
-                    )
-                else:
-                    detail = addr_detail_map.get(n, "")
-                    result.append({"name": n, "type": "object", "detail": detail})
-            return result
+        block_name = p.get("_policy_block")
+        if block_name and str(block_name).strip():
+            block_name = str(block_name).strip()
+            if block_name not in global_block_cache:
+                try:
+                    with make_client() as client:
+                        block_rules = client.get_global_policies(block_name)
+                except Exception:
+                    block_rules = []
+                global_block_cache[block_name] = block_rules
 
-        def _expand_svc(names):
-            result = []
-            for n in names:
-                if n in svc_grp_map:
-                    result.append(
-                        {"name": n, "type": "group", "members": svc_grp_map[n]}
-                    )
-                else:
-                    result.append({"name": n, "type": "object"})
-            return result
+            block_rules = global_block_cache[block_name]
+            policies.append(
+                {
+                    "policy_block": block_name,
+                    "assigned": len(block_rules) > 0,
+                    "rules": [
+                        _build_rule(r, i)
+                        for i, r in enumerate(block_rules)
+                        if isinstance(r, dict)
+                    ],
+                }
+            )
+            continue
 
-        policies.append(
-            {
-                "seq": p.get("policyid", idx + 1),
-                "id": str(p.get("policyid", idx + 1)),
-                "name": p.get("name") or "",
-                "status": _status(p),
-                "action": _action(p),
-                "srcaddr": srcaddr,
-                "dstaddr": dstaddr,
-                "service": service,
-                "srcaddr_exp": _expand_addr(srcaddr),
-                "dstaddr_exp": _expand_addr(dstaddr),
-                "service_exp": _expand_svc(service),
-                "fsso_groups": _names(p.get("fsso-groups")),
-                "comment": p.get("comments") or p.get("comment") or "",
-                "srcintf": _names(p.get("srcintf")),
-                "dstintf": _names(p.get("dstintf")),
-            }
-        )
+        policies.append(_build_rule(p, idx))
 
     return jsonify({"policies": policies, "total": len(policies)})
 

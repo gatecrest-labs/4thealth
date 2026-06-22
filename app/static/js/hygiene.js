@@ -397,8 +397,10 @@ async function showPolicy() {
     document.getElementById('pvFieldFilter').value   = '';
     document.getElementById('pvRegexMode').checked   = false;
     document.getElementById('pvSearchError').style.display = 'none';
+
+    const ruleCount = _pvRuleCount(allPolicies);
     document.getElementById('policyViewTitle').textContent =
-      `${allPolicies.length} rule${allPolicies.length !== 1 ? 's' : ''} in "${pkg}" (${adom})`;
+      `${ruleCount} rule${ruleCount !== 1 ? 's' : ''} in "${pkg}" (${adom})`;
 
     applyPvFilter();
     renderPolicyTable();
@@ -437,23 +439,42 @@ function applyPvFilter() {
     matcher = s => String(s).toLowerCase().includes(q);
   }
 
-  pvFiltered = allPolicies.filter(p => {
-    const fields = {
-      name:    p.name || '',
-      id:      String(p.id || ''),
-      comment: p.comment || '',
-      srcaddr: _pvAddrText(p.srcaddr_exp || p.srcaddr) + ' ' + (p.fsso_groups || []).join(' '),
-      dstaddr: _pvAddrText(p.dstaddr_exp || p.dstaddr),
-      service: _pvSvcText(p.service_exp || p.service),
-      srcintf: (p.srcintf || []).join(' '),
-      dstintf: (p.dstintf || []).join(' '),
-    };
-
-    if (pvField && fields[pvField] !== undefined) {
-      return matcher(fields[pvField]);
+  pvFiltered = allPolicies.reduce((acc, p) => {
+    if (p.policy_block !== undefined) {
+      // Block header — include if block name matches, or filter its rules
+      const blockMatch = matcher(p.policy_block || '');
+      const matchedRules = (p.rules || []).filter(r => _pvRuleMatches(r, matcher));
+      if (blockMatch || matchedRules.length > 0) {
+        acc.push({ ...p, rules: blockMatch ? p.rules : matchedRules });
+      }
+      return acc;
     }
-    return Object.values(fields).some(v => matcher(v));
-  });
+    if (_pvRuleMatches(p, matcher)) acc.push(p);
+    return acc;
+  }, []);
+}
+
+function _pvRuleCount(policies) {
+  let n = 0;
+  for (const p of policies) {
+    if (p.policy_block !== undefined) n += (p.rules || []).length;
+    else n++;
+  }
+  return n;
+}
+
+function _pvRuleMatches(r, matcher) {
+  const fields = {
+    name:    r.name || '',
+    id:      String(r.id || ''),
+    comment: r.comment || '',
+    srcaddr: _pvAddrText(r.srcaddr_exp || r.srcaddr) + ' ' + (r.fsso_groups || []).join(' '),
+    dstaddr: _pvAddrText(r.dstaddr_exp || r.dstaddr),
+    service: _pvSvcText(r.service_exp || r.service),
+    srcintf: (r.srcintf || []).join(' '),
+    dstintf: (r.dstintf || []).join(' '),
+  };
+  return Object.values(fields).some(v => matcher(v));
 }
 
 function _pvAddrText(items) {
@@ -521,41 +542,73 @@ function _svcCellHtml(items) {
 }
 
 /* ── Render policy table ────────────────────────────────────────────────────── */
-function renderPolicyTable() {
-  const rows  = pvFiltered;
-  const total = Math.ceil(rows.length / pvPageSize) || 1;
-  pvPage      = Math.min(pvPage, total);
-  const slice = rows.slice((pvPage - 1) * pvPageSize, pvPage * pvPageSize);
+function _pvFlattenForPage(filtered) {
+  // Expand block entries into [header-sentinel, rule, rule, ...] for pagination
+  const flat = [];
+  for (const p of filtered) {
+    if (p.policy_block !== undefined) {
+      flat.push({ _blockHeader: true, policy_block: p.policy_block, assigned: p.assigned, ruleCount: (p.rules || []).length });
+      for (const r of (p.rules || [])) flat.push({ ...r, _inBlock: true });
+    } else {
+      flat.push(p);
+    }
+  }
+  return flat;
+}
 
-  const shown = rows.length === allPolicies.length
-    ? `${allPolicies.length} rule${allPolicies.length !== 1 ? 's' : ''}`
-    : `${rows.length} of ${allPolicies.length} rule${allPolicies.length !== 1 ? 's' : ''}`;
+function _pvRuleRow(p) {
+  const statusColor = p.status === 'enable' ? 'var(--success, #22c55e)' : 'var(--text-muted)';
+  const actionColor = p.action === 'deny' || p.action === 'block' ? '#ef4444' : '#22c55e';
+  const srcHtml = _addrCellHtml(p.srcaddr_exp || (p.srcaddr || []).map(n => ({ name: n, type: 'object' })))
+                + _fssoGroupsHtml(p.fsso_groups);
+  const dstHtml = _addrCellHtml(p.dstaddr_exp || (p.dstaddr || []).map(n => ({ name: n, type: 'object' })));
+  const svcHtml = _svcCellHtml(p.service_exp || (p.service || []).map(n => ({ name: n, type: 'object' })));
+  const intfStr = [
+    ...(p.srcintf || []).map(i => `<span class="pv-intf pv-intf-src" title="Source">${esc(i)}</span>`),
+    ...(p.dstintf || []).map(i => `<span class="pv-intf pv-intf-dst" title="Destination">${esc(i)}</span>`),
+  ].join('');
+  const indent = p._inBlock ? ' style="background:var(--bg-alt,#f8fafc)"' : '';
+  const seqPrefix = p._inBlock ? '<span style="color:var(--text-muted);font-size:.7rem">↳ </span>' : '';
+  return `<tr${p.status !== 'enable' ? ' style="opacity:.55"' : ''}${indent}>
+    <td style="font-size:.8rem;color:var(--text-muted)">${seqPrefix}${esc(String(p.seq))}</td>
+    <td><span style="font-size:.75rem;font-weight:600;color:${statusColor}">${esc(p.status)}</span></td>
+    <td><span style="font-size:.75rem;font-weight:600;color:${actionColor}">${esc(p.action)}</span></td>
+    <td><strong>${esc(p.name || '—')}</strong>${p.id && p.id !== p.name ? `<br><span style="font-size:.72rem;color:var(--text-muted)">id:${esc(p.id)}</span>` : ''}</td>
+    <td style="font-size:.8rem">${srcHtml}</td>
+    <td style="font-size:.8rem">${dstHtml}</td>
+    <td style="font-size:.8rem">${svcHtml}</td>
+    <td style="font-size:.78rem">${intfStr || '<span style="color:var(--text-muted)">—</span>'}</td>
+    <td style="font-size:.78rem;color:var(--text-muted)">${esc(p.comment)}</td>
+  </tr>`;
+}
+
+function renderPolicyTable() {
+  const flat  = _pvFlattenForPage(pvFiltered);
+  const filteredRuleCount = _pvRuleCount(pvFiltered);
+  const totalRuleCount    = _pvRuleCount(allPolicies);
+  const total = Math.ceil(flat.length / pvPageSize) || 1;
+  pvPage      = Math.min(pvPage, total);
+  const slice = flat.slice((pvPage - 1) * pvPageSize, pvPage * pvPageSize);
+
+  const shown = filteredRuleCount === totalRuleCount
+    ? `${totalRuleCount} rule${totalRuleCount !== 1 ? 's' : ''}`
+    : `${filteredRuleCount} of ${totalRuleCount} rule${totalRuleCount !== 1 ? 's' : ''}`;
   document.getElementById('policyCount').textContent =
     `${shown} — page ${pvPage} of ${total}`;
 
   const tbody = document.getElementById('policyTbody');
   tbody.innerHTML = slice.map(p => {
-    const statusColor = p.status === 'enable' ? 'var(--success, #22c55e)' : 'var(--text-muted)';
-    const actionColor = p.action === 'deny' || p.action === 'block' ? '#ef4444' : '#22c55e';
-    const srcHtml = _addrCellHtml(p.srcaddr_exp || (p.srcaddr || []).map(n => ({ name: n, type: 'object' })))
-                  + _fssoGroupsHtml(p.fsso_groups);
-    const dstHtml = _addrCellHtml(p.dstaddr_exp || (p.dstaddr || []).map(n => ({ name: n, type: 'object' })));
-    const svcHtml = _svcCellHtml(p.service_exp || (p.service || []).map(n => ({ name: n, type: 'object' })));
-    const intfStr = [
-      ...(p.srcintf || []).map(i => `<span class="pv-intf pv-intf-src" title="Source">${esc(i)}</span>`),
-      ...(p.dstintf || []).map(i => `<span class="pv-intf pv-intf-dst" title="Destination">${esc(i)}</span>`),
-    ].join('');
-    return `<tr${p.status !== 'enable' ? ' style="opacity:.55"' : ''}>
-      <td style="font-size:.8rem;color:var(--text-muted)">${esc(String(p.seq))}</td>
-      <td><span style="font-size:.75rem;font-weight:600;color:${statusColor}">${esc(p.status)}</span></td>
-      <td><span style="font-size:.75rem;font-weight:600;color:${actionColor}">${esc(p.action)}</span></td>
-      <td><strong>${esc(p.name || '—')}</strong>${p.id && p.id !== p.name ? `<br><span style="font-size:.72rem;color:var(--text-muted)">id:${esc(p.id)}</span>` : ''}</td>
-      <td style="font-size:.8rem">${srcHtml}</td>
-      <td style="font-size:.8rem">${dstHtml}</td>
-      <td style="font-size:.8rem">${svcHtml}</td>
-      <td style="font-size:.78rem">${intfStr || '<span style="color:var(--text-muted)">—</span>'}</td>
-      <td style="font-size:.78rem;color:var(--text-muted)">${esc(p.comment)}</td>
-    </tr>`;
+    if (p._blockHeader) {
+      const badge = p.assigned
+        ? `<span style="background:#3b82f6;color:#fff;font-size:.7rem;padding:1px 6px;border-radius:3px;margin-left:6px">${p.ruleCount} rule${p.ruleCount !== 1 ? 's' : ''}</span>`
+        : `<span style="background:#9ca3af;color:#fff;font-size:.7rem;padding:1px 6px;border-radius:3px;margin-left:6px">not assigned</span>`;
+      return `<tr style="background:var(--bg-header,#eef1f8)">
+        <td colspan="9" style="padding:.4rem .75rem;font-size:.8rem;font-weight:600;color:var(--text-secondary,#374151)">
+          &#127758; Global Policy Block: ${esc(p.policy_block)}${badge}
+        </td>
+      </tr>`;
+    }
+    return _pvRuleRow(p);
   }).join('') || `<tr><td colspan="9" class="empty-state" style="padding:.85rem 1rem">No policies match your search.</td></tr>`;
 
   renderPolicyPagination(total);
@@ -584,7 +637,7 @@ function _filterHeader() {
   const meta  = pvMeta || {};
   lines.push(`Package: ${meta.pkg || ''} (ADOM: ${meta.adom || ''})`);
   lines.push(`Generated: ${new Date().toLocaleString()}`);
-  lines.push(`Total rules: ${allPolicies.length}  Shown: ${pvFiltered.length}`);
+  lines.push(`Total rules: ${_pvRuleCount(allPolicies)}  Shown: ${_pvRuleCount(pvFiltered)}`);
   if (pvSearch) lines.push(`Search: "${pvSearch}"${pvField ? ` in field: ${pvField}` : ''}${pvRegex ? ' (regex)' : ''}`);
   return lines;
 }
@@ -613,12 +666,25 @@ function _flatSvcNames(items) {
   });
 }
 
+function _pvExportRules(filtered) {
+  // Flatten block entries into plain rule objects with a global_block label
+  const rules = [];
+  for (const p of filtered) {
+    if (p.policy_block !== undefined) {
+      for (const r of (p.rules || [])) rules.push({ ...r, _blockLabel: p.policy_block });
+    } else {
+      rules.push(p);
+    }
+  }
+  return rules;
+}
+
 function pvExportCsv() {
   const header = ['Seq', 'ID', 'Name', 'Status', 'Action',
-                  'Source', 'Destination', 'Service', 'Src Interface', 'Dst Interface', 'Comment'];
+                  'Source', 'Destination', 'Service', 'Src Interface', 'Dst Interface', 'Comment', 'Global Block'];
   const fh = _filterHeader().map(l => `# ${l}`);
   const lines = [...fh, header.join(',')];
-  pvFiltered.forEach(p => {
+  _pvExportRules(pvFiltered).forEach(p => {
     const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
     const src = [..._flatAddrNames(p.srcaddr_exp || p.srcaddr), ...(p.fsso_groups || [])];
     const dst = _flatAddrNames(p.dstaddr_exp || p.dstaddr);
@@ -627,7 +693,7 @@ function pvExportCsv() {
       p.seq, q(p.id), q(p.name), p.status, p.action,
       q(src.join('; ')), q(dst.join('; ')), q(svc.join('; ')),
       q((p.srcintf || []).join('; ')), q((p.dstintf || []).join('; ')),
-      q(p.comment),
+      q(p.comment), q(p._blockLabel || ''),
     ].join(','));
   });
   const meta = pvMeta || {};
@@ -636,6 +702,7 @@ function pvExportCsv() {
 
 function pvExportJson() {
   const meta = pvMeta || {};
+  const exportRules = _pvExportRules(pvFiltered);
   const payload = {
     package:   meta.pkg,
     adom:      meta.adom,
@@ -645,20 +712,21 @@ function pvExportJson() {
       field:     pvField  || null,
       regex:     pvRegex,
     },
-    total_rules:    allPolicies.length,
-    filtered_rules: pvFiltered.length,
-    rules: pvFiltered.map(p => ({
-      seq:     p.seq,
-      id:      p.id,
-      name:    p.name,
-      status:  p.status,
-      action:  p.action,
-      srcaddr: [..._flatAddrNames(p.srcaddr_exp || p.srcaddr), ...(p.fsso_groups || [])],
-      dstaddr: _flatAddrNames(p.dstaddr_exp || p.dstaddr),
-      service: _flatSvcNames(p.service_exp  || p.service),
-      srcintf: p.srcintf || [],
-      dstintf: p.dstintf || [],
-      comment: p.comment,
+    total_rules:    _pvRuleCount(allPolicies),
+    filtered_rules: _pvRuleCount(pvFiltered),
+    rules: exportRules.map(p => ({
+      seq:          p.seq,
+      id:           p.id,
+      name:         p.name,
+      status:       p.status,
+      action:       p.action,
+      global_block: p._blockLabel || null,
+      srcaddr:      [..._flatAddrNames(p.srcaddr_exp || p.srcaddr), ...(p.fsso_groups || [])],
+      dstaddr:      _flatAddrNames(p.dstaddr_exp || p.dstaddr),
+      service:      _flatSvcNames(p.service_exp  || p.service),
+      srcintf:      p.srcintf || [],
+      dstintf:      p.dstintf || [],
+      comment:      p.comment,
       fsso_groups:      p.fsso_groups || [],
       srcaddr_expanded: p.srcaddr_exp || [],
       dstaddr_expanded: p.dstaddr_exp || [],
@@ -673,14 +741,23 @@ function pvExportPdf() {
   const fh   = _filterHeader();
   const title = `Policy Rules — ${meta.pkg || ''} (${meta.adom || ''})`;
 
-  const tableRows = pvFiltered.map(p => {
+  const tableRows = _pvFlattenForPage(pvFiltered).map(p => {
+    if (p._blockHeader) {
+      const label = p.assigned ? `${p.ruleCount} rule${p.ruleCount !== 1 ? 's' : ''}` : 'not assigned';
+      return `<tr style="background:#eef1f8">
+        <td colspan="9" style="font-weight:600;font-size:9px;padding:3px 6px">
+          &#127758; Global Policy Block: ${esc(p.policy_block)} [${esc(label)}]
+        </td>
+      </tr>`;
+    }
     const src = [..._flatAddrNames(p.srcaddr_exp || p.srcaddr), ...(p.fsso_groups || [])].join('<br>');
     const dst = _flatAddrNames(p.dstaddr_exp || p.dstaddr).join('<br>');
     const svc = _flatSvcNames(p.service_exp  || p.service).join('<br>');
     const actionColor = p.action === 'deny' || p.action === 'block' ? '#dc2626' : '#16a34a';
     const statusColor = p.status === 'enable' ? '#16a34a' : '#9ca3af';
-    return `<tr${p.status !== 'enable' ? ' style="opacity:.55"' : ''}>
-      <td>${esc(String(p.seq))}</td>
+    const bg = p._inBlock ? ' style="background:#f8fafc"' : '';
+    return `<tr${p.status !== 'enable' ? ' style="opacity:.55"' : ''}${bg}>
+      <td>${p._inBlock ? '↳ ' : ''}${esc(String(p.seq))}</td>
       <td style="color:${statusColor};font-weight:600">${esc(p.status)}</td>
       <td style="color:${actionColor};font-weight:600">${esc(p.action)}</td>
       <td><strong>${esc(p.name || '—')}</strong><br><small>id: ${esc(p.id)}</small></td>
