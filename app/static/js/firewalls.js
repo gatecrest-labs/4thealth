@@ -302,6 +302,7 @@ ${(d.vdoms || []).map(v => `<tr><td>${vdomBadge(v.name)}</td><td>${escHtml(v.opm
   <div class="detail-item"><span class="detail-label">CPU</span><span class="detail-value">${cpu}%</span></div>
   <div class="detail-item"><span class="detail-label">Memory</span><span class="detail-value">${mem}%</span></div>
   <div class="detail-item"><span class="detail-label">HA Mode</span><span class="detail-value">${escHtml(haMode)}</span></div>
+  <div class="detail-item"><span class="detail-label">Policy Package</span><span class="detail-value">${escHtml(d.policy_package || '—')}</span></div>
 </div>
 
 ${vdomSection}
