@@ -247,62 +247,69 @@ def hygiene_policies():
     # Cache fetched global blocks so duplicate block names only hit FMG once
     global_block_cache: dict[str, list] = {}
 
-    policies = []
-    for idx, p in enumerate(raw):
-        if not isinstance(p, dict):
-            continue
+    try:
+        policies = []
+        for idx, p in enumerate(raw):
+            if not isinstance(p, dict):
+                continue
 
-        block_name = p.get("_policy_block")
-        if block_name and str(block_name).strip():
-            block_name = str(block_name).strip()
-            if block_name not in global_block_cache:
-                try:
-                    with make_client() as client:
-                        block_rules = client.get_pblock_policies(adom, block_name)
-                except Exception:
-                    block_rules = []
-                global_block_cache[block_name] = block_rules
+            block_name = p.get("_policy_block")
+            if block_name and str(block_name).strip():
+                block_name = str(block_name).strip()
+                if block_name not in global_block_cache:
+                    try:
+                        with make_client() as client:
+                            block_rules = client.get_pblock_policies(adom, block_name)
+                    except Exception:
+                        block_rules = []
+                    global_block_cache[block_name] = block_rules
 
-            block_rules = global_block_cache[block_name]
-            policies.append(
-                {
-                    "policy_block": block_name,
-                    "assigned": len(block_rules) > 0,
-                    "rules": [
-                        _build_rule(r, i)
-                        for i, r in enumerate(block_rules)
-                        if isinstance(r, dict)
-                    ],
-                }
-            )
-            continue
+                block_rules = global_block_cache[block_name]
+                policies.append(
+                    {
+                        "policy_block": block_name,
+                        "assigned": len(block_rules) > 0,
+                        "rules": [
+                            _build_rule(r, i)
+                            for i, r in enumerate(block_rules)
+                            if isinstance(r, dict)
+                        ],
+                    }
+                )
+                continue
 
-        policies.append(_build_rule(p, idx))
+            policies.append(_build_rule(p, idx))
 
-    # FortiGate always has an implicit deny-all at the bottom of every policy package.
-    # It is not returned by the FMG API, so we append it synthetically.
-    policies.append(
-        {
-            "seq": "implicit",
-            "id": "implicit",
-            "name": "Implicit Deny",
-            "status": "enable",
-            "action": "deny",
-            "srcaddr": ["all"],
-            "dstaddr": ["all"],
-            "service": ["ALL"],
-            "srcaddr_exp": [{"name": "all", "type": "object", "detail": "0.0.0.0/0"}],
-            "dstaddr_exp": [{"name": "all", "type": "object", "detail": "0.0.0.0/0"}],
-            "service_exp": [{"name": "ALL", "type": "object"}],
-            "fsso_groups": [],
-            "comment": "Default implicit deny — all unmatched traffic is dropped",
-            "srcintf": ["any"],
-            "dstintf": ["any"],
-            "implicit": True,
-        }
-    )
+        # FortiGate always has an implicit deny-all at the bottom of every policy package.
+        # It is not returned by the FMG API, so we append it synthetically.
+        policies.append(
+            {
+                "seq": "implicit",
+                "id": "implicit",
+                "name": "Implicit Deny",
+                "status": "enable",
+                "action": "deny",
+                "srcaddr": ["all"],
+                "dstaddr": ["all"],
+                "service": ["ALL"],
+                "srcaddr_exp": [
+                    {"name": "all", "type": "object", "detail": "0.0.0.0/0"}
+                ],
+                "dstaddr_exp": [
+                    {"name": "all", "type": "object", "detail": "0.0.0.0/0"}
+                ],
+                "service_exp": [{"name": "ALL", "type": "object"}],
+                "fsso_groups": [],
+                "comment": "Default implicit deny — all unmatched traffic is dropped",
+                "srcintf": ["any"],
+                "dstintf": ["any"],
+                "implicit": True,
+            }
+        )
 
-    return jsonify({"policies": policies, "total": len(policies)})
+        return jsonify({"policies": policies, "total": len(policies)})
+    except Exception as exc:
+        return internal_api_error("hygiene", exc)
 
 
 # ── API: object lookup ───────────────────────────────────────────────────────
