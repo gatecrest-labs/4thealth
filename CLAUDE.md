@@ -61,7 +61,7 @@ app/
   config.py            # Reads .env into a Config object
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
-  hygiene.py           # Rule hygiene check engine (7 checks: unnamed, unlogged, shadow, disabled, expired, unhit, no_deny_all)
+  hygiene.py           # Rule hygiene check engine (6 checks: unnamed, unlogged, shadow, disabled, expired, unhit)
   device_review.py     # Device Review check engine — interface protocol checks; add new checks here
   rule_review.py       # Policy analysis + route-tracing engine; zone policy integration
   zone_db.py           # Zone policy DB engine — loads policy_db.json, runs queries, validates, handles CRUD
