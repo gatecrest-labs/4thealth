@@ -117,7 +117,9 @@ def _needed_data_keys(check_keys: list[str] | None) -> set[str]:
     return needed
 
 
-def _fetch_device_data(client, adom: str, device: str, data_keys: set[str]) -> dict:
+def _fetch_device_data(
+    client, adom: str, device: str, data_keys: set[str], device_meta: dict | None = None
+) -> dict:
     """Fetch only the device data blobs required by the selected checks."""
     data: dict = {}
     if "interfaces" in data_keys:
@@ -135,6 +137,59 @@ def _fetch_device_data(client, adom: str, device: str, data_keys: set[str]) -> d
             data["syslog"] = client.get_device_syslog(adom, device)
         except Exception:
             data["syslog"] = []
+    if "admins" in data_keys:
+        try:
+            data["admins"] = client.get_device_admins(adom, device)
+        except Exception:
+            data["admins"] = []
+    if "system_global" in data_keys:
+        try:
+            data["system_global"] = client.get_device_system_global(adom, device)
+        except Exception:
+            data["system_global"] = {}
+    if "password_policy" in data_keys:
+        try:
+            data["password_policy"] = client.get_device_password_policy(adom, device)
+        except Exception:
+            data["password_policy"] = {}
+    if "log_disk" in data_keys:
+        try:
+            data["log_disk"] = client.get_device_log_disk(adom, device)
+        except Exception:
+            data["log_disk"] = {}
+    if "log_faz" in data_keys:
+        try:
+            data["log_faz"] = client.get_device_log_faz(adom, device)
+        except Exception:
+            data["log_faz"] = {}
+    if "dns" in data_keys:
+        try:
+            data["dns"] = client.get_device_dns(adom, device)
+        except Exception:
+            data["dns"] = {}
+    if "snmp_community" in data_keys:
+        try:
+            data["snmp_community"] = client.get_device_snmp_community(adom, device)
+        except Exception:
+            data["snmp_community"] = []
+    if "snmp_sysinfo" in data_keys:
+        try:
+            data["snmp_sysinfo"] = client.get_device_snmp_sysinfo(adom, device)
+        except Exception:
+            data["snmp_sysinfo"] = {}
+    if "snmp_users" in data_keys:
+        try:
+            data["snmp_users"] = client.get_device_snmp_users(adom, device)
+        except Exception:
+            data["snmp_users"] = []
+    if "ha_status" in data_keys:
+        try:
+            data["ha_status"] = client.get_device_ha_status(adom, device)
+        except Exception:
+            data["ha_status"] = {}
+    # device_meta is passed in from the caller (already fetched from device list)
+    if "device_meta" in data_keys:
+        data["device_meta"] = device_meta or {}
     return data
 
 
@@ -163,7 +218,14 @@ def device_review_run_one():
 
     try:
         with make_client() as client:
-            device_data = _fetch_device_data(client, adom, device, needed)
+            # Fetch device meta when firmware check is selected
+            device_meta: dict = {}
+            if "device_meta" in needed:
+                try:
+                    device_meta = client.get_device(adom, device) or {}
+                except Exception:
+                    device_meta = {}
+            device_data = _fetch_device_data(client, adom, device, needed, device_meta)
     except FMGError as exc:
         return upstream_api_error("device_review", exc)
     except Exception as exc:
@@ -226,7 +288,7 @@ def device_review_run():
         reviewed.append(name)
         try:
             with make_client() as client:
-                device_data = _fetch_device_data(client, adom, name, needed)
+                device_data = _fetch_device_data(client, adom, name, needed, dev)
         except Exception:
             device_data = {}
 

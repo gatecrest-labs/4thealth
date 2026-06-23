@@ -172,6 +172,31 @@ Runs configurable security checks against every device in a selected ADOM. Combi
 - `PASS` — green: CIS check passed
 - `INFO` — blue: informational finding (e.g. PING enabled)
 
+**Implemented checks (18 total):**
+
+| Key | Name | CIS Level | data_keys | Parameterised |
+|-----|------|-----------|-----------|---------------|
+| `interface_protocols` | Interface Protocols | — | `interfaces` | No |
+| `ntp_config` | NTP Configuration | L1 | `ntp` | Yes (expected IPs) |
+| `syslog_config` | Syslog Configuration | L1 | `syslog` | Yes (expected IPs) |
+| `trusted_hosts` | Trusted Hosts on Admin Accounts | L1 | `admins` | No |
+| `default_admin` | Default 'admin' Account | L1 | `admins` | No |
+| `idle_timeout` | Admin Idle Timeout | L1 | `system_global` | Yes (max minutes) |
+| `lockout_threshold` | Admin Lockout Threshold | L1 | `system_global` | Yes (max attempts) |
+| `password_length` | Password Minimum Length | L1 | `password_policy` | Yes (min chars) |
+| `log_disk` | Local Disk Logging | L1 | `log_disk` | No |
+| `log_severity` | Log Severity Level | L1 | `log_disk` | Yes (max severity) |
+| `log_faz` | FortiAnalyzer Logging | L1 | `log_faz` | Yes (expected FAZ IP) |
+| `dns_servers` | DNS Servers | L1 | `dns` | Yes (expected IPs) |
+| `snmp_version` | SNMP Version Enforcement | L1 | `snmp_community`, `snmp_sysinfo` | No |
+| `snmp_readonly` | SNMP Read-Only | L2 | `snmp_users` | No |
+| `tls_version` | Minimum TLS Version | L1 | `system_global` | Yes (min TLS) |
+| `ssh_ciphers` | SSH Strong Ciphers | L2 | `system_global` | No |
+| `firmware_version` | Firmware Version Compliance | L1 | `device_meta` | Yes (min version) |
+| `ha_sync` | HA Sync Status | L2 | `ha_status` | No |
+
+Note: `system_global` is fetched once and shared by `idle_timeout`, `lockout_threshold`, `tls_version`, and `ssh_ciphers`. `admins` is shared by `trusted_hosts` and `default_admin`. `log_disk` is shared by `log_disk` and `log_severity`. `device_meta` is populated from the device list (no extra API call).
+
 **Check engine — `app/device_review.py`:**
 
 The check registry (`CHECKS` list) is the single place to add new checks. Each entry is:
@@ -182,7 +207,7 @@ The check registry (`CHECKS` list) is the single place to add new checks. Each e
     "name":         "Display Name",       # shown in UI checkbox list
     "description":  "One-line summary",   # tooltip
     "data_keys":    ["interfaces"],       # which device data blobs to fetch
-                                          # ("interfaces", "ntp", "syslog")
+                                          # see implemented data_keys above
     "params_schema": [],                  # [] = binary check, no user input
                                           # or list of input descriptors:
                                           # [{"key","label","type","placeholder","required"}]
@@ -202,10 +227,11 @@ A `Row` dict must contain: `device`, `interface` (or `"system"` for device-level
 - `POST /api/device-review/run` — body: `{ adom, devices, checks, check_params }` — bulk run; `devices: []` means all, `checks` absent means all, `check_params` maps check key → param dict
 
 **Adding a new CIS check (binary example):**
-1. Add a proxy method to `fmg_client.py` if new data is needed (e.g. `get_device_admin_settings`).
-2. Write `_run_my_check(device_name, device_data, params) -> list[Row]` in `device_review.py`.
-3. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
-No route or frontend changes are needed for binary checks.
+1. Add a proxy method to `fmg_client.py` if new device data is needed.
+2. Add a fetch branch in `_fetch_device_data()` in `device_review_routes.py` for the new `data_key`.
+3. Write `_run_my_check(device_name, device_data, params) -> list[Row]` in `device_review.py`.
+4. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
+No template or frontend JS changes are needed for binary checks.
 
 ### Rule Validation tab
 

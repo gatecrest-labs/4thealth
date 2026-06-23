@@ -174,45 +174,90 @@ const SECTIONS = [
     tab:   'device_review',
     html: `
 <h3>Device Review</h3>
-<p>Audits the management-plane interfaces of every FortiGate in a selected ADOM. It shows which protocols are enabled on each interface and highlights insecure cleartext protocols in red.</p>
+<p>Audits every FortiGate in a selected ADOM against interface protocol checks and CIS hardening benchmarks. Results are colour-coded by severity so issues stand out immediately.</p>
+
 <h3>Running a Review</h3>
 <ol>
   <li>Select an <strong>ADOM</strong> from the dropdown — the device count loads automatically.</li>
-  <li>Select which <strong>check</strong> to run (currently: <em>Interface Protocols</em>).</li>
+  <li>Choose which <strong>checks</strong> to run (all selected by default). Parameterised checks reveal a <strong>Check Parameters</strong> panel — enter expected values before running.</li>
   <li>Click <strong>▶ Run Review</strong>.</li>
 </ol>
-<p>For large ADOMs (e.g. 700+ devices) the review runs one device at a time so you can watch it progress.</p>
+<p>For large ADOMs the review runs one device at a time so you can watch progress and cancel early.</p>
+
 <h3>Progress Indicator</h3>
 <ul>
-  <li>A <strong>progress bar</strong> fills as each device is processed, showing <em>N / Total devices — current device name (X remaining)</em>.</li>
-  <li>Click <strong>⏹ Cancel</strong> at any time to stop after the current device. Partial results are shown immediately.</li>
+  <li>A <strong>progress bar</strong> fills as each device is processed, showing <em>N / Total — current device name</em>.</li>
+  <li>Click <strong>⏹ Cancel</strong> to stop after the current device. Partial results are shown immediately.</li>
 </ul>
-<h3>Protocol Filter Panel</h3>
-<p>After a run, a <strong>Filter by Protocol</strong> checkbox list appears above the results — one checkbox per protocol actually found (e.g. HTTPS, SSH, HTTP, PING). Protocols are colour-coded:</p>
+
+<h3>Result Values</h3>
 <ul>
-  <li><span style="color:#dc3545;font-weight:700">Red badge</span> — insecure cleartext protocol (HTTP, Telnet).</li>
-  <li><span style="color:#2d6a2d;font-weight:700">Green badge</span> — secure encrypted protocol (HTTPS, SSH, SNMP).</li>
-  <li><span style="color:#555;font-weight:700">Grey badge</span> — informational (PING, FGFM, CAPWAP, etc.).</li>
+  <li><span style="color:#dc3545;font-weight:700">INSECURE</span> — cleartext management protocol (HTTP, Telnet) is enabled on an interface.</li>
+  <li><span style="color:#dc3545;font-weight:700">FAIL</span> — CIS check failed (e.g. default admin account active, SNMP v1/v2c enabled).</li>
+  <li><span style="color:#e6a817;font-weight:700">WARN</span> — interface has no secure management alternative.</li>
+  <li><span style="color:#e6a817;font-weight:700">CONFIG_MISSING</span> — check ran but no expected value was supplied; device value shown for information.</li>
+  <li><span style="color:#2d6a2d;font-weight:700">PASS</span> — CIS check passed.</li>
+  <li><span style="color:#0d6efd;font-weight:700">INFO</span> — informational finding (e.g. HA standalone mode).</li>
 </ul>
-<p>Checking or unchecking a protocol instantly filters the table to interfaces that have at least one of the selected protocols. The <strong>All</strong> / <strong>None</strong> buttons toggle all checkboxes at once.</p>
+
+<h3>Available Checks</h3>
+<p><strong>Interface Protocols</strong> — shows every interface with management access and highlights insecure cleartext protocols (HTTP, Telnet) in red.</p>
+<p><strong>NTP Configuration (CIS L1)</strong> — verifies NTP sync is enabled and configured servers match expected IPs. Leave the parameter blank to see device values without comparing.</p>
+<p><strong>Syslog Configuration (CIS L1)</strong> — verifies remote syslog is enabled and sending to expected server IPs.</p>
+
+<p><em>Admin Account Hardening</em></p>
+<ul>
+  <li><strong>Trusted Hosts on Admin Accounts (CIS L1)</strong> — flags any admin account that allows management access from any IP (no trusted-host restriction).</li>
+  <li><strong>Default 'admin' Account (CIS L1)</strong> — flags if the built-in <code>admin</code> account is still active. It should be renamed or disabled.</li>
+  <li><strong>Admin Idle Timeout (CIS L1)</strong> — verifies the admin session idle timeout does not exceed your specified maximum (e.g. 10 minutes).</li>
+  <li><strong>Admin Lockout Threshold (CIS L1)</strong> — verifies the failed-login lockout threshold does not exceed your specified maximum (e.g. 5 attempts).</li>
+  <li><strong>Password Minimum Length (CIS L1)</strong> — verifies the password-policy minimum length meets your specified requirement (e.g. 12 characters).</li>
+</ul>
+
+<p><em>Logging</em></p>
+<ul>
+  <li><strong>Local Disk Logging (CIS L1)</strong> — verifies disk logging is enabled on the device.</li>
+  <li><strong>Log Severity Level (CIS L1)</strong> — verifies disk log severity captures at least the expected level (e.g. <code>information</code>). Severity order: emergency → alert → critical → error → warning → notification → information → debug.</li>
+  <li><strong>FortiAnalyzer Logging (CIS L1)</strong> — verifies FortiAnalyzer logging is enabled and the server IP matches expected. Leave blank to view the configured server without comparing.</li>
+</ul>
+
+<p><em>Network Services</em></p>
+<ul>
+  <li><strong>DNS Servers (CIS L1)</strong> — verifies all expected DNS server IPs are configured on the device.</li>
+  <li><strong>SNMP Version Enforcement (CIS L1)</strong> — flags any active SNMPv1 or SNMPv2c community. Only SNMPv3 should be used.</li>
+  <li><strong>SNMP Read-Only (CIS L2)</strong> — flags any SNMPv3 user with write access enabled.</li>
+</ul>
+
+<p><em>Protocol Security</em></p>
+<ul>
+  <li><strong>Minimum TLS Version (CIS L1)</strong> — flags if TLS 1.0 or 1.1 are permitted for HTTPS admin access. Leave the parameter blank to auto-detect without a target.</li>
+  <li><strong>SSH Strong Ciphers (CIS L2)</strong> — flags if CBC-mode ciphers or MD5 MAC algorithms are in the SSH allowed list.</li>
+</ul>
+
+<p><em>Fortinet-Specific</em></p>
+<ul>
+  <li><strong>Firmware Version Compliance (CIS L1)</strong> — compares each device's running firmware against your specified minimum (e.g. <code>7.4.3</code>). No additional API call is needed — the version comes from the device list.</li>
+  <li><strong>HA Sync Status (CIS L2)</strong> — verifies all HA cluster members are synchronised. Reports INFO for standalone devices; FAIL if any member is out of sync.</li>
+</ul>
+
+<h3>Protocol Filter Panel</h3>
+<p>When the <em>Interface Protocols</em> check ran, a <strong>Filter by Protocol</strong> panel appears above the results — one checkbox per protocol found. Protocols are colour-coded:</p>
+<ul>
+  <li><span style="color:#dc3545;font-weight:700">Red</span> — insecure cleartext (HTTP, Telnet).</li>
+  <li><span style="color:#2d6a2d;font-weight:700">Green</span> — secure (HTTPS, SSH, SNMP).</li>
+  <li><span style="color:#555;font-weight:700">Grey</span> — informational (PING, FGFM, CAPWAP, etc.).</li>
+</ul>
+<p>The <strong>All</strong> / <strong>None</strong> buttons toggle all checkboxes at once.</p>
+
 <h3>Results Table</h3>
 <ul>
-  <li>Columns: Device, Interface, VDOM, Type, IP Address, Protocols.</li>
-  <li>Rows with any insecure protocol have a <span style="background:rgba(239,68,68,.12);padding:0 4px;border-radius:2px">red-tinted background</span>.</li>
-  <li>VLAN sub-interfaces and all VDOMs are included — the review queries every interface across every VDOM on the device.</li>
-  <li>Use the <strong>text search</strong> and <strong>All devices</strong> dropdown to narrow results further.</li>
+  <li>Columns: Device, Check, Result, Interface / Scope, IP Address, Protocols / Detail.</li>
+  <li>Filter by free text, device, or result type using the controls above the table.</li>
   <li>Page size: 10 / 25 / 50 with <code>&lt;&lt; &lt; … &gt; &gt;&gt;</code> pagination.</li>
 </ul>
-<h3>Row Selection &amp; PDF Export</h3>
-<ul>
-  <li>Each row has a <strong>checkbox</strong>. Use <strong>Select all / Clear</strong> to check or uncheck all visible rows.</li>
-  <li>The header checkbox selects/deselects the entire current page.</li>
-  <li><strong>PDF (selected)</strong> exports only the checked rows. The PDF evidence header includes: ADOM name, date/time, total devices in ADOM, devices in this report, interface count, and which protocols are shown.</li>
-</ul>
-<h3>CSV &amp; JSON Exports</h3>
-<p>Both exports include all rows matching the current protocol filter (not just the checked rows), along with a metadata header (ADOM, date/time, device count).</p>
-<h3>Adding New Checks</h3>
-<p>The check engine lives in <code>app/device_review.py</code>. To add a new check, append an entry to the <code>CHECKS</code> list with a <code>key</code>, <code>name</code>, <code>description</code>, and a <code>run(device_name, interfaces)</code> function that returns a list of result rows. No other files need to change.</p>
+
+<h3>CSV &amp; JSON &amp; PDF Exports</h3>
+<p>CSV and JSON export all filtered rows with a metadata header. PDF exports only the selected (checked) rows and includes an evidence header: ADOM, date/time, devices reviewed, and checks run.</p>
 `
   },
   {

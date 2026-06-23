@@ -279,6 +279,29 @@ def hygiene_policies():
 
         policies.append(_build_rule(p, idx))
 
+    # FortiGate always has an implicit deny-all at the bottom of every policy package.
+    # It is not returned by the FMG API, so we append it synthetically.
+    policies.append(
+        {
+            "seq": "implicit",
+            "id": "implicit",
+            "name": "Implicit Deny",
+            "status": "enable",
+            "action": "deny",
+            "srcaddr": ["all"],
+            "dstaddr": ["all"],
+            "service": ["ALL"],
+            "srcaddr_exp": [{"name": "all", "type": "object", "detail": "0.0.0.0/0"}],
+            "dstaddr_exp": [{"name": "all", "type": "object", "detail": "0.0.0.0/0"}],
+            "service_exp": [{"name": "ALL", "type": "object"}],
+            "fsso_groups": [],
+            "comment": "Default implicit deny — all unmatched traffic is dropped",
+            "srcintf": ["any"],
+            "dstintf": ["any"],
+            "implicit": True,
+        }
+    )
+
     return jsonify({"policies": policies, "total": len(policies)})
 
 
