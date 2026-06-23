@@ -35,11 +35,12 @@ TARGET_IDS = {110198}  # default — override via CLI args
 
 # ── Parse CLI args ────────────────────────────────────────────────────────────
 
-show_all_blank    = "--all-blank" in sys.argv
-list_packages     = "--list-pkgs" in sys.argv
-list_adoms        = "--list-adoms" in sys.argv
-list_global_pkgs  = "--list-global-pkgs" in sys.argv
-if not show_all_blank and not list_packages and not list_adoms and not list_global_pkgs:
+show_all_blank      = "--all-blank" in sys.argv
+list_packages       = "--list-pkgs" in sys.argv
+list_adoms          = "--list-adoms" in sys.argv
+list_global_pkgs    = "--list-global-pkgs" in sys.argv
+dump_global_rules   = "--dump-global-rules" in sys.argv  # dump raw rules from global pkg
+if not show_all_blank and not list_packages and not list_adoms and not list_global_pkgs and not dump_global_rules:
     ids_from_args = [a for a in sys.argv[1:] if a.isdigit()]
     if ids_from_args:
         TARGET_IDS = set(int(x) for x in ids_from_args)
@@ -220,6 +221,38 @@ try:
         print("Global policy packages on FMG:")
         for p in _flatten_global(items):
             print(f"  {p}")
+        sys.exit(0)
+
+    if dump_global_rules:
+        block_name = "ThreatFeeds-noVDOMs"
+        url_variants = [
+            f"/pm/pblock/adom/{ADOM}/{block_name}",
+            f"/pm/pblock/adom/{ADOM}/{block_name}/firewall/policy",
+            f"/pm/config/adom/{ADOM}/pblock/{block_name}/firewall/policy",
+            f"/pm/config/adom/{ADOM}/pblock/{block_name}/firewall/consolidated/policy/1",
+        ]
+        for url in url_variants:
+            body = {"id": _next_id(), "method": "get",
+                    "params": [{"url": url, "range": [0, 10]}]}
+            if session:
+                body["session"] = session
+            data = _post(body)
+            result = data.get("result", [{}])[0]
+            raw = result.get("data")
+            rule_count = len(raw) if isinstance(raw, list) else repr(raw)
+            print(f"\n[URL] {url}")
+            print(f"  status={result.get('status')}  data={rule_count}")
+            if isinstance(raw, list):
+                for r in raw[:5]:
+                    if not isinstance(r, dict):
+                        continue
+                    pb = r.get("_policy_block")
+                    pid = r.get("policyid")
+                    name = r.get("name") or ""
+                    src = [i.get("name") if isinstance(i, dict) else i for i in (r.get("srcaddr") or [])]
+                    print(f"    id={pid} name={name!r} _policy_block={pb!r} src={src}")
+            elif isinstance(raw, dict):
+                print(f"  keys: {list(raw.keys())}")
         sys.exit(0)
 
     print(f"Fetching policies from ADOM={ADOM}, PKG={PKG} ...")

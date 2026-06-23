@@ -258,7 +258,7 @@ def hygiene_policies():
             if block_name not in global_block_cache:
                 try:
                     with make_client() as client:
-                        block_rules = client.get_global_policies(block_name)
+                        block_rules = client.get_pblock_policies(adom, block_name)
                 except Exception:
                     block_rules = []
                 global_block_cache[block_name] = block_rules
