@@ -383,84 +383,38 @@ class FMGClient:
             offset += page_size
         return all_policies
 
-    def get_global_policy_packages(self) -> list:
-        """Return all global policy package paths (flattened, folder-qualified)."""
-        try:
-            data = self._get("/pm/pkg/global")
-            if not isinstance(data, list):
-                return []
-            return self._flatten_packages(data, prefix="")
-        except Exception:
-            return []
+    def get_pblock_policies(self, adom: str, block_name: str) -> list:
+        """Return firewall policies from a policy block (pblock) in an ADOM.
 
-    def get_global_policies(self, block_name: str) -> list:
-        """Return firewall policies belonging to a named global policy block.
+        FMG 7.2+ stores policy blocks under:
+          /pm/config/adom/<adom>/pblock/<block_name>/firewall/policy
 
-        FMG stores global rules as a flat list inside each global package, with
-        _policy_block separator entries marking section boundaries — the same
-        structure as local packages.  The block_name from the local package entry
-        is the section name, NOT a package path.
-
-        Strategy: fetch all rules from every global package, then extract the
-        rules that fall immediately after a _policy_block entry whose value
-        matches block_name (case-insensitive).  Returns [] if the block is not
-        found in any global package.
+        Returns [] if the block doesn't exist or is inaccessible.
         """
-        global_pkgs = self.get_global_policy_packages()
-        block_lower = block_name.strip().lower()
-
-        for pkg in global_pkgs:
-            pkg_path = pkg.get("path", pkg.get("name", ""))
-            if not pkg_path:
-                continue
-            url = f"/pm/config/global/pkg/{pkg_path}/firewall/policy"
-            all_rules: list = []
-            page_size = 1000
-            offset = 0
-            try:
-                while True:
-                    body = {
-                        "id": self._next_id(),
-                        "method": "get",
-                        "params": [{"url": url, "range": [offset, page_size]}],
-                    }
-                    if self.session:
-                        body["session"] = self.session
-                    data = self._post(body)
-                    result = data.get("result", [{}])[0]
-                    if result.get("status", {}).get("code", -1) != 0:
-                        break
-                    page = result.get("data", [])
-                    if not isinstance(page, list):
-                        break
-                    all_rules.extend(page)
-                    if len(page) < page_size:
-                        break
-                    offset += page_size
-            except Exception:
-                continue
-
-            # Walk rules to find the section matching block_name, collect its rules
-            in_block = False
-            collected: list = []
-            for rule in all_rules:
-                if not isinstance(rule, dict):
-                    continue
-                pb = rule.get("_policy_block")
-                if pb and str(pb).strip():
-                    if str(pb).strip().lower() == block_lower:
-                        in_block = True
-                        collected = []
-                    else:
-                        in_block = False
-                    continue
-                if in_block:
-                    collected.append(rule)
-
-            if collected:
-                return collected
-
-        return []
+        url = f"/pm/config/adom/{adom}/pblock/{block_name}/firewall/policy"
+        all_policies: list = []
+        page_size = 1000
+        offset = 0
+        while True:
+            body = {
+                "id": self._next_id(),
+                "method": "get",
+                "params": [{"url": url, "range": [offset, page_size]}],
+            }
+            if self.session:
+                body["session"] = self.session
+            data = self._post(body)
+            result = data.get("result", [{}])[0]
+            if result.get("status", {}).get("code", -1) != 0:
+                return []
+            page = result.get("data", [])
+            if not isinstance(page, list):
+                break
+            all_policies.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
+        return all_policies
 
     def get_live_policy_hits(
         self, adom: str, device_name: str, vdom: str = "root"
