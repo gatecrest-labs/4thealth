@@ -1161,7 +1161,7 @@ document.getElementById('policyPageSize').addEventListener('change', function ()
 document.getElementById('policyPagination').addEventListener('click', e => {
   const btn = e.target.closest('[data-ppage]');
   if (!btn || btn.disabled) return;
-  const total = Math.ceil(pvFiltered.length / pvPageSize) || 1;
+  const total = Math.ceil(_pvFlattenForPage(pvFiltered).length / pvPageSize) || 1;
   pvPage = Math.max(1, Math.min(total, parseInt(btn.dataset.ppage, 10)));
   renderPolicyTable();
 });
