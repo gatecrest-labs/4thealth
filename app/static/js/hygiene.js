@@ -384,7 +384,8 @@ async function showPolicy() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adom, package: pkg, path }),
     });
-    const data = await resp.json();
+    let data;
+    try { data = await resp.json(); } catch (_) { showError(`Server error (HTTP ${resp.status})`); return; }
     if (!resp.ok) { showError(data.error || 'Failed to load policies.'); return; }
 
     allPolicies = data.policies || [];
