@@ -104,6 +104,13 @@ def _parse_ip_list(raw: Any) -> list[str]:
     return []
 
 
+def _to_str(raw: Any) -> str:
+    """Return a scalar param as a stripped string, ignoring empty lists."""
+    if isinstance(raw, list):
+        return raw[0].strip() if raw else ""
+    return str(raw).strip() if raw is not None else ""
+
+
 # ── Check: Interface Protocols ────────────────────────────────────────────────
 
 
@@ -421,8 +428,8 @@ def _run_idle_timeout(device_name: str, device_data: dict, params: dict) -> list
         ]
 
     configured = int(configured)
-    raw_max = params.get("max_timeout_minutes", "")
-    if not str(raw_max).strip():
+    raw_max = _to_str(params.get("max_timeout_minutes", ""))
+    if not raw_max:
         return [
             _cis_row(
                 device_name,
@@ -485,8 +492,8 @@ def _run_lockout_threshold(
         ]
 
     configured = int(configured)
-    raw_max = params.get("max_attempts", "")
-    if not str(raw_max).strip():
+    raw_max = _to_str(params.get("max_attempts", ""))
+    if not raw_max:
         return [
             _cis_row(
                 device_name,
@@ -547,8 +554,8 @@ def _run_password_length(
         ]
 
     configured = int(configured)
-    raw_min = params.get("min_length", "")
-    if not str(raw_min).strip():
+    raw_min = _to_str(params.get("min_length", ""))
+    if not raw_min:
         return [
             _cis_row(
                 device_name,
@@ -646,7 +653,7 @@ def _run_log_severity(device_name: str, device_data: dict, params: dict) -> list
             )
         ]
 
-    raw_max = str(params.get("max_severity", "")).strip().lower()
+    raw_max = _to_str(params.get("max_severity", "")).lower()
     if not raw_max:
         return [
             _cis_row(
@@ -920,7 +927,7 @@ def _run_tls_version(device_name: str, device_data: dict, params: dict) -> list[
         cfg.get("ssl-min-proto-version", "") or cfg.get("ssl_min_proto_version", "")
     ).lower()
 
-    raw_min = str(params.get("min_tls", "")).strip().lower()
+    raw_min = _to_str(params.get("min_tls", "")).lower()
 
     weak_found = [v for v in ssl_versions.split() if v in _WEAK_TLS]
 
@@ -1041,7 +1048,7 @@ def _run_firmware_version(
     device_name: str, device_data: dict, params: dict
 ) -> list[dict]:
     meta = device_data.get("device_meta", {})
-    raw_min = str(params.get("min_version", "")).strip()
+    raw_min = _to_str(params.get("min_version", ""))
 
     # Build version string from meta
     version_str = meta.get("version_str", "")

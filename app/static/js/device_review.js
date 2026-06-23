@@ -108,6 +108,13 @@ function updateParamsPanel() {
   }
 
   panel.style.display = '';
+
+  // Preserve any values the user has already typed before rebuilding
+  const savedValues = {};
+  fields.querySelectorAll('.dr-param-input').forEach(inp => {
+    savedValues[`${inp.dataset.checkKey}_${inp.dataset.paramKey}`] = inp.value;
+  });
+
   fields.innerHTML = '';
 
   active.forEach(check => {
@@ -123,11 +130,16 @@ function updateParamsPanel() {
       const inp = document.createElement('input');
       inp.type = 'text';
       inp.id   = `drParam_${check.key}_${param.key}`;
-      inp.dataset.checkKey = check.key;
-      inp.dataset.paramKey = param.key;
+      inp.dataset.checkKey  = check.key;
+      inp.dataset.paramKey  = param.key;
+      inp.dataset.paramType = param.type || 'text';
       inp.placeholder = param.placeholder || '';
       inp.className   = 'form-control dr-param-input';
       inp.style.cssText = 'max-width:360px;font-size:.88rem';
+
+      // Restore previously entered value when the panel is rebuilt
+      const savedKey = `${check.key}_${param.key}`;
+      if (savedValues[savedKey] !== undefined) inp.value = savedValues[savedKey];
 
       row.appendChild(lbl);
       row.appendChild(inp);
@@ -141,11 +153,16 @@ function collectCheckParams() {
   document.querySelectorAll('.dr-param-input').forEach(inp => {
     const ck = inp.dataset.checkKey;
     const pk = inp.dataset.paramKey;
+    const pt = inp.dataset.paramType || 'text';
     const val = (inp.value || '').trim();
     if (!params[ck]) params[ck] = {};
-    params[ck][pk] = val
-      ? val.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)
-      : [];
+    if (pt === 'ip_list') {
+      // IP lists: split on whitespace/commas into an array
+      params[ck][pk] = val ? val.split(/[\s,]+/).map(s => s.trim()).filter(Boolean) : [];
+    } else {
+      // text / number: send as a plain string so Python can parse it directly
+      params[ck][pk] = val;
+    }
   });
   return params;
 }
