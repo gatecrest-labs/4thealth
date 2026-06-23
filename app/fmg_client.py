@@ -803,3 +803,151 @@ class FMGClient:
                     "error": str(exc),
                 }
             yield i + 1, total, label, key, r
+
+    # ── CIS hardening data fetchers ───────────────────────────────────────────
+
+    def get_device_admins(self, adom: str, device_name: str) -> list:
+        """Return admin account list from the device via FMG proxy."""
+        try:
+            r = self._proxy(adom, device_name, "/api/v2/cmdb/system/admin?vdom=root")
+            payload = r.get("payload", [])
+            if isinstance(payload, list):
+                return payload
+            if isinstance(payload, dict):
+                return list(payload.values())
+            return []
+        except Exception:
+            return []
+
+    def get_device_system_global(self, adom: str, device_name: str) -> dict:
+        """Return system/global config from the device via FMG proxy."""
+        try:
+            r = self._proxy(adom, device_name, "/api/v2/cmdb/system/global?vdom=root")
+            payload = r.get("payload", {})
+            if isinstance(payload, list) and payload:
+                return payload[0] if isinstance(payload[0], dict) else {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception:
+            return {}
+
+    def get_device_password_policy(self, adom: str, device_name: str) -> dict:
+        """Return system/password-policy config from the device via FMG proxy."""
+        try:
+            r = self._proxy(
+                adom, device_name, "/api/v2/cmdb/system/password-policy?vdom=root"
+            )
+            payload = r.get("payload", {})
+            if isinstance(payload, list) and payload:
+                return payload[0] if isinstance(payload[0], dict) else {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception:
+            return {}
+
+    def get_device_log_disk(self, adom: str, device_name: str) -> dict:
+        """Return log.disk/setting config from the device via FMG proxy."""
+        try:
+            r = self._proxy(
+                adom, device_name, "/api/v2/cmdb/log.disk/setting?vdom=root"
+            )
+            payload = r.get("payload", {})
+            if isinstance(payload, list) and payload:
+                return payload[0] if isinstance(payload[0], dict) else {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception:
+            return {}
+
+    def get_device_log_faz(self, adom: str, device_name: str) -> dict:
+        """Return log.fortianalyzer/setting config from the device via FMG proxy."""
+        try:
+            r = self._proxy(
+                adom,
+                device_name,
+                "/api/v2/cmdb/log.fortianalyzer/setting?vdom=root",
+            )
+            payload = r.get("payload", {})
+            if isinstance(payload, list) and payload:
+                return payload[0] if isinstance(payload[0], dict) else {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception:
+            return {}
+
+    def get_device_dns(self, adom: str, device_name: str) -> dict:
+        """Return system/dns config from the device via FMG proxy."""
+        try:
+            r = self._proxy(adom, device_name, "/api/v2/cmdb/system/dns?vdom=root")
+            payload = r.get("payload", {})
+            if isinstance(payload, list) and payload:
+                return payload[0] if isinstance(payload[0], dict) else {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception:
+            return {}
+
+    def get_device_snmp_community(self, adom: str, device_name: str) -> list:
+        """Return SNMP community list (v1/v2c) from the device via FMG proxy."""
+        try:
+            r = self._proxy(
+                adom, device_name, "/api/v2/cmdb/system/snmp/community?vdom=root"
+            )
+            payload = r.get("payload", [])
+            if isinstance(payload, list):
+                return payload
+            if isinstance(payload, dict):
+                return list(payload.values())
+            return []
+        except Exception:
+            return []
+
+    def get_device_snmp_sysinfo(self, adom: str, device_name: str) -> dict:
+        """Return SNMP system info (enabled flag) from the device via FMG proxy."""
+        try:
+            r = self._proxy(
+                adom, device_name, "/api/v2/cmdb/system/snmp/sysinfo?vdom=root"
+            )
+            payload = r.get("payload", {})
+            if isinstance(payload, list) and payload:
+                return payload[0] if isinstance(payload[0], dict) else {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception:
+            return {}
+
+    def get_device_snmp_users(self, adom: str, device_name: str) -> list:
+        """Return SNMPv3 user list from the device via FMG proxy."""
+        try:
+            r = self._proxy(
+                adom, device_name, "/api/v2/cmdb/system/snmp/user?vdom=root"
+            )
+            payload = r.get("payload", [])
+            if isinstance(payload, list):
+                return payload
+            if isinstance(payload, dict):
+                return list(payload.values())
+            return []
+        except Exception:
+            return []
+
+    def get_device_ha_status(self, adom: str, device_name: str) -> dict:
+        """Return HA status from the device via FMG proxy (monitor endpoint)."""
+        try:
+            r = self._proxy(
+                adom, device_name, "/api/v2/monitor/system/ha-status?vdom=root"
+            )
+            payload = r.get("payload", {})
+            if isinstance(payload, list) and payload:
+                return payload[0] if isinstance(payload[0], dict) else {}
+            if isinstance(payload, dict):
+                return payload
+            return {}
+        except Exception:
+            return {}

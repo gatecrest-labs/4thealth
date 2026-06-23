@@ -458,7 +458,7 @@ function _pvRuleCount(policies) {
   let n = 0;
   for (const p of policies) {
     if (p.policy_block !== undefined) n += (p.rules || []).length;
-    else n++;
+    else if (!p.implicit) n++;  // implicit deny is not counted as a user-defined rule
   }
   return n;
 }
@@ -567,6 +567,21 @@ function _pvRuleRow(p) {
     ...(p.srcintf || []).map(i => `<span class="pv-intf pv-intf-src" title="Source">${esc(i)}</span>`),
     ...(p.dstintf || []).map(i => `<span class="pv-intf pv-intf-dst" title="Destination">${esc(i)}</span>`),
   ].join('');
+
+  if (p.implicit) {
+    return `<tr style="background:repeating-linear-gradient(135deg,#fef2f2,#fef2f2 8px,#fff1f1 8px,#fff1f1 16px);border-top:2px solid #fca5a5">
+      <td style="font-size:.8rem;color:#9ca3af;font-style:italic">—</td>
+      <td><span style="font-size:.75rem;font-weight:600;color:#22c55e">enable</span></td>
+      <td><span style="font-size:.75rem;font-weight:600;color:#ef4444">deny</span></td>
+      <td><strong style="color:#b91c1c">Implicit Deny</strong><br><span style="font-size:.72rem;color:#9ca3af;font-style:italic">default</span></td>
+      <td style="font-size:.8rem;color:#6b7280;font-style:italic">all</td>
+      <td style="font-size:.8rem;color:#6b7280;font-style:italic">all</td>
+      <td style="font-size:.8rem;color:#6b7280;font-style:italic">ALL</td>
+      <td style="font-size:.78rem;color:#9ca3af;font-style:italic">any → any</td>
+      <td style="font-size:.78rem;color:#9ca3af;font-style:italic">${esc(p.comment)}</td>
+    </tr>`;
+  }
+
   const indent = p._inBlock ? ' style="background:var(--bg-alt,#f8fafc)"' : '';
   const seqPrefix = p._inBlock ? '<span style="color:var(--text-muted);font-size:.7rem">↳ </span>' : '';
   return `<tr${p.status !== 'enable' ? ' style="opacity:.55"' : ''}${indent}>
@@ -681,7 +696,7 @@ function _pvExportRules(filtered) {
 
 function pvExportCsv() {
   const header = ['Seq', 'ID', 'Name', 'Status', 'Action',
-                  'Source', 'Destination', 'Service', 'Src Interface', 'Dst Interface', 'Comment', 'Global Block'];
+                  'Source', 'Destination', 'Service', 'Src Interface', 'Dst Interface', 'Comment', 'Global Block', 'Implicit'];
   const fh = _filterHeader().map(l => `# ${l}`);
   const lines = [...fh, header.join(',')];
   _pvExportRules(pvFiltered).forEach(p => {
@@ -693,7 +708,7 @@ function pvExportCsv() {
       p.seq, q(p.id), q(p.name), p.status, p.action,
       q(src.join('; ')), q(dst.join('; ')), q(svc.join('; ')),
       q((p.srcintf || []).join('; ')), q((p.dstintf || []).join('; ')),
-      q(p.comment), q(p._blockLabel || ''),
+      q(p.comment), q(p._blockLabel || ''), p.implicit ? 'true' : 'false',
     ].join(','));
   });
   const meta = pvMeta || {};
@@ -727,6 +742,7 @@ function pvExportJson() {
       srcintf:      p.srcintf || [],
       dstintf:      p.dstintf || [],
       comment:      p.comment,
+      implicit:         p.implicit || false,
       fsso_groups:      p.fsso_groups || [],
       srcaddr_expanded: p.srcaddr_exp || [],
       dstaddr_expanded: p.dstaddr_exp || [],
@@ -748,6 +764,19 @@ function pvExportPdf() {
         <td colspan="9" style="font-weight:600;font-size:9px;padding:3px 6px">
           &#127758; Global Policy Block: ${esc(p.policy_block)} [${esc(label)}]
         </td>
+      </tr>`;
+    }
+    if (p.implicit) {
+      return `<tr style="background:#fef2f2;border-top:2px solid #fca5a5">
+        <td style="color:#9ca3af;font-style:italic">—</td>
+        <td style="color:#16a34a;font-weight:600">enable</td>
+        <td style="color:#dc2626;font-weight:600">deny</td>
+        <td><strong style="color:#b91c1c">Implicit Deny</strong><br><small style="font-style:italic">default</small></td>
+        <td style="color:#6b7280;font-style:italic">all</td>
+        <td style="color:#6b7280;font-style:italic">all</td>
+        <td style="color:#6b7280;font-style:italic">ALL</td>
+        <td style="color:#9ca3af;font-style:italic">any → any</td>
+        <td style="color:#9ca3af;font-style:italic">${esc(p.comment)}</td>
       </tr>`;
     }
     const src = [..._flatAddrNames(p.srcaddr_exp || p.srcaddr), ...(p.fsso_groups || [])].join('<br>');
