@@ -368,11 +368,119 @@ function download(filename, content, mime) {
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Load policies ──────────────────────────────────────────────────────────── */
+
+// Tag to cancel stale object-enrichment requests when the user switches package.
+let _pvObjLoadTag = 0;
+
+function _expandAddr(name, addrGrpMap, addrDetailMap) {
+  if (addrGrpMap[name]) return { name, type: 'group', members: addrGrpMap[name] };
+  return { name, type: 'object', detail: addrDetailMap[name] || '' };
+}
+function _expandSvc(name, svcGrpMap) {
+  if (svcGrpMap[name]) return { name, type: 'group', members: svcGrpMap[name] };
+  return { name, type: 'object' };
+}
+
+function _backfillRule(r, addrGrpMap, addrDetailMap, svcGrpMap) {
+  r.srcaddr_exp = (r.srcaddr || []).map(n => _expandAddr(n, addrGrpMap, addrDetailMap));
+  r.dstaddr_exp = (r.dstaddr || []).map(n => _expandAddr(n, addrGrpMap, addrDetailMap));
+  r.service_exp = (r.service || []).map(n => _expandSvc(n, svcGrpMap));
+}
+
+function _hideBadgeIfDone() {
+  const objBadge = document.getElementById('pvObjBadge');
+  if (objBadge && objBadge.dataset.pending === '0') objBadge.style.display = 'none';
+}
+
+async function _loadPolicyObjects(adom, tag) {
+  try {
+    const resp = await fetch('/api/hygiene/policies/objects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adom }),
+    });
+    if (_pvObjLoadTag !== tag) return;
+    if (!resp.ok) return;
+    let obj;
+    try { obj = await resp.json(); } catch (_) { return; }
+    if (_pvObjLoadTag !== tag) return;
+
+    const { addr_grp_map = {}, svc_grp_map = {}, addr_detail_map = {} } = obj;
+
+    for (const p of allPolicies) {
+      if (p.policy_block !== undefined) {
+        for (const r of (p.rules || [])) _backfillRule(r, addr_grp_map, addr_detail_map, svc_grp_map);
+      } else {
+        _backfillRule(p, addr_grp_map, addr_detail_map, svc_grp_map);
+      }
+    }
+
+    applyPvFilter();
+    renderPolicyTable();
+  } catch (_) { /* silently ignore */ }
+  finally {
+    const objBadge = document.getElementById('pvObjBadge');
+    if (objBadge) {
+      objBadge.dataset.pending = String(Math.max(0, Number(objBadge.dataset.pending || 1) - 1));
+      _hideBadgeIfDone();
+    }
+  }
+}
+
+async function _loadPolicyPblocks(adom, names, tag) {
+  if (!names || !names.length) {
+    const objBadge = document.getElementById('pvObjBadge');
+    if (objBadge) {
+      objBadge.dataset.pending = String(Math.max(0, Number(objBadge.dataset.pending || 1) - 1));
+      _hideBadgeIfDone();
+    }
+    return;
+  }
+  try {
+    const resp = await fetch('/api/hygiene/policies/pblocks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adom, names }),
+    });
+    if (_pvObjLoadTag !== tag) return;
+    if (!resp.ok) return;
+    let obj;
+    try { obj = await resp.json(); } catch (_) { return; }
+    if (_pvObjLoadTag !== tag) return;
+
+    const pblocks = obj.pblocks || {};
+    for (const p of allPolicies) {
+      if (p.policy_block !== undefined && pblocks[p.policy_block] !== undefined) {
+        p.rules    = pblocks[p.policy_block];
+        p.assigned = p.rules.length > 0;
+      }
+    }
+
+    // Update rule count now that pblock rules are known
+    const ruleCount = _pvRuleCount(allPolicies);
+    document.getElementById('policyViewTitle').textContent =
+      `${ruleCount} rule${ruleCount !== 1 ? 's' : ''} in "${pvMeta.pkg}" (${pvMeta.adom})`;
+
+    applyPvFilter();
+    renderPolicyTable();
+  } catch (_) { /* silently ignore */ }
+  finally {
+    const objBadge = document.getElementById('pvObjBadge');
+    if (objBadge) {
+      objBadge.dataset.pending = String(Math.max(0, Number(objBadge.dataset.pending || 1) - 1));
+      _hideBadgeIfDone();
+    }
+  }
+}
+
 async function showPolicy() {
   const adom = document.getElementById('pvAdom').value;
   const pkg  = document.getElementById('pvPackage').value;
   const path = pvPkgPaths[pkg] || pkg;
   if (!adom || !pkg) return;
+
+  _pvObjLoadTag++;
+  const myTag = _pvObjLoadTag;
 
   document.getElementById('pvLoading').style.display = '';
   document.getElementById('pvProgressWrap').style.display = 'block';
@@ -406,6 +514,15 @@ async function showPolicy() {
     applyPvFilter();
     renderPolicyTable();
     document.getElementById('policyView').style.display = '';
+
+    // Show badge and kick off both deferred loads in parallel (2 pending)
+    const pblockNames = data.pblock_names || [];
+    const pendingCount = 1 + (pblockNames.length ? 1 : 0); // objects always; pblocks only if present
+    const objBadge = document.getElementById('pvObjBadge');
+    if (objBadge) { objBadge.dataset.pending = String(pendingCount); objBadge.style.display = ''; }
+
+    _loadPolicyObjects(adom, myTag);
+    _loadPolicyPblocks(adom, pblockNames, myTag);
   } catch (err) {
     showError(err.message);
   } finally {
