@@ -65,13 +65,15 @@ def device_review_devices(adom: str):
     try:
         with make_client() as client:
             raw = client.get_devices(adom)
+        seen: set[str] = set()
         devices = []
         for d in raw:
             if not isinstance(d, dict):
                 continue
             name = d.get("name", "")
-            if not name:
+            if not name or name in seen:
                 continue
+            seen.add(name)
             os_ver = d.get("os_ver", 0)
             mr = d.get("mr")
             patch = d.get("patch")
