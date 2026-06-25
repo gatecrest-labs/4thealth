@@ -19,17 +19,32 @@
     <span id="drDeviceLoading" class="text-muted" style="display:none;font-style:italic;font-size:.88rem;margin-left:.5rem">Loading…</span>
   </div>
 
+  <!-- Device filter -->
+  <div class="hygiene-selector-row" style="margin-top:.6rem">
+    <label for="drDeviceSearch" style="white-space:nowrap">Firewalls</label>
+    <input type="text" id="drDeviceSearch" class="form-control"
+      placeholder="Leave blank or type ALL for entire ADOM, or enter name(s)/IP(s) separated by commas"
+      style="max-width:520px;font-size:.88rem" />
+    <span id="drDeviceMatchCount" class="text-muted" style="font-size:.82rem;white-space:nowrap"></span>
+  </div>
+
   <!-- Check selector -->
-  <div class="hygiene-selector-row" style="margin-top:.75rem">
-    <label>Checks</label>
-    <div class="checkbox-group" id="drChecks">
-      {% for check in checks %}
-      <label class="checkbox-label" title="{{ check.description }}">
-        <input type="checkbox" name="dr_check" value="{{ check.key }}" checked
-          {% if check.params_schema %}data-has-params="1"{% endif %} />
-        {{ check.name }}
-      </label>
-      {% endfor %}
+  <div class="hygiene-selector-row" style="margin-top:.75rem;align-items:flex-start">
+    <label style="padding-top:.2rem">Checks</label>
+    <div>
+      <div style="display:flex;gap:.4rem;margin-bottom:.45rem">
+        <button class="btn btn-xs" id="drChecksAll">Select All</button>
+        <button class="btn btn-xs" id="drChecksNone">Deselect All</button>
+      </div>
+      <div class="checkbox-group" id="drChecks">
+        {% for check in checks %}
+        <label class="checkbox-label" title="{{ check.description }}">
+          <input type="checkbox" name="dr_check" value="{{ check.key }}" checked
+            {% if check.params_schema %}data-has-params="1"{% endif %} />
+          {{ check.name }}
+        </label>
+        {% endfor %}
+      </div>
     </div>
   </div>
 
@@ -134,5 +149,5 @@
 /* Check definitions injected from server — used by JS to build param inputs */
 const CHECK_DEFS = {{ checks | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/device_review.js') }}?v=6"></script>
+<script src="{{ url_for('static', filename='js/device_review.js') }}?v=7"></script>
 {% endblock %}

@@ -167,6 +167,41 @@ function collectCheckParams() {
   return params;
 }
 
+/* ── Device search helpers ──────────────────────────────────────────────────── */
+
+// Parse the device search field into an array of trimmed tokens (lowercase).
+// Returns [] if blank or "all".
+function parseDeviceSearchTokens() {
+  const raw = (document.getElementById('drDeviceSearch').value || '').trim();
+  if (!raw || raw.toLowerCase() === 'all') return [];
+  return raw.split(/[,\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+}
+
+// Return the subset of _knownDevices that match the current search field.
+// Empty tokens (or "all") → all devices.
+function resolveTargetDevices() {
+  const tokens = parseDeviceSearchTokens();
+  if (!tokens.length) return _knownDevices;
+  return _knownDevices.filter(d => {
+    const name = (d.name || '').toLowerCase();
+    const ip   = (d.ip   || '').toLowerCase();
+    return tokens.some(t => name === t || ip === t || name.includes(t) || ip.includes(t));
+  });
+}
+
+function updateDeviceMatchCount() {
+  const el = document.getElementById('drDeviceMatchCount');
+  if (!_knownDevices.length) { el.textContent = ''; return; }
+  const matched = resolveTargetDevices();
+  const tokens  = parseDeviceSearchTokens();
+  if (!tokens.length) {
+    el.textContent = `${_knownDevices.length} device(s) in ADOM`;
+  } else {
+    el.textContent = `${matched.length} of ${_knownDevices.length} matched`;
+  }
+  document.getElementById('drRunBtn').disabled = matched.length === 0;
+}
+
 /* ── ADOM loader ────────────────────────────────────────────────────────────── */
 async function loadAdoms() {
   const sel = document.getElementById('drAdom');
@@ -188,6 +223,7 @@ async function onAdomChange(adom) {
   _knownDevices = [];
   document.getElementById('drResults').style.display = 'none';
   document.getElementById('drRunBtn').disabled = true;
+  document.getElementById('drDeviceMatchCount').textContent = '';
   clearError();
   allRows = [];
 
@@ -200,9 +236,7 @@ async function onAdomChange(adom) {
     const data = await resp.json();
     if (Array.isArray(data)) {
       _knownDevices = data;
-      document.getElementById('drRunBtn').disabled = false;
-      document.getElementById('drRunBtn').title =
-        `${data.length} device${data.length !== 1 ? 's' : ''} in this ADOM`;
+      updateDeviceMatchCount();
     }
   } catch (e) {
     showError('Could not load device list: ' + e.message);
@@ -221,8 +255,9 @@ async function runAnalysis() {
   const checks = [...document.querySelectorAll('input[name="dr_check"]:checked')].map(cb => cb.value);
   if (!checks.length) { showError('Select at least one check.'); return; }
 
-  const deviceList = _knownDevices.map(d => d.name).filter(Boolean);
-  if (!deviceList.length) { showError('No devices found in this ADOM.'); return; }
+  const targetDevices = resolveTargetDevices();
+  const deviceList    = targetDevices.map(d => d.name).filter(Boolean);
+  if (!deviceList.length) { showError('No devices matched — check your firewall filter or select an ADOM.'); return; }
 
   const checkParams = collectCheckParams();
 
@@ -658,6 +693,18 @@ function download(filename, content, mime) {
 
 /* ── Event wiring ───────────────────────────────────────────────────────────── */
 document.getElementById('drAdom').addEventListener('change', e => onAdomChange(e.target.value));
+
+document.getElementById('drDeviceSearch').addEventListener('input', updateDeviceMatchCount);
+
+document.getElementById('drChecksAll').addEventListener('click', () => {
+  document.querySelectorAll('input[name="dr_check"]').forEach(cb => { cb.checked = true; });
+  updateParamsPanel();
+});
+
+document.getElementById('drChecksNone').addEventListener('click', () => {
+  document.querySelectorAll('input[name="dr_check"]').forEach(cb => { cb.checked = false; });
+  updateParamsPanel();
+});
 
 document.getElementById('drRunBtn').addEventListener('click', runAnalysis);
 
