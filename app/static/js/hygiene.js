@@ -1177,6 +1177,52 @@ document.getElementById('pvAdom').addEventListener('change', function () {
     document.getElementById('policyView').style.display = 'none';
     allPolicies = [];
   }
+  document.getElementById('pvPkgError').style.display = 'none';
+});
+
+/* ── Policy package direct-name loader ──────────────────────────────────────── */
+async function pvLoadByName() {
+  const adom  = document.getElementById('pvAdom').value;
+  const typed = document.getElementById('pvPkgSearch').value.trim();
+  const errEl = document.getElementById('pvPkgError');
+  errEl.style.display = 'none';
+
+  if (!adom) {
+    errEl.textContent = 'Please select an ADOM first.';
+    errEl.style.display = '';
+    return;
+  }
+  if (!typed) return;
+
+  // If packages not yet loaded for this ADOM, load them first
+  if (document.getElementById('pvPackage').disabled) {
+    await loadPvPackages(adom);
+  }
+
+  // Case-insensitive match against loaded package names
+  const lower   = typed.toLowerCase();
+  const matched = Object.keys(pvPkgPaths).find(name => name.toLowerCase() === lower);
+
+  if (!matched) {
+    errEl.textContent = `No package found matching "${typed}".`;
+    errEl.style.display = '';
+    return;
+  }
+
+  // Select it in the dropdown and trigger load
+  const sel = document.getElementById('pvPackage');
+  sel.value = matched;
+  showPolicy();
+}
+
+document.getElementById('pvPkgLoadBtn').addEventListener('click', pvLoadByName);
+
+document.getElementById('pvPkgSearch').addEventListener('keydown', e => {
+  if (e.key === 'Enter') pvLoadByName();
+});
+
+document.getElementById('pvPkgSearch').addEventListener('input', () => {
+  document.getElementById('pvPkgError').style.display = 'none';
 });
 
 document.getElementById('pvPackage').addEventListener('change', function () {
