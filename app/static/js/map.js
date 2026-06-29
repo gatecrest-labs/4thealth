@@ -181,6 +181,13 @@ function makeMarker(device) {
     ? '<span class="map-popup-dot green"></span>'
     : '<span class="map-popup-dot offline"></span>';
 
+  const detailsLink = window._canSeeFirewalls
+    ? `<div class="map-popup-footer">
+         <a href="/firewalls?device=${encodeURIComponent(device.name)}&adom=${encodeURIComponent(device.adom)}"
+            class="map-popup-details-link">View Details &#x2192;</a>
+       </div>`
+    : '';
+
   marker.bindPopup(`
 <div class="map-popup">
   <div class="map-popup-name">${statusDot}${esc(device.name)}</div>
@@ -193,6 +200,7 @@ function makeMarker(device) {
     <tr><th>Status</th><td>${esc(device.status)}</td></tr>
     <tr><th>Coords</th><td>${device.lat.toFixed(5)}, ${device.lon.toFixed(5)}</td></tr>
   </table>
+  ${detailsLink}
 </div>`, { maxWidth: 300 });
 
   return marker;
@@ -212,6 +220,25 @@ function renderMarkers() {
 
   const statsEl = document.getElementById('mapStats');
   if (statsEl) statsEl.textContent = `Showing ${visible.length} of ${allDevices.length} devices`;
+}
+
+// ── Health ledger ────────────────────────────────────────────────────────────
+
+function updateHealthLedger() {
+  const el = document.getElementById('mapHealthLedger');
+  if (!el || !allDevices.length) return;
+  const counts = { green: 0, yellow: 0, red: 0, offline: 0 };
+  allDevices.forEach(d => {
+    const s = d.status || 'offline';
+    if (Object.prototype.hasOwnProperty.call(counts, s)) counts[s]++;
+    else counts.offline++;
+  });
+  el.innerHTML =
+    `<span class="ledger-item"><span class="status-dot green"></span>${counts.green}</span>` +
+    `<span class="ledger-item"><span class="status-dot yellow"></span>${counts.yellow}</span>` +
+    `<span class="ledger-item"><span class="status-dot red"></span>${counts.red}</span>` +
+    `<span class="ledger-item"><span class="status-dot offline"></span>${counts.offline}</span>`;
+  el.style.display = '';
 }
 
 // ── Legend (region-based) + ADOM filter UI ───────────────────────────────────
@@ -343,6 +370,7 @@ async function loadDevices() {
     }
 
     renderMarkers();
+    updateHealthLedger();
   } catch (err) {
     showStatusBar(`Failed to load map: ${err.message}`, '', false);
   }
