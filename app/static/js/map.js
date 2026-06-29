@@ -183,7 +183,7 @@ function makeMarker(device) {
 
   const detailsLink = window._canSeeFirewalls
     ? `<div class="map-popup-footer">
-         <a href="/firewalls?device=${encodeURIComponent(device.name)}&adom=${encodeURIComponent(device.adom)}"
+         <a href="/firewalls?device=${esc(encodeURIComponent(device.name))}&adom=${esc(encodeURIComponent(device.adom))}"
             class="map-popup-details-link">View Details &#x2192;</a>
        </div>`
     : '';
