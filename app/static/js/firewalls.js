@@ -903,6 +903,27 @@ document.getElementById('deviceFilter').addEventListener('input', function () {
   renderTable();
 });
 
+/* ── Deep-link handler ─────────────────────────────────────────────────── */
+async function checkDeepLink() {
+  const params = new URLSearchParams(location.search);
+  const device = params.get('device');
+  const adom   = params.get('adom');
+  if (!device || !adom) return;
+
+  // Clean URL immediately — prevents re-trigger on refresh
+  history.replaceState({}, '', '/firewalls');
+
+  // Pre-fill search and execute it
+  document.getElementById('searchInput').value = device;
+  await doSearch();
+
+  // Find and click the matching Details button
+  const btn = [...document.querySelectorAll('[data-device]')]
+    .find(b => b.dataset.device === device && b.dataset.adom === adom);
+  if (btn) btn.click();
+}
+
 /* ── Init ──────────────────────────────────────────────────────────────── */
 loadAdoms();
 scheduleRefresh(parseInt(document.getElementById('autoRefresh').value, 10));
+checkDeepLink();
