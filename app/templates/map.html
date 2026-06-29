@@ -37,6 +37,9 @@
   <div class="map-stats" id="mapStats"></div>
 </div>
 
+<!-- Health status ledger (fixed overlay) -->
+<div id="mapHealthLedger" class="map-health-ledger" style="display:none"></div>
+
 <!-- Map container -->
 <div id="mapContainer" class="map-container">
   <div class="map-loading" id="mapLoading">
@@ -48,6 +51,9 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}?v=1.9.4"></script>
 <script src="{{ url_for('static', filename='vendor/markercluster/leaflet.markercluster.js') }}?v=1.5.3"></script>
-<script>window._isAdmin = {{ (current_role == 'admin') | tojson }};</script>
-<script src="{{ url_for('static', filename='js/map.js') }}?v=3"></script>
+<script>
+  window._isAdmin = {{ (current_role == 'admin') | tojson }};
+  window._canSeeFirewalls = {{ ('firewalls' in allowed_tabs) | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/map.js') }}?v=4"></script>
 {% endblock %}
