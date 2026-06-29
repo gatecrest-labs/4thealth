@@ -52,8 +52,10 @@
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}?v=1.9.4"></script>
 <script src="{{ url_for('static', filename='vendor/markercluster/leaflet.markercluster.js') }}?v=1.5.3"></script>
 <script>
-  window._isAdmin = {{ (current_role == 'admin') | tojson }};
-  window._canSeeFirewalls = {{ ('firewalls' in allowed_tabs) | tojson }};
+  window._perms = {
+    isAdmin:   {{ (current_role == 'admin') | tojson }},
+    firewalls: {{ ('firewalls' in allowed_tabs) | tojson }},
+  };
 </script>
 <script src="{{ url_for('static', filename='js/map.js') }}?v=4"></script>
 {% endblock %}

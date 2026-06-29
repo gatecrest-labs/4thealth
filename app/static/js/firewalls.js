@@ -917,10 +917,8 @@ async function checkDeepLink() {
   document.getElementById('searchInput').value = device;
   await doSearch();
 
-  // Find and click the matching Details button
-  const btn = [...document.querySelectorAll('[data-device]')]
-    .find(b => b.dataset.device === device && b.dataset.adom === adom);
-  if (btn) btn.click();
+  // Open the detail modal directly — no DOM scan needed
+  loadDeviceDetail(adom, device);
 }
 
 /* ── Init ──────────────────────────────────────────────────────────────── */
