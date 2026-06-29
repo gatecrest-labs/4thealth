@@ -55,6 +55,9 @@ def _run_job(app):
         from app.fmg_helpers import make_client
 
         result = []
+        # Keyed by device name alone — the same physical device can appear in
+        # multiple ADOMs and also as one row per VDOM within each ADOM.
+        seen: dict = {}
         with make_client() as client:
             adoms_raw = client.get_adoms()
             adom_names = [
@@ -77,6 +80,35 @@ def _run_job(app):
                     for d in raw:
                         if not isinstance(d, dict):
                             continue
+                        name = d.get("name", "")
+                        if not name:
+                            continue
+
+                        vdom_raw = d.get("vdom")
+                        # vdom field can be: a string name, a list of dicts
+                        # [{"name": "root"}, ...], a list of strings, or a
+                        # single dict — handle all forms.
+                        if isinstance(vdom_raw, str) and vdom_raw.strip():
+                            vdom_names_here = [vdom_raw.strip()]
+                        elif isinstance(vdom_raw, list):
+                            vdom_names_here = [
+                                (v.get("name") or v if isinstance(v, dict) else v)
+                                for v in vdom_raw
+                                if v
+                            ]
+                            vdom_names_here = [
+                                str(v).strip() for v in vdom_names_here if v
+                            ]
+                        else:
+                            vdom_names_here = []
+
+                        # If we've already placed this device, merge any new VDOMs
+                        if name in seen:
+                            for vn in vdom_names_here:
+                                if vn and vn not in seen[name]["vdoms"]:
+                                    seen[name]["vdoms"].append(vn)
+                            continue
+
                         lat_str = d.get("latitude", "")
                         lon_str = d.get("longitude", "")
                         try:
@@ -108,20 +140,19 @@ def _run_job(app):
                         )
                         status = "green" if conn_status == 1 else "offline"
 
-                        result.append(
-                            {
-                                "name": d.get("name", ""),
-                                "adom": adom,
-                                "lat": lat,
-                                "lon": lon,
-                                "platform": d.get(
-                                    "platform_str", d.get("platform", "n/a")
-                                ),
-                                "version": version,
-                                "status": status,
-                                "desc": (d.get("desc") or "").strip(),
-                            }
-                        )
+                        record = {
+                            "name": name,
+                            "adom": adom,
+                            "lat": lat,
+                            "lon": lon,
+                            "platform": d.get("platform_str", d.get("platform", "n/a")),
+                            "version": version,
+                            "status": status,
+                            "desc": (d.get("desc") or "").strip(),
+                            "vdoms": vdom_names_here,
+                        }
+                        seen[name] = record
+                        result.append(record)
                     with _lock:
                         _store["adom_progress"][adom] = "ok"
                 except Exception as exc:

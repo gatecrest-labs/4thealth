@@ -35,10 +35,8 @@
     <button class="btn btn-sm map-filter-btn" id="mapSelectNone">None</button>
   </div>
   <div class="map-stats" id="mapStats"></div>
+  <div class="map-health-ledger" id="mapHealthLedger" style="display:none"></div>
 </div>
-
-<!-- Health status ledger (fixed overlay) -->
-<div id="mapHealthLedger" class="map-health-ledger" style="display:none"></div>
 
 <!-- Map container -->
 <div id="mapContainer" class="map-container">
@@ -57,5 +55,5 @@
     firewalls: {{ ('firewalls' in allowed_tabs) | tojson }},
   };
 </script>
-<script src="{{ url_for('static', filename='js/map.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/map.js') }}?v=6"></script>
 {% endblock %}

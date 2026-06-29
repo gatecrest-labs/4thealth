@@ -2300,32 +2300,64 @@ a:hover { text-decoration: underline; }
   text-decoration: underline;
 }
 
-/* ── Map health ledger (fixed overlay, bottom-right) ─────────────────── */
+/* ── Map health ledger ────────────────────────────────────────────────── */
 .map-health-ledger {
-  position: fixed;
-  bottom: 1.5rem;
-  right: 1rem;
-  z-index: 1000;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 12px;
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: .4rem .5rem;
   align-items: center;
-  font-size: .8rem;
-  font-weight: 600;
-  color: var(--text);
-  box-shadow: 0 2px 8px rgba(0,0,0,.15);
 }
 .ledger-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: .3rem;
+  padding: .2rem .55rem .2rem .45rem;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  font-size: .78rem;
+  white-space: nowrap;
 }
+.ledger-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.ledger-count {
+  font-weight: 700;
+  font-size: .8rem;
+  min-width: 1.4ch;
+  text-align: right;
+}
+.ledger-count-green  { color: var(--status-green); }
+.ledger-count-yellow { color: var(--status-yellow); }
+.ledger-count-red    { color: var(--status-red); }
+.ledger-count-offline { color: var(--text-muted); }
 .leaflet-popup-content-wrapper {
   border-radius: 8px !important;
   box-shadow: 0 4px 16px rgba(0,0,0,.18) !important;
+}
+.map-vdom-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(99,130,191,.15);
+  border: 1px solid rgba(99,130,191,.35);
+  font-size: .72rem;
+  font-weight: 600;
+  color: #6382bf;
+  white-space: nowrap;
+}
+.map-vdom-count {
+  display: inline-block;
+  margin-left: .35rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(99,130,191,.12);
+  border: 1px solid rgba(99,130,191,.3);
+  font-size: .7rem;
+  font-weight: 600;
+  color: #6382bf;
+  vertical-align: middle;
 }
 
 /* ── Versions cache status bar ────────────────────────────────────────── */
