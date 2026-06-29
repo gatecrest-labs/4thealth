@@ -181,9 +181,9 @@ function makeMarker(device) {
     ? '<span class="map-popup-dot green"></span>'
     : '<span class="map-popup-dot offline"></span>';
 
-  const detailsLink = window._canSeeFirewalls
+  const detailsLink = window._perms.firewalls
     ? `<div class="map-popup-footer">
-         <a href="/firewalls?device=${esc(encodeURIComponent(device.name))}&adom=${esc(encodeURIComponent(device.adom))}"
+         <a href="/firewalls?device=${encodeURIComponent(device.name)}&amp;adom=${encodeURIComponent(device.adom)}"
             class="map-popup-details-link">View Details &#x2192;</a>
        </div>`
     : '';
@@ -230,7 +230,7 @@ function updateHealthLedger() {
   const counts = { green: 0, yellow: 0, red: 0, offline: 0 };
   allDevices.forEach(d => {
     const s = d.status || 'offline';
-    if (Object.prototype.hasOwnProperty.call(counts, s)) counts[s]++;
+    if (s in counts) counts[s]++;
     else counts.offline++;
   });
   el.innerHTML =
@@ -395,7 +395,7 @@ async function triggerRefresh() {
 document.addEventListener('DOMContentLoaded', async () => {
   showStatusBar('Loading device locations…', '', true);
 
-  if (window._isAdmin) {
+  if (window._perms.isAdmin) {
     const btn = document.getElementById('mapRefreshBtn');
     if (btn) { btn.style.display = ''; btn.addEventListener('click', triggerRefresh); }
   }
