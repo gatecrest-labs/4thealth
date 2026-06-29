@@ -296,6 +296,24 @@ Runtime data file (gitignored). Copy from a known-good source or build from scra
 4. Generate TLS certs: `openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes`
 5. Run: `gunicorn --workers 2 --threads 4 --worker-class gthread --bind 0.0.0.0:5443 wsgi:app`
 
+### Map tab (Beta)
+
+`GET /map` → `map.html` + `map.js`
+
+Interactive Leaflet map displaying all managed devices in selected ADOMs. Device markers color-coded by health status (green/yellow/red/offline). Backend: `app/map_cache.py` maintains in-memory device cache with periodic refresh from FortiManager; `app/map_regions.py` provides regional grouping. Routes in `app/routes/map_routes.py`:
+- `GET /map` — page (tab_required)
+- `GET /api/map/devices` — device list with coordinates (filtered by ADOM access)
+
+#### Map → Firewalls deep-link
+
+`map.html` injects `window._canSeeFirewalls = {{ ('firewalls' in allowed_tabs) | tojson }}` before `map.js` loads. When `true`, each device popup includes a **View Details →** anchor linking to `/firewalls?device=<encodeURIComponent(device.name)>&adom=<encodeURIComponent(device.adom)>`. `firewalls.js` reads these params in `checkDeepLink()` at page load, pre-fills `#searchInput`, calls `doSearch()`, then auto-clicks the matching `[data-device]` button to open the detail modal. The URL is cleaned with `history.replaceState()` immediately after reading params.
+
+#### Health status ledger
+
+`#mapHealthLedger` is a `position:fixed` overlay (bottom-right, `z-index:1000`) populated by `updateHealthLedger()` in `map.js`. It counts `.status` values from the `allDevices` array and displays four `.ledger-item` spans using `.status-dot` color classes (`green`, `yellow`, `red`, `offline`). Called once from `loadDevices()` after `renderMarkers()`. Fleet-wide counts — not affected by ADOM filter.
+
+New CSS classes added to `style.css`: `.map-health-ledger`, `.ledger-item`, `.map-popup-footer`, `.map-popup-details-link`.
+
 ### External API
 
 `app/routes/external_api_routes.py` — blueprint at `/external/api/`
