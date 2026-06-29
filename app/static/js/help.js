@@ -71,6 +71,7 @@ const SECTIONS = [
 <p>Choose an ADOM from the dropdown. The device table loads automatically. Use auto-refresh to keep it current while you watch the screen.</p>
 <h3>Search</h3>
 <p>Type a device name or IP address in the search bar at the top and press <strong>Enter</strong> or click <strong>Search</strong>. Results are returned across <em>all</em> ADOMs simultaneously. Click <strong>Details</strong> in the result row to open the device detail panel.</p>
+<p>You can also reach this tab directly from the Map — clicking <strong>View Details →</strong> on a device popup pre-fills the search and opens the device detail panel automatically.</p>
 <h3>Device Table</h3>
 <ul>
   <li>The <strong>status dot</strong> reflects FortiManager's connection state for each device (not live CPU/memory).</li>
@@ -363,6 +364,19 @@ const SECTIONS = [
 
 <h3>Missing Devices</h3>
 <p>Devices are only shown if their latitude and longitude are set to a non-zero value in FortiManager (<strong>Device Manager → device properties → Location</strong>). Devices showing <code>0.0 / 0.0</code> are silently excluded. If a device you expect to see is missing, check its location in FortiManager.</p>
+
+<h3>Device Details</h3>
+<p>When you click a device pin, the popup includes a <strong>View Details →</strong> link (visible only if you have access to the Firewalls tab). Clicking it takes you directly to the Firewalls tab with that device's search pre-filled and its detail panel opened automatically. Users without Firewalls tab access will not see the link.</p>
+
+<h3>Health Status Ledger</h3>
+<p>A compact overlay in the bottom-right corner of the screen shows the total device count by health status:</p>
+<ul>
+  <li><span class="status-dot green" style="display:inline-block;vertical-align:middle"></span> <strong>Green</strong> — healthy devices</li>
+  <li><span class="status-dot yellow" style="display:inline-block;vertical-align:middle"></span> <strong>Yellow</strong> — warning (CPU or memory elevated)</li>
+  <li><span class="status-dot red" style="display:inline-block;vertical-align:middle"></span> <strong>Red</strong> — critical or unreachable</li>
+  <li><span class="status-dot offline" style="display:inline-block;vertical-align:middle"></span> <strong>Grey</strong> — offline or status unknown</li>
+</ul>
+<p>The counts reflect the full fleet regardless of which ADOMs are currently shown via the filter checkboxes. The ledger appears once map data has loaded and remains visible as you scroll or zoom.</p>
 `
   },
   {
