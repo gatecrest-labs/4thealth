@@ -188,20 +188,29 @@ function makeMarker(device) {
        </div>`
     : '';
 
+  const vdoms = Array.isArray(device.vdoms) ? device.vdoms.filter(Boolean) : [];
+  const vdomRow = vdoms.length > 0
+    ? `<tr><th>VDOMs</th><td>${vdoms.map(v => `<span class="map-vdom-badge">${esc(v)}</span>`).join(' ')}</td></tr>`
+    : '';
+  const multiVdomBadge = vdoms.length > 1
+    ? ` <span class="map-vdom-count">${vdoms.length} VDOMs</span>`
+    : '';
+
   marker.bindPopup(`
 <div class="map-popup">
-  <div class="map-popup-name">${statusDot}${esc(device.name)}</div>
+  <div class="map-popup-name">${statusDot}${esc(device.name)}${multiVdomBadge}</div>
   <table class="map-popup-table">
     <tr><th>Region</th><td><span class="map-popup-adom-dot" style="background:${esc(color)}"></span>${esc(regionLabel)}</td></tr>
     <tr><th>ADOM</th><td>${esc(device.adom)}</td></tr>
     <tr><th>Platform</th><td>${esc(device.platform)}</td></tr>
     <tr><th>Version</th><td>${esc(device.version)}</td></tr>
     ${device.desc ? `<tr><th>Desc</th><td>${esc(device.desc)}</td></tr>` : ''}
+    ${vdomRow}
     <tr><th>Status</th><td>${esc(device.status)}</td></tr>
     <tr><th>Coords</th><td>${device.lat.toFixed(5)}, ${device.lon.toFixed(5)}</td></tr>
   </table>
   ${detailsLink}
-</div>`, { maxWidth: 300 });
+</div>`, { maxWidth: 320 });
 
   return marker;
 }
@@ -233,11 +242,19 @@ function updateHealthLedger() {
     if (s in counts) counts[s]++;
     else counts.offline++;
   });
-  el.innerHTML =
-    `<span class="ledger-item"><span class="status-dot green"></span>${counts.green}</span>` +
-    `<span class="ledger-item"><span class="status-dot yellow"></span>${counts.yellow}</span>` +
-    `<span class="ledger-item"><span class="status-dot red"></span>${counts.red}</span>` +
-    `<span class="ledger-item"><span class="status-dot offline"></span>${counts.offline}</span>`;
+  const items = [
+    { status: 'green',   label: 'Healthy',  count: counts.green },
+    { status: 'yellow',  label: 'Warning',  count: counts.yellow },
+    { status: 'red',     label: 'Critical', count: counts.red },
+    { status: 'offline', label: 'Offline',  count: counts.offline },
+  ];
+  el.innerHTML = items.map(i =>
+    `<span class="ledger-item">` +
+      `<span class="status-dot ${i.status}"></span>` +
+      `<span class="ledger-label">${i.label}</span>` +
+      `<span class="ledger-count ledger-count-${i.status}">${i.count}</span>` +
+    `</span>`
+  ).join('');
   el.style.display = '';
 }
 

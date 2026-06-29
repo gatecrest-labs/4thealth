@@ -55,6 +55,9 @@ def _run_job(app):
         from app.fmg_helpers import make_client
 
         result = []
+        # Keyed by (name, adom) to detect multi-VDOM devices returned as
+        # separate rows by FortiManager's dvmdb endpoint.
+        seen: dict = {}
         with make_client() as client:
             adoms_raw = client.get_adoms()
             adom_names = [
@@ -77,6 +80,19 @@ def _run_job(app):
                     for d in raw:
                         if not isinstance(d, dict):
                             continue
+                        name = d.get("name", "")
+                        if not name:
+                            continue
+
+                        vdom_name = (d.get("vdom") or "").strip()
+
+                        # If we've already placed this device, just add the VDOM
+                        key = (name, adom)
+                        if key in seen:
+                            if vdom_name and vdom_name not in seen[key]["vdoms"]:
+                                seen[key]["vdoms"].append(vdom_name)
+                            continue
+
                         lat_str = d.get("latitude", "")
                         lon_str = d.get("longitude", "")
                         try:
@@ -108,20 +124,19 @@ def _run_job(app):
                         )
                         status = "green" if conn_status == 1 else "offline"
 
-                        result.append(
-                            {
-                                "name": d.get("name", ""),
-                                "adom": adom,
-                                "lat": lat,
-                                "lon": lon,
-                                "platform": d.get(
-                                    "platform_str", d.get("platform", "n/a")
-                                ),
-                                "version": version,
-                                "status": status,
-                                "desc": (d.get("desc") or "").strip(),
-                            }
-                        )
+                        record = {
+                            "name": name,
+                            "adom": adom,
+                            "lat": lat,
+                            "lon": lon,
+                            "platform": d.get("platform_str", d.get("platform", "n/a")),
+                            "version": version,
+                            "status": status,
+                            "desc": (d.get("desc") or "").strip(),
+                            "vdoms": [vdom_name] if vdom_name else [],
+                        }
+                        seen[key] = record
+                        result.append(record)
                     with _lock:
                         _store["adom_progress"][adom] = "ok"
                 except Exception as exc:
