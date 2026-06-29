@@ -2284,6 +2284,45 @@ a:hover { text-decoration: underline; }
   margin-right: .25rem;
   vertical-align: middle;
 }
+.map-popup-footer {
+  margin-top: .55rem;
+  padding-top: .45rem;
+  border-top: 1px solid var(--border);
+  text-align: right;
+}
+.map-popup-details-link {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--accent, #2563eb);
+  text-decoration: none;
+}
+.map-popup-details-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Map health ledger (fixed overlay, bottom-right) ─────────────────── */
+.map-health-ledger {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1rem;
+  z-index: 1000;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.ledger-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .leaflet-popup-content-wrapper {
   border-radius: 8px !important;
   box-shadow: 0 4px 16px rgba(0,0,0,.18) !important;
