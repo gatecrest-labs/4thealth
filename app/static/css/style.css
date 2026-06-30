@@ -1111,6 +1111,20 @@ a:hover { text-decoration: underline; }
   font-size: .7rem;
   color: var(--text-muted);
 }
+.trend-tooltip {
+  position: fixed;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  padding: .3rem .6rem;
+  font-size: .78rem;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 9999;
+  display: none;
+}
 
 /* ── Shadow finding expand button ────────────────────────────────────── */
 .shadow-expand-btn {

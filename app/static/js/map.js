@@ -131,11 +131,14 @@ function initMap() {
   leafletMap = L.map('mapContainer', {
     center: [38.5, -98.0],
     zoom: 4, minZoom: 2, maxZoom: 18,
+    maxBounds: [[-85.051129, -180], [85.051129, 180]],
+    maxBoundsViscosity: 1.0,
   });
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 18,
+    noWrap: true,
   }).addTo(leafletMap);
 
   clusterGroup = L.markerClusterGroup({

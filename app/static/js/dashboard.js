@@ -160,6 +160,36 @@ document.getElementById('autoRefresh').addEventListener('change', function () {
 
 // ── 30-day trend charts ──────────────────────────────────────────────────────
 
+// Shared tooltip element, created once
+const _trendTooltip = (() => {
+  const el = document.createElement('div');
+  el.className = 'trend-tooltip';
+  document.body.appendChild(el);
+  return el;
+})();
+
+function _showTrendTooltip(evt, text) {
+  _trendTooltip.textContent = text;
+  _trendTooltip.style.display = 'block';
+  _positionTrendTooltip(evt);
+}
+
+function _positionTrendTooltip(evt) {
+  const gap = 12;
+  const tw = _trendTooltip.offsetWidth;
+  const th = _trendTooltip.offsetHeight;
+  let x = evt.clientX + gap;
+  let y = evt.clientY - th - gap;
+  if (x + tw > window.innerWidth) x = evt.clientX - tw - gap;
+  if (y < 0) y = evt.clientY + gap;
+  _trendTooltip.style.left = x + 'px';
+  _trendTooltip.style.top  = y + 'px';
+}
+
+function _hideTrendTooltip() {
+  _trendTooltip.style.display = 'none';
+}
+
 function renderTrendChart(svgEl, axisEl, points, valueKey) {
   if (!points || points.length < 1) return;
 
@@ -195,8 +225,15 @@ function renderTrendChart(svgEl, axisEl, points, valueKey) {
     </defs>
     ${lineAndArea}
     ${points.map((p, i) => `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(p[valueKey]).toFixed(1)}" r="3.5"
-      fill="var(--accent)"><title>${p.date}: ${p[valueKey].toLocaleString()}</title></circle>`).join('')}
+      fill="var(--accent)" style="cursor:crosshair" data-label="${p.date}: ${p[valueKey].toLocaleString()}"></circle>`).join('')}
   `;
+
+  // Attach hover events to each circle
+  svgEl.querySelectorAll('circle[data-label]').forEach(c => {
+    c.addEventListener('mouseenter', evt => _showTrendTooltip(evt, c.dataset.label));
+    c.addEventListener('mousemove',  evt => _positionTrendTooltip(evt));
+    c.addEventListener('mouseleave', _hideTrendTooltip);
+  });
 
   // X-axis labels — show first, middle (if >2 pts), last
   const indices = points.length === 1
