@@ -178,7 +178,147 @@
 
 <div id="olError" class="alert alert-danger" style="display:none"></div>
 
-<!-- ── Section 4: Hygiene Analysis ──────────────────────────────────────────── -->
+<!-- ── Section 3: Interface Lookup ──────────────────────────────────────────── -->
+<div class="rr-section-label" style="margin-top:2rem">Interface Lookup</div>
+<div class="hygiene-selectors">
+  <div class="hygiene-selector-row">
+    <label for="ilAdom">ADOM</label>
+    <select id="ilAdom" class="form-select">
+      <option value="">— select ADOM —</option>
+    </select>
+
+    <label for="ilQuery" style="white-space:nowrap">IP Address(es)</label>
+    <input type="text" id="ilQuery" class="form-control" placeholder="Enter one or more IPs, comma-separated…" style="max-width:360px" disabled />
+    <button class="btn btn-primary" id="ilSearchBtn" disabled>Search</button>
+    <span id="ilRunning" class="text-muted" style="display:none;font-style:italic">Searching…</span>
+  </div>
+
+  <div class="pv-progress-wrap" id="ilProgressWrap">
+    <div class="pv-progress-track"><div class="pv-progress-bar"></div></div>
+  </div>
+</div>
+
+<!-- Interface Lookup Results -->
+<div id="ilResults" style="display:none;margin-top:1rem">
+  <div id="ilSkippedWarn" class="alert alert-warning" style="display:none;margin-bottom:.5rem"></div>
+  <div class="results-close-row">
+    <button class="btn btn-sm btn-ghost" id="ilCloseBtn" title="Close interface lookup">&#10005; Close</button>
+  </div>
+  <div class="obj-lookup-result-header">
+    <span id="ilSummary" class="obj-lookup-summary"></span>
+    <div class="hygiene-export-row">
+      <button class="btn btn-sm" id="ilExportCsv">&#8659; CSV</button>
+      <button class="btn btn-sm" id="ilExportJson">&#8659; JSON</button>
+      <button class="btn btn-sm" id="ilExportPdf">&#8659; PDF</button>
+    </div>
+  </div>
+
+  <div class="route-controls" style="margin:.5rem 0 .5rem;flex-wrap:wrap;gap:.5rem">
+    <input type="text" id="ilFilter" class="form-control" placeholder="Filter results…" style="max-width:320px" />
+    <select id="ilPageSize" class="form-select-sm">
+      <option value="10">10</option>
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+    <span class="text-muted" style="font-size:.8rem">per page</span>
+  </div>
+
+  <div class="table-wrapper">
+    <div class="table-controls">
+      <span id="ilCount"></span>
+    </div>
+    <table class="data-table" id="ilTable">
+      <thead>
+        <tr>
+          <th style="width:3.5rem">#</th>
+          <th>Device</th>
+          <th>Interface</th>
+          <th style="width:7rem">VDOM</th>
+          <th>IP / Mask</th>
+          <th style="width:7rem">Type</th>
+          <th style="width:5rem">Status</th>
+        </tr>
+      </thead>
+      <tbody id="ilTbody"></tbody>
+    </table>
+    <div class="pagination" id="ilPagination"></div>
+  </div>
+</div>
+
+<div id="ilError" class="alert alert-danger" style="display:none"></div>
+
+<!-- ── Section 4: NAT Lookup ─────────────────────────────────────────────────── -->
+<div class="rr-section-label" style="margin-top:2rem">NAT Lookup</div>
+<div class="hygiene-selectors">
+  <div class="hygiene-selector-row">
+    <label for="nlAdom">ADOM</label>
+    <select id="nlAdom" class="form-select">
+      <option value="">— select ADOM —</option>
+    </select>
+
+    <label for="nlQuery" style="white-space:nowrap">IP Address</label>
+    <input type="text" id="nlQuery" class="form-control" placeholder="Enter an IP to search VIPs and IP Pools…" style="max-width:360px" disabled />
+    <button class="btn btn-primary" id="nlSearchBtn" disabled>Search</button>
+    <span id="nlRunning" class="text-muted" style="display:none;font-style:italic">Searching…</span>
+  </div>
+
+  <div class="pv-progress-wrap" id="nlProgressWrap">
+    <div class="pv-progress-track"><div class="pv-progress-bar"></div></div>
+  </div>
+</div>
+
+<!-- NAT Lookup Results -->
+<div id="nlResults" style="display:none;margin-top:1rem">
+  <div class="results-close-row">
+    <button class="btn btn-sm btn-ghost" id="nlCloseBtn" title="Close NAT lookup">&#10005; Close</button>
+  </div>
+  <div class="obj-lookup-result-header">
+    <span id="nlSummary" class="obj-lookup-summary"></span>
+    <div class="hygiene-export-row">
+      <button class="btn btn-sm" id="nlExportCsv">&#8659; CSV</button>
+      <button class="btn btn-sm" id="nlExportJson">&#8659; JSON</button>
+      <button class="btn btn-sm" id="nlExportPdf">&#8659; PDF</button>
+    </div>
+  </div>
+
+  <div class="route-controls" style="margin:.5rem 0 .5rem;flex-wrap:wrap;gap:.5rem">
+    <input type="text" id="nlFilter" class="form-control" placeholder="Filter results…" style="max-width:320px" />
+    <select id="nlPageSize" class="form-select-sm">
+      <option value="10">10</option>
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+    <span class="text-muted" style="font-size:.8rem">per page</span>
+  </div>
+
+  <div class="table-wrapper">
+    <div class="table-controls">
+      <span id="nlCount"></span>
+    </div>
+    <table class="data-table" id="nlTable">
+      <thead>
+        <tr>
+          <th style="width:3.5rem">#</th>
+          <th style="width:6rem">Type</th>
+          <th>Name</th>
+          <th>External IP</th>
+          <th>Mapped / Pool IP</th>
+          <th style="width:6rem">Interface</th>
+          <th>Protocol / Port</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="nlTbody"></tbody>
+    </table>
+    <div class="pagination" id="nlPagination"></div>
+  </div>
+</div>
+
+<div id="nlError" class="alert alert-danger" style="display:none"></div>
+
+<!-- ── Section 5: Hygiene Analysis ──────────────────────────────────────────── -->
 <div class="rr-section-label" style="margin-top:2rem">Hygiene Analysis</div>
 <div class="hygiene-selectors">
   <div class="hygiene-selector-row">
@@ -266,5 +406,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/hygiene.js') }}?v=12"></script>
+<script src="{{ url_for('static', filename='js/hygiene.js') }}?v=13"></script>
 {% endblock %}
