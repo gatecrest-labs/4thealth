@@ -34,6 +34,22 @@ let olPageSize     = 25;
 let olFilter       = '';
 let olMeta         = null; // { adom, query }
 
+/* ── Interface Lookup state ─────────────────────────────────────────────────── */
+let ilAllResults  = [];
+let ilFiltered    = [];
+let ilPage        = 1;
+let ilPageSize    = 25;
+let ilFilter      = '';
+let ilMeta        = null; // { adom, ips }
+
+/* ── NAT Lookup state ───────────────────────────────────────────────────────── */
+let nlAllResults  = [];
+let nlFiltered    = [];
+let nlPage        = 1;
+let nlPageSize    = 25;
+let nlFilter      = '';
+let nlMeta        = null; // { adom, ip }
+
 /* ── ADOM loaders ───────────────────────────────────────────────────────────── */
 async function loadAdoms() {
   try {
@@ -41,7 +57,7 @@ async function loadAdoms() {
     if (resp.status === 401) { location.href = '/login'; return; }
     const adoms = await resp.json();
     if (!Array.isArray(adoms)) return;
-    ['pvAdom', 'hygieneAdom', 'olAdom'].forEach(id => {
+    ['pvAdom', 'hygieneAdom', 'olAdom', 'ilAdom', 'nlAdom'].forEach(id => {
       const sel = document.getElementById(id);
       adoms.forEach(a => {
         const opt = document.createElement('option');
@@ -1148,6 +1164,412 @@ function olExportPdf() {
   if (win) { win.document.write(html); win.document.close(); win.focus(); win.print(); }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   INTERFACE LOOKUP
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+async function runInterfaceLookup() {
+  const adom  = document.getElementById('ilAdom').value;
+  const query = document.getElementById('ilQuery').value.trim();
+  if (!adom || !query) return;
+
+  const ips = query.split(',').map(s => s.trim()).filter(Boolean);
+
+  document.getElementById('ilError').style.display       = 'none';
+  document.getElementById('ilResults').style.display     = 'none';
+  document.getElementById('ilSkippedWarn').style.display = 'none';
+  document.getElementById('ilSearchBtn').disabled        = true;
+  document.getElementById('ilRunning').style.display     = '';
+  document.getElementById('ilProgressWrap').style.display = 'block';
+
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/interfaces/lookup`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ips }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      document.getElementById('ilError').textContent  = data.error || 'Lookup failed.';
+      document.getElementById('ilError').style.display = '';
+      return;
+    }
+    ilAllResults = data.results || [];
+    ilMeta       = { adom, ips: data.searched_ips || ips };
+    ilPage       = 1;
+    ilFilter     = '';
+    document.getElementById('ilFilter').value = '';
+
+    const skipped = data.skipped_devices || [];
+    if (skipped.length) {
+      const warn = document.getElementById('ilSkippedWarn');
+      warn.textContent = `${skipped.length} device${skipped.length !== 1 ? 's' : ''} unreachable and skipped: ${skipped.join(', ')}`;
+      warn.style.display = '';
+    }
+
+    applyIlFilter();
+    renderIlTable();
+    document.getElementById('ilResults').style.display = '';
+  } catch (err) {
+    document.getElementById('ilError').textContent  = err.message;
+    document.getElementById('ilError').style.display = '';
+  } finally {
+    document.getElementById('ilSearchBtn').disabled     = false;
+    document.getElementById('ilRunning').style.display  = 'none';
+    document.getElementById('ilProgressWrap').style.display = 'none';
+  }
+}
+
+function applyIlFilter() {
+  if (!ilFilter) { ilFiltered = ilAllResults; return; }
+  const q = ilFilter.toLowerCase();
+  ilFiltered = ilAllResults.filter(r =>
+    (r.device     || '').toLowerCase().includes(q) ||
+    (r.interface  || '').toLowerCase().includes(q) ||
+    (r.vdom       || '').toLowerCase().includes(q) ||
+    (r.ip         || '').toLowerCase().includes(q) ||
+    (r.type       || '').toLowerCase().includes(q) ||
+    (r.status     || '').toLowerCase().includes(q)
+  );
+}
+
+function renderIlTable() {
+  const rows  = ilFiltered;
+  const total = Math.ceil(rows.length / ilPageSize) || 1;
+  ilPage      = Math.min(ilPage, total);
+  const slice = rows.slice((ilPage - 1) * ilPageSize, ilPage * ilPageSize);
+  const meta  = ilMeta || {};
+
+  const ipsLabel = (meta.ips || []).join(', ');
+  const shown = rows.length === ilAllResults.length
+    ? `${ilAllResults.length} result${ilAllResults.length !== 1 ? 's' : ''}`
+    : `${rows.length} of ${ilAllResults.length} result${ilAllResults.length !== 1 ? 's' : ''}`;
+  document.getElementById('ilSummary').textContent =
+    ilAllResults.length === 0
+      ? `No interfaces found for ${ipsLabel} in ${meta.adom || ''}`
+      : `${shown} for ${ipsLabel} in ${meta.adom || ''}`;
+  document.getElementById('ilCount').textContent =
+    `${shown} — page ${ilPage} of ${total}`;
+
+  const statusBadge = s => {
+    const cls = s === 'up' ? 'color:var(--status-green)' : s === 'down' ? 'color:var(--status-red)' : 'color:var(--text-muted)';
+    return `<span style="${cls};font-weight:600">${esc(s || '—')}</span>`;
+  };
+
+  const tbody = document.getElementById('ilTbody');
+  tbody.innerHTML = slice.map((r, i) => {
+    const globalIdx = (ilPage - 1) * ilPageSize + i + 1;
+    return `<tr>
+      <td style="font-size:.8rem;color:var(--text-muted)">${globalIdx}</td>
+      <td><strong>${esc(r.device)}</strong></td>
+      <td>${esc(r.interface)}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${esc(r.vdom)}</td>
+      <td style="font-size:.8rem">${esc(r.ip)}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${esc(r.type)}</td>
+      <td>${statusBadge(r.status)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty-state" style="padding:.85rem 1rem">No interfaces match your filter.</td></tr>`;
+
+  renderIlPagination(total);
+}
+
+function renderIlPagination(total) {
+  const pg = document.getElementById('ilPagination');
+  if (total <= 1) { pg.innerHTML = ''; return; }
+  function btn(label, page, disabled, active) {
+    return `<button class="pg-btn${active ? ' active' : ''}" data-ilpage="${page}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  }
+  let html = btn('&laquo;&laquo;', 1, ilPage === 1, false);
+  html += btn('&lsaquo;', ilPage - 1, ilPage === 1, false);
+  const s = Math.max(1, ilPage - 2), e = Math.min(total, s + 4);
+  for (let i = s; i <= e; i++) html += btn(i, i, false, i === ilPage);
+  html += btn('&rsaquo;', ilPage + 1, ilPage === total, false);
+  html += btn('&raquo;&raquo;', total, ilPage === total, false);
+  pg.innerHTML = html;
+}
+
+/* ── Interface Lookup exports ───────────────────────────────────────────────── */
+function ilExportCsv() {
+  const meta = ilMeta || {};
+  const header = ['#', 'Device', 'Interface', 'VDOM', 'IP / Mask', 'Type', 'Status'];
+  const fh = [
+    `# ADOM: ${meta.adom || ''}`,
+    `# IPs: ${(meta.ips || []).join(', ')}`,
+    `# Generated: ${new Date().toLocaleString()}`,
+    `# Total: ${ilAllResults.length}  Shown: ${ilFiltered.length}`,
+  ];
+  const lines = [...fh, header.join(',')];
+  ilFiltered.forEach((r, i) => {
+    const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    lines.push([i + 1, q(r.device), q(r.interface), q(r.vdom), q(r.ip), q(r.type), q(r.status)].join(','));
+  });
+  download('interface_lookup.csv', lines.join('\r\n'), 'text/csv');
+}
+
+function ilExportJson() {
+  const meta = ilMeta || {};
+  const payload = {
+    adom:      meta.adom,
+    ips:       meta.ips,
+    generated: new Date().toISOString(),
+    total:     ilAllResults.length,
+    filtered:  ilFiltered.length,
+    results:   ilFiltered,
+  };
+  download('interface_lookup.json', JSON.stringify(payload, null, 2), 'application/json');
+}
+
+function ilExportPdf() {
+  const meta  = ilMeta || {};
+  const ipsLabel = (meta.ips || []).join(', ');
+  const title = `Interface Lookup — ${ipsLabel} in ${meta.adom || ''}`;
+  const ts    = new Date().toLocaleString();
+  const tableRows = ilFiltered.map((r, i) => `<tr>
+    <td>${i + 1}</td>
+    <td><strong>${esc(r.device)}</strong></td>
+    <td>${esc(r.interface)}</td>
+    <td>${esc(r.vdom)}</td>
+    <td>${esc(r.ip)}</td>
+    <td>${esc(r.type)}</td>
+    <td>${esc(r.status)}</td>
+  </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${esc(title)}</title>
+<style>
+  body{font-family:sans-serif;font-size:11px;color:#1a2133;margin:1.5cm}
+  h1{font-size:15px;margin-bottom:4px}
+  .meta{font-size:10px;color:#5a6478;margin-bottom:12px;border-left:3px solid #93c5fd;padding-left:6px}
+  table{width:100%;border-collapse:collapse}
+  th{background:#eef1f5;text-align:left;padding:5px 8px;font-size:10px;text-transform:uppercase;border-bottom:2px solid #d0d7e2}
+  td{padding:4px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+  @media print{body{margin:1cm}}
+</style></head><body>
+<h1>${esc(title)}</h1>
+<div class="meta">Generated ${ts} &bull; ${ilFiltered.length} of ${ilAllResults.length} results</div>
+<table>
+  <thead><tr><th>#</th><th>Device</th><th>Interface</th><th>VDOM</th><th>IP / Mask</th><th>Type</th><th>Status</th></tr></thead>
+  <tbody>${tableRows}</tbody>
+</table>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) { win.document.write(html); win.document.close(); win.focus(); win.print(); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   NAT LOOKUP
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+async function runNatLookup() {
+  const adom  = document.getElementById('nlAdom').value;
+  const query = document.getElementById('nlQuery').value.trim();
+  if (!adom || !query) return;
+
+  document.getElementById('nlError').style.display      = 'none';
+  document.getElementById('nlResults').style.display    = 'none';
+  document.getElementById('nlSearchBtn').disabled       = true;
+  document.getElementById('nlRunning').style.display    = '';
+  document.getElementById('nlProgressWrap').style.display = 'block';
+
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/nat/lookup`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ip: query }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      document.getElementById('nlError').textContent  = data.error || 'Lookup failed.';
+      document.getElementById('nlError').style.display = '';
+      return;
+    }
+    nlAllResults = data.results || [];
+    nlMeta       = { adom, ip: data.searched_ip || query };
+    nlPage       = 1;
+    nlFilter     = '';
+    document.getElementById('nlFilter').value = '';
+    applyNlFilter();
+    renderNlTable();
+    document.getElementById('nlResults').style.display = '';
+  } catch (err) {
+    document.getElementById('nlError').textContent  = err.message;
+    document.getElementById('nlError').style.display = '';
+  } finally {
+    document.getElementById('nlSearchBtn').disabled     = false;
+    document.getElementById('nlRunning').style.display  = 'none';
+    document.getElementById('nlProgressWrap').style.display = 'none';
+  }
+}
+
+function applyNlFilter() {
+  if (!nlFilter) { nlFiltered = nlAllResults; return; }
+  const q = nlFilter.toLowerCase();
+  nlFiltered = nlAllResults.filter(r =>
+    (r.name       || '').toLowerCase().includes(q) ||
+    (r.nat_type   || '').toLowerCase().includes(q) ||
+    (r.ext_ip     || '').toLowerCase().includes(q) ||
+    (r.mapped_ip  || '').toLowerCase().includes(q) ||
+    (r.start_ip   || '').toLowerCase().includes(q) ||
+    (r.end_ip     || '').toLowerCase().includes(q) ||
+    (r.ext_intf   || '').toLowerCase().includes(q) ||
+    (r.comments   || '').toLowerCase().includes(q)
+  );
+}
+
+function renderNlTable() {
+  const rows  = nlFiltered;
+  const total = Math.ceil(rows.length / nlPageSize) || 1;
+  nlPage      = Math.min(nlPage, total);
+  const slice = rows.slice((nlPage - 1) * nlPageSize, nlPage * nlPageSize);
+  const meta  = nlMeta || {};
+
+  const shown = rows.length === nlAllResults.length
+    ? `${nlAllResults.length} result${nlAllResults.length !== 1 ? 's' : ''}`
+    : `${rows.length} of ${nlAllResults.length} result${nlAllResults.length !== 1 ? 's' : ''}`;
+  document.getElementById('nlSummary').textContent =
+    nlAllResults.length === 0
+      ? `No NAT entries found for ${meta.ip || ''} in ${meta.adom || ''}`
+      : `${shown} for ${meta.ip || ''} in ${meta.adom || ''}`;
+  document.getElementById('nlCount').textContent =
+    `${shown} — page ${nlPage} of ${total}`;
+
+  const typeBadge = t => t === 'VIP'
+    ? `<span class="obj-type-badge obj-type-object">VIP</span>`
+    : `<span class="obj-type-badge obj-type-group">IP Pool</span>`;
+
+  const tbody = document.getElementById('nlTbody');
+  tbody.innerHTML = slice.map((r, i) => {
+    const globalIdx = (nlPage - 1) * nlPageSize + i + 1;
+    let extIp, mappedIp, extIntf, protPort, notes;
+
+    if (r.nat_type === 'VIP') {
+      extIp    = esc(r.ext_ip || '—');
+      mappedIp = esc(r.mapped_ip || '—');
+      extIntf  = esc(r.ext_intf || '—');
+      protPort = r.port_forward && r.protocol
+        ? esc(`${r.protocol}:${r.ext_port}→${r.mapped_port}`)
+        : '—';
+      notes    = esc(r.comments || '—');
+    } else {
+      extIp    = esc(`${r.start_ip}–${r.end_ip}`);
+      mappedIp = '—';
+      extIntf  = '—';
+      protPort = esc(r.pool_type || '—');
+      notes    = esc(r.comments || '—');
+    }
+
+    return `<tr>
+      <td style="font-size:.8rem;color:var(--text-muted)">${globalIdx}</td>
+      <td>${typeBadge(r.nat_type)}</td>
+      <td><strong>${esc(r.name)}</strong></td>
+      <td style="font-size:.8rem">${extIp}</td>
+      <td style="font-size:.8rem">${mappedIp}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${extIntf}</td>
+      <td style="font-size:.8rem">${protPort}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${notes}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" class="empty-state" style="padding:.85rem 1rem">No NAT entries match your filter.</td></tr>`;
+
+  renderNlPagination(total);
+}
+
+function renderNlPagination(total) {
+  const pg = document.getElementById('nlPagination');
+  if (total <= 1) { pg.innerHTML = ''; return; }
+  function btn(label, page, disabled, active) {
+    return `<button class="pg-btn${active ? ' active' : ''}" data-nlpage="${page}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  }
+  let html = btn('&laquo;&laquo;', 1, nlPage === 1, false);
+  html += btn('&lsaquo;', nlPage - 1, nlPage === 1, false);
+  const s = Math.max(1, nlPage - 2), e = Math.min(total, s + 4);
+  for (let i = s; i <= e; i++) html += btn(i, i, false, i === nlPage);
+  html += btn('&rsaquo;', nlPage + 1, nlPage === total, false);
+  html += btn('&raquo;&raquo;', total, nlPage === total, false);
+  pg.innerHTML = html;
+}
+
+/* ── NAT Lookup exports ─────────────────────────────────────────────────────── */
+function nlExportCsv() {
+  const meta = nlMeta || {};
+  const header = ['#', 'Type', 'Name', 'External IP', 'Mapped / Pool IP', 'Interface', 'Protocol / Port', 'Notes'];
+  const fh = [
+    `# ADOM: ${meta.adom || ''}`,
+    `# IP: ${meta.ip || ''}`,
+    `# Generated: ${new Date().toLocaleString()}`,
+    `# Total: ${nlAllResults.length}  Shown: ${nlFiltered.length}`,
+  ];
+  const lines = [...fh, header.join(',')];
+  nlFiltered.forEach((r, i) => {
+    const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    const extIp   = r.nat_type === 'VIP' ? r.ext_ip : `${r.start_ip}-${r.end_ip}`;
+    const mapped  = r.nat_type === 'VIP' ? r.mapped_ip : '';
+    const intf    = r.nat_type === 'VIP' ? r.ext_intf : '';
+    const pport   = r.nat_type === 'VIP' && r.port_forward && r.protocol
+      ? `${r.protocol}:${r.ext_port}->${r.mapped_port}` : (r.pool_type || '');
+    lines.push([i + 1, q(r.nat_type), q(r.name), q(extIp), q(mapped), q(intf), q(pport), q(r.comments || '')].join(','));
+  });
+  download('nat_lookup.csv', lines.join('\r\n'), 'text/csv');
+}
+
+function nlExportJson() {
+  const meta = nlMeta || {};
+  const payload = {
+    adom:      meta.adom,
+    ip:        meta.ip,
+    generated: new Date().toISOString(),
+    total:     nlAllResults.length,
+    filtered:  nlFiltered.length,
+    results:   nlFiltered,
+  };
+  download('nat_lookup.json', JSON.stringify(payload, null, 2), 'application/json');
+}
+
+function nlExportPdf() {
+  const meta  = nlMeta || {};
+  const title = `NAT Lookup — ${meta.ip || ''} in ${meta.adom || ''}`;
+  const ts    = new Date().toLocaleString();
+  const tableRows = nlFiltered.map((r, i) => {
+    const extIp   = r.nat_type === 'VIP' ? r.ext_ip : `${r.start_ip}–${r.end_ip}`;
+    const mapped  = r.nat_type === 'VIP' ? (r.mapped_ip || '—') : '—';
+    const intf    = r.nat_type === 'VIP' ? (r.ext_intf || '—') : '—';
+    const pport   = r.nat_type === 'VIP' && r.port_forward && r.protocol
+      ? `${r.protocol}:${r.ext_port}→${r.mapped_port}` : (r.pool_type || '—');
+    return `<tr>
+      <td>${i + 1}</td>
+      <td>${esc(r.nat_type)}</td>
+      <td><strong>${esc(r.name)}</strong></td>
+      <td>${esc(extIp)}</td>
+      <td>${esc(mapped)}</td>
+      <td>${esc(intf)}</td>
+      <td>${esc(pport)}</td>
+      <td>${esc(r.comments || '—')}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${esc(title)}</title>
+<style>
+  body{font-family:sans-serif;font-size:11px;color:#1a2133;margin:1.5cm}
+  h1{font-size:15px;margin-bottom:4px}
+  .meta{font-size:10px;color:#5a6478;margin-bottom:12px;border-left:3px solid #93c5fd;padding-left:6px}
+  table{width:100%;border-collapse:collapse}
+  th{background:#eef1f5;text-align:left;padding:5px 8px;font-size:10px;text-transform:uppercase;border-bottom:2px solid #d0d7e2}
+  td{padding:4px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+  @media print{body{margin:1cm}}
+</style></head><body>
+<h1>${esc(title)}</h1>
+<div class="meta">Generated ${ts} &bull; ${nlFiltered.length} of ${nlAllResults.length} results</div>
+<table>
+  <thead><tr><th>#</th><th>Type</th><th>Name</th><th>External IP</th><th>Mapped / Pool IP</th><th>Interface</th><th>Protocol / Port</th><th>Notes</th></tr></thead>
+  <tbody>${tableRows}</tbody>
+</table>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) { win.document.write(html); win.document.close(); win.focus(); win.print(); }
+}
+
 /* ── Debounce helper ────────────────────────────────────────────────────────── */
 function debounce(fn, ms) {
   let t;
@@ -1415,6 +1837,120 @@ document.getElementById('olPagination').addEventListener('click', e => {
 document.getElementById('olExportCsv').addEventListener('click', olExportCsv);
 document.getElementById('olExportJson').addEventListener('click', olExportJson);
 document.getElementById('olExportPdf').addEventListener('click', olExportPdf);
+
+/* ── Interface Lookup wiring ────────────────────────────────────────────────── */
+document.getElementById('ilCloseBtn').addEventListener('click', () => {
+  ilAllResults = []; ilFiltered = [];
+  document.getElementById('ilResults').style.display     = 'none';
+  document.getElementById('ilSkippedWarn').style.display = 'none';
+  document.getElementById('ilFilter').value  = '';
+  document.getElementById('ilAdom').value    = '';
+  document.getElementById('ilQuery').value   = '';
+  document.getElementById('ilSearchBtn').disabled = true;
+});
+
+document.getElementById('ilAdom').addEventListener('change', function () {
+  const hasAdom = !!this.value;
+  document.getElementById('ilQuery').disabled = !hasAdom;
+  document.getElementById('ilSearchBtn').disabled = !hasAdom || !document.getElementById('ilQuery').value.trim();
+  if (!hasAdom) {
+    ilAllResults = []; ilFiltered = [];
+    document.getElementById('ilResults').style.display = 'none';
+    document.getElementById('ilSkippedWarn').style.display = 'none';
+  }
+});
+
+document.getElementById('ilQuery').addEventListener('input', function () {
+  const adom = document.getElementById('ilAdom').value;
+  document.getElementById('ilSearchBtn').disabled = !adom || !this.value.trim();
+});
+
+document.getElementById('ilQuery').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('ilSearchBtn').click();
+});
+
+document.getElementById('ilSearchBtn').addEventListener('click', runInterfaceLookup);
+
+document.getElementById('ilFilter').addEventListener('input', debounce(function () {
+  ilFilter = this.value;
+  ilPage   = 1;
+  applyIlFilter();
+  renderIlTable();
+}, 200));
+
+document.getElementById('ilPageSize').addEventListener('change', function () {
+  ilPageSize = parseInt(this.value, 10);
+  ilPage     = 1;
+  renderIlTable();
+});
+
+document.getElementById('ilPagination').addEventListener('click', e => {
+  const pg = e.target.closest('[data-ilpage]');
+  if (!pg) return;
+  const total = Math.ceil(ilFiltered.length / ilPageSize) || 1;
+  ilPage = Math.max(1, Math.min(total, parseInt(pg.dataset.ilpage, 10)));
+  renderIlTable();
+});
+
+document.getElementById('ilExportCsv').addEventListener('click', ilExportCsv);
+document.getElementById('ilExportJson').addEventListener('click', ilExportJson);
+document.getElementById('ilExportPdf').addEventListener('click', ilExportPdf);
+
+/* ── NAT Lookup wiring ──────────────────────────────────────────────────────── */
+document.getElementById('nlCloseBtn').addEventListener('click', () => {
+  nlAllResults = []; nlFiltered = [];
+  document.getElementById('nlResults').style.display = 'none';
+  document.getElementById('nlFilter').value  = '';
+  document.getElementById('nlAdom').value    = '';
+  document.getElementById('nlQuery').value   = '';
+  document.getElementById('nlSearchBtn').disabled = true;
+});
+
+document.getElementById('nlAdom').addEventListener('change', function () {
+  const hasAdom = !!this.value;
+  document.getElementById('nlQuery').disabled = !hasAdom;
+  document.getElementById('nlSearchBtn').disabled = !hasAdom || !document.getElementById('nlQuery').value.trim();
+  if (!hasAdom) {
+    nlAllResults = []; nlFiltered = [];
+    document.getElementById('nlResults').style.display = 'none';
+  }
+});
+
+document.getElementById('nlQuery').addEventListener('input', function () {
+  const adom = document.getElementById('nlAdom').value;
+  document.getElementById('nlSearchBtn').disabled = !adom || !this.value.trim();
+});
+
+document.getElementById('nlQuery').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('nlSearchBtn').click();
+});
+
+document.getElementById('nlSearchBtn').addEventListener('click', runNatLookup);
+
+document.getElementById('nlFilter').addEventListener('input', debounce(function () {
+  nlFilter = this.value;
+  nlPage   = 1;
+  applyNlFilter();
+  renderNlTable();
+}, 200));
+
+document.getElementById('nlPageSize').addEventListener('change', function () {
+  nlPageSize = parseInt(this.value, 10);
+  nlPage     = 1;
+  renderNlTable();
+});
+
+document.getElementById('nlPagination').addEventListener('click', e => {
+  const pg = e.target.closest('[data-nlpage]');
+  if (!pg) return;
+  const total = Math.ceil(nlFiltered.length / nlPageSize) || 1;
+  nlPage = Math.max(1, Math.min(total, parseInt(pg.dataset.nlpage, 10)));
+  renderNlTable();
+});
+
+document.getElementById('nlExportCsv').addEventListener('click', nlExportCsv);
+document.getElementById('nlExportJson').addEventListener('click', nlExportJson);
+document.getElementById('nlExportPdf').addEventListener('click', nlExportPdf);
 
 /* ── Init ───────────────────────────────────────────────────────────────────── */
 captureCheckLabels();

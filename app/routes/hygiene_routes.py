@@ -10,6 +10,8 @@ API (JSON, all read-only):
        returns: { findings: [...], total: int, policy_count: int }
 """
 
+import ipaddress
+
 from flask import Blueprint, render_template, session, jsonify, request
 from app.decorators import tab_required, check_adom_access
 from app.fmg_helpers import make_client
@@ -108,6 +110,29 @@ def _addr_subnet(ao: dict) -> str:
         if fallback:
             return fallback
     return ""
+
+
+def _ip_in_range(ip_str: str, start_str: str, end_str: str) -> bool:
+    """Return True if ip_str falls between start_str and end_str (inclusive)."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        start = ipaddress.ip_address(start_str)
+        end = ipaddress.ip_address(end_str)
+        return start <= ip <= end
+    except ValueError:
+        return False
+
+
+def _cidr_from_mask(ip_mask: str) -> str:
+    """Convert 'x.x.x.x y.y.y.y' to 'x.x.x.x/prefix' for display. Returns original on failure."""
+    parts = ip_mask.strip().split()
+    if len(parts) == 2:
+        try:
+            iface = ipaddress.IPv4Interface(f"{parts[0]}/{parts[1]}")
+            return str(iface)
+        except ValueError:
+            pass
+    return ip_mask
 
 
 # ── API: raw policy list (debug) ─────────────────────────────────────────────
@@ -539,6 +564,217 @@ def hygiene_object_lookup(adom: str):
 
     results.sort(key=lambda r: r["name"].lower())
     return jsonify({"objects": results, "total": len(results)})
+
+
+# ── API: interface lookup ─────────────────────────────────────────────────────
+
+
+@bp.route("/api/hygiene/adoms/<adom>/interfaces/lookup", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_interface_lookup(adom: str):
+    """Search firewall interfaces across all devices in an ADOM by IP address.
+
+    Body: { "ips": ["10.1.2.3", "10.1.2.4"] }
+    Returns: { results, total, searched_ips, skipped_devices }
+    """
+    if err := check_adom_access(adom):
+        return err
+
+    data = request.get_json(silent=True) or {}
+    raw_ips = data.get("ips") or []
+    if not raw_ips:
+        return jsonify({"error": "ips is required"}), 400
+
+    # Validate each IP
+    searched_ips = []
+    for raw in raw_ips:
+        s = str(raw).strip()
+        try:
+            ipaddress.ip_address(s)
+            searched_ips.append(s)
+        except ValueError:
+            return jsonify({"error": f"Invalid IP address: {s!r}"}), 400
+
+    if not searched_ips:
+        return jsonify({"error": "ips is required"}), 400
+
+    searched_set = set(searched_ips)
+    results = []
+    skipped_devices = []
+
+    try:
+        with make_client() as client:
+            devices = client.get_devices(adom) or []
+            for device in devices:
+                device_name = (
+                    device.get("name", "") if isinstance(device, dict) else str(device)
+                )
+                if not device_name:
+                    continue
+                try:
+                    interfaces = client.get_device_interfaces_all_vdoms(
+                        adom, device_name
+                    )
+                except Exception:
+                    skipped_devices.append(device_name)
+                    continue
+
+                for iface in interfaces:
+                    if not isinstance(iface, dict):
+                        continue
+                    raw_ip = iface.get("ip", "")
+                    if not raw_ip:
+                        continue
+                    # FortiGate format: "10.1.2.3 255.255.255.0" — extract IP part
+                    ip_part = raw_ip.split()[0] if " " in raw_ip else raw_ip
+                    if ip_part in searched_set:
+                        results.append(
+                            {
+                                "device": device_name,
+                                "interface": iface.get("name", ""),
+                                "vdom": iface.get("vdom", "root"),
+                                "ip": _cidr_from_mask(raw_ip),
+                                "type": iface.get("type", ""),
+                                "status": iface.get("status", ""),
+                            }
+                        )
+    except FMGError as exc:
+        return upstream_api_error("hygiene", exc)
+    except Exception as exc:
+        return internal_api_error("hygiene", exc)
+
+    results.sort(key=lambda r: (r["device"].lower(), r["interface"].lower()))
+    return jsonify(
+        {
+            "results": results,
+            "total": len(results),
+            "searched_ips": searched_ips,
+            "skipped_devices": skipped_devices,
+        }
+    )
+
+
+# ── API: NAT lookup ───────────────────────────────────────────────────────────
+
+
+@bp.route("/api/hygiene/adoms/<adom>/nat/lookup", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_nat_lookup(adom: str):
+    """Search VIP and IP pool objects in an ADOM for a given IP address.
+
+    Matches: VIP extip, VIP mappedip ranges, IP pool startip-endip ranges.
+    Body: { "ip": "203.0.113.10" }
+    Returns: { results, total, searched_ip }
+    """
+    if err := check_adom_access(adom):
+        return err
+
+    data = request.get_json(silent=True) or {}
+    raw_ip = (data.get("ip") or "").strip()
+    if not raw_ip:
+        return jsonify({"error": "ip is required"}), 400
+    try:
+        searched_ip = str(ipaddress.ip_address(raw_ip))
+    except ValueError:
+        return jsonify({"error": f"Invalid IP address: {raw_ip!r}"}), 400
+
+    results = []
+
+    try:
+        with make_client() as client:
+            vips = client.get_vip_objects(adom)
+            pools = client.get_ippool_objects(adom)
+    except FMGError as exc:
+        return upstream_api_error("hygiene", exc)
+    except Exception as exc:
+        return internal_api_error("hygiene", exc)
+
+    for vip in vips:
+        if not isinstance(vip, dict):
+            continue
+        name = vip.get("name", "")
+        if not name:
+            continue
+        ext_ip = vip.get("extip", "")
+        try:
+            ext_ip = str(ipaddress.ip_address(ext_ip))
+        except ValueError:
+            pass
+        mapped_ranges = vip.get("mappedip", []) or []
+
+        matched = False
+        # Match on external IP (exact)
+        if ext_ip == searched_ip:
+            matched = True
+        # Match on any mapped IP range
+        if not matched:
+            for entry in mapped_ranges:
+                if not isinstance(entry, dict):
+                    continue
+                rng = entry.get("range", "")
+                if "-" in rng:
+                    start, _, end = rng.partition("-")
+                    if _ip_in_range(searched_ip, start.strip(), end.strip()):
+                        matched = True
+                        break
+
+        if not matched:
+            continue
+
+        # Build human-readable mapped IP string
+        mapped_display = (
+            "; ".join(
+                e.get("range", "")
+                for e in mapped_ranges
+                if isinstance(e, dict) and e.get("range")
+            )
+            or "—"
+        )
+
+        port_forward = vip.get("portforward", "disable") == "enable"
+        results.append(
+            {
+                "nat_type": "VIP",
+                "name": name,
+                "ext_ip": ext_ip,
+                "ext_intf": vip.get("extintf", ""),
+                "mapped_ip": mapped_display,
+                "port_forward": port_forward,
+                "protocol": vip.get("protocol", "") if port_forward else "",
+                "ext_port": vip.get("extport", "") if port_forward else "",
+                "mapped_port": vip.get("mappedport", "") if port_forward else "",
+                "comments": vip.get("comment", "") or vip.get("comments", ""),
+            }
+        )
+
+    for pool in pools:
+        if not isinstance(pool, dict):
+            continue
+        name = pool.get("name", "")
+        start_ip = pool.get("startip", "")
+        end_ip = pool.get("endip", "")
+        if not name or not start_ip or not end_ip:
+            continue
+        if not _ip_in_range(searched_ip, start_ip, end_ip):
+            continue
+        results.append(
+            {
+                "nat_type": "IP Pool",
+                "name": name,
+                "start_ip": start_ip,
+                "end_ip": end_ip,
+                "pool_type": pool.get("type", ""),
+                "comments": pool.get("comments", "") or pool.get("comment", ""),
+            }
+        )
+
+    return jsonify(
+        {
+            "results": results,
+            "total": len(results),
+            "searched_ip": searched_ip,
+        }
+    )
 
 
 # ── API: run checks ───────────────────────────────────────────────────────────

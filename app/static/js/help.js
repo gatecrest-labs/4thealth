@@ -136,7 +136,7 @@ const SECTIONS = [
     tab:   'rule_hygiene',
     html: `
 <h3>Rule Review</h3>
-<p>Two sections: <strong>Policy Rules</strong> at the top for browsing the full policy table, and <strong>Hygiene Analysis</strong> below for running automated checks on a package.</p>
+<p>Four sections on this page: <strong>Policy Rules</strong>, <strong>Object Lookup</strong>, <strong>Interface Lookup</strong>, <strong>NAT Lookup</strong>, and <strong>Hygiene Analysis</strong>. Each has its own ADOM selector and works independently.</p>
 <h3>Policy Rules</h3>
 <p>Select an ADOM and Policy Package — the full rule table loads automatically.</p>
 <ul>
@@ -145,6 +145,26 @@ const SECTIONS = [
   <li><strong>Object expansion</strong> — click the triangle next to any address group or service group to see its members inline.</li>
   <li><strong>Page size</strong> — 10 / 25 / 50 / 100 rows, with <code>&lt;&lt; &lt; … &gt; &gt;&gt;</code> pagination.</li>
   <li><strong>Exports</strong> — CSV, JSON, and PDF. Each includes a filter context header.</li>
+</ul>
+<h3>Object Lookup</h3>
+<p>Search for address objects, address groups, service objects, and service groups by name across the selected ADOM. Partial name matching supported. Group members are shown inline with their subnet or port details.</p>
+<h3>Interface Lookup</h3>
+<p>Find which firewall interface(s) in an ADOM are assigned a given IP address.</p>
+<ul>
+  <li>Enter one or more IPs comma-separated (e.g. <code>10.1.2.3, 10.1.2.4</code>).</li>
+  <li>The app queries every device in the ADOM and returns any interface whose IP matches exactly.</li>
+  <li>Results show: Device, Interface name, VDOM, IP/mask, interface type, and link status.</li>
+  <li>Devices that are unreachable are skipped with a warning banner above the results.</li>
+  <li>Exports: CSV, JSON, PDF.</li>
+</ul>
+<h3>NAT Lookup</h3>
+<p>Search VIP (Virtual IP / inbound NAT) and IP Pool (outbound PAT) objects for a given IP. Searches both the external and internal/mapped sides.</p>
+<ul>
+  <li>Enter a single IP address.</li>
+  <li><strong>VIP match</strong> — returns if the IP equals the VIP's external IP, or falls within the mapped (internal) IP range.</li>
+  <li><strong>IP Pool match</strong> — returns if the IP falls within the pool's start–end range.</li>
+  <li>Results show: Type (VIP or IP Pool), name, external IP, mapped/pool IP, interface, protocol/port (for port-forwarding VIPs), and comments.</li>
+  <li>Exports: CSV, JSON, PDF.</li>
 </ul>
 <h3>Hygiene Analysis</h3>
 <ol>
@@ -160,7 +180,6 @@ const SECTIONS = [
   <li><strong>Disabled rules</strong> — rules that have been turned off but left in place.</li>
   <li><strong>Expired rules</strong> — rules with a validity end date in the past.</li>
   <li><strong>Unhit rules</strong> — rules with zero bytes or sessions since creation (may be unused).</li>
-  <li><strong>No deny-all</strong> — the package has no explicit deny-all rule at the bottom.</li>
 </ul>
 <h3>Findings Table</h3>
 <ul>

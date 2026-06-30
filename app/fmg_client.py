@@ -743,6 +743,32 @@ class FMGClient:
         except Exception:
             return []
 
+    def get_vip_objects(self, adom: str) -> list:
+        """Return all firewall VIP objects in an ADOM plus the global database."""
+        results: list = []
+        for url in (
+            f"/pm/config/adom/{adom}/obj/firewall/vip",
+            "/pm/config/global/obj/firewall/vip",
+        ):
+            try:
+                results.extend(self._get_paged(url))
+            except Exception:
+                pass
+        return results
+
+    def get_ippool_objects(self, adom: str) -> list:
+        """Return all firewall IP pool objects in an ADOM plus the global database."""
+        results: list = []
+        for url in (
+            f"/pm/config/adom/{adom}/obj/firewall/ippool",
+            "/pm/config/global/obj/firewall/ippool",
+        ):
+            try:
+                results.extend(self._get_paged(url))
+            except Exception:
+                pass
+        return results
+
     def get_audit_log(self, hours: int = 24) -> list:
         """Return FortiManager audit log entries from the last ``hours`` hours.
 
