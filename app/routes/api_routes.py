@@ -229,16 +229,20 @@ def infrastructure():
                 timeout=Config.FMG_TIMEOUT,
             )
             perf, usage = {}, {}
+            api_ok = False
             if is_snmp_type:
                 # For SNMP-polled types (FortiManager/FortiAnalyzer/
                 # FortiAuthenticator), CPU/mem/status come from the SNMP
                 # cache below and must not depend on FMG JSON-RPC
                 # reachability — only hostname/version/serial/etc (cosmetic
                 # detail) come from FMG, so a connection failure here is
-                # swallowed rather than failing the whole entry.
+                # swallowed rather than failing the whole entry. api_ok
+                # tracks whether the FMG API itself is reachable, so the
+                # status color can fall back on it when SNMP is unavailable.
                 try:
                     with client:
                         sys_status = client.get_system_status()
+                    api_ok = True
                 except Exception:
                     sys_status = {}
             else:
@@ -304,17 +308,20 @@ def infrastructure():
 
             if is_snmp_type:
                 # ── CPU & Memory — sourced from the SNMP background cache ──
+                # Gray is reserved for "no signal at all" (both SNMP and the
+                # FMG API are unreachable). If the FMG API is reachable but
+                # SNMP CPU/mem isn't available (disabled, timing out, wrong
+                # creds, etc.), the device is still up — show green rather
+                # than gray, just without a CPU/mem reading.
                 cached = infra_health_cache.get_cached(target["host"])
-                if cached is None:
-                    entry["status"] = "gray"
-                elif cached["snmp_status"] == "ok":
-                    entry["cpu"] = cached["cpu"]
-                    entry["mem"] = cached["mem"]
+                if cached is not None and cached["snmp_status"] == "ok":
+                    entry["cpu"] = round(cached["cpu"], 1)
+                    entry["mem"] = round(cached["mem"], 1)
                     entry["snmp_status"] = "ok"
                     entry["status"] = _health_status(cached["cpu"], cached["mem"])
                 else:
-                    entry["snmp_status"] = cached["snmp_status"]
-                    entry["status"] = "gray"
+                    entry["snmp_status"] = cached["snmp_status"] if cached else "disabled"
+                    entry["status"] = "green" if api_ok else "gray"
             else:
                 # ── CPU & Memory — legacy FMG JSON-RPC path (FortiCollector, etc.) ──
                 # perf/usage were already fetched above, inside the client's

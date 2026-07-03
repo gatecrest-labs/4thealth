@@ -100,7 +100,9 @@ function renderCard(d) {
 
   let cpuMemRow;
   if (d.snmp_status && d.snmp_status !== 'ok') {
-    const label = d.snmp_status === 'timeout' ? 'SNMP timeout' : 'SNMP unreachable';
+    const label = d.snmp_status === 'timeout' ? 'SNMP timeout'
+      : d.snmp_status === 'disabled' ? 'SNMP disabled'
+      : 'SNMP unreachable';
     cpuMemRow = `<div class="card-row"><span class="card-row-label">CPU / Mem</span><span class="card-row-value text-muted">${escHtml(label)}</span></div>`;
   } else if (d.cpu !== null && d.cpu !== undefined && d.mem !== null && d.mem !== undefined) {
     cpuMemRow = `<div class="card-row"><span class="card-row-label">CPU / Mem</span><span class="card-row-value">${d.cpu}% / ${d.mem}%</span></div>`;

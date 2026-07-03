@@ -40,17 +40,24 @@ _cache: dict = {}
 
 _SUPPORTED_TYPES = {"fortimanager", "fortianalyzer", "fortiauthenticator"}
 
-# CPU/mem OIDs per device type. FortiManager/FortiAnalyzer OIDs below are
-# under the Fortinet enterprise arc commonly used by fnSysCpuUsage/
-# fnSysMemUsage-style objects, but FortiManager/FortiAnalyzer have their own
-# MIB arc distinct from FortiGate's — these values are NOT yet confirmed
-# against real hardware. FortiAuthenticator's OID is similarly unconfirmed.
-# Verify all three via snmpwalk or Fortinet's official MIBs before enabling
-# SNMP_ENABLED=true in production — see CLAUDE.md.
+# CPU/mem OIDs per device type.
+#
+# FortiManager OIDs below are confirmed against a real FMG-VM64-KVM
+# (v7.6.7) under FORTINET-FORTIMANAGER-MIB's fmSystem group
+# (1.3.6.1.4.1.12356.103.2.1.*), cross-checked against the FMG GUI's
+# System Resources dashboard widget (Average CPU Usage / Memory Usage).
+# Unlike FortiGate's fgSysMemUsage, FortiManager has no native memory
+# percentage OID — mem is used-KB/total-KB and must be computed (see
+# "mem_total" handling in _poll_target below).
+#
+# FortiAnalyzer/FortiAuthenticator OIDs are still NOT confirmed against
+# real hardware — verify via snmpwalk before enabling SNMP_ENABLED=true
+# for those types in production. See CLAUDE.md.
 OID_MAP = {
     "fortimanager": {
-        "cpu": "1.3.6.1.4.1.12356.101.4.1.3.0",
-        "mem": "1.3.6.1.4.1.12356.101.4.1.4.0",
+        "cpu": "1.3.6.1.4.1.12356.103.2.1.1.0",
+        "mem_used": "1.3.6.1.4.1.12356.103.2.1.2.0",
+        "mem_total": "1.3.6.1.4.1.12356.103.2.1.3.0",
     },
     "fortianalyzer": {
         "cpu": "1.3.6.1.4.1.12356.101.4.1.3.0",
@@ -136,9 +143,21 @@ def _poll_target(target: dict) -> dict | None:
         return None
     creds = _resolve_snmp_creds(target)
     try:
-        cpu, mem = asyncio.run(
-            _snmp_get(target["host"], [oids["cpu"], oids["mem"]], creds)
-        )
+        if "mem_total" in oids:
+            # Some device types (FortiManager) expose used/total KB rather
+            # than a precomputed memory percentage — derive it here.
+            cpu, mem_used, mem_total = asyncio.run(
+                _snmp_get(
+                    target["host"],
+                    [oids["cpu"], oids["mem_used"], oids["mem_total"]],
+                    creds,
+                )
+            )
+            mem = (mem_used / mem_total * 100) if mem_total else 0.0
+        else:
+            cpu, mem = asyncio.run(
+                _snmp_get(target["host"], [oids["cpu"], oids["mem"]], creds)
+            )
         return {"cpu": cpu, "mem": mem, "snmp_status": "ok", "last_updated": _now()}
     except SnmpTimeout:
         return {"cpu": None, "mem": None, "snmp_status": "timeout", "last_updated": _now()}

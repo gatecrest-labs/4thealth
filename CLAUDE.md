@@ -62,10 +62,16 @@ per-device `"snmp_user"` / `"snmp_auth_key"` / `"snmp_priv_key"` / `"snmp_auth_p
 override-over-default pattern as `"token"`. `FortiCollector` entries (and any other type) continue
 to use the legacy FMG JSON-RPC CPU/mem path unchanged.
 
-CPU/mem OIDs live in `OID_MAP` in `app/infra_health_cache.py`. None of the three device types'
-OIDs (FortiManager, FortiAnalyzer, FortiAuthenticator) have been confirmed against real hardware —
-verify all three with `snmpwalk` or Fortinet's official MIBs before enabling `SNMP_ENABLED=true`
-in any production environment.
+CPU/mem OIDs live in `OID_MAP` in `app/infra_health_cache.py`. FortiManager's OIDs are confirmed
+against a real FMG-VM64-KVM (v7.6.7), cross-checked against the FMG GUI's System Resources widget
+— CPU is a direct percentage OID (`fmSystem` group, `1.3.6.1.4.1.12356.103.2.1.1.0`), but memory
+has no native percentage OID and is derived from used-KB/total-KB. FortiAnalyzer and
+FortiAuthenticator OIDs are still NOT confirmed against real hardware — verify both with
+`snmpwalk` or Fortinet's official MIBs before enabling `SNMP_ENABLED=true` for those types in any
+production environment.
+
+SNMPv3 privacy (AES) requires the `cryptography` package — without it, `pysnmp` fails silently
+with `Ciphering services not available` on every request needing `authPriv`.
 
 ## User management
 
