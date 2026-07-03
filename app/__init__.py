@@ -113,6 +113,12 @@ def create_app() -> Flask:
 
         init_map_scheduler(app)
 
+    if not app.config.get("TESTING") and not app.config.get("_INFRA_HEALTH_STARTED"):
+        app.config["_INFRA_HEALTH_STARTED"] = True
+        from app.infra_health_cache import init_scheduler as init_infra_health_scheduler
+
+        init_infra_health_scheduler(app)
+
     @app.context_processor
     def inject_session_globals():
         role = session.get("role", "viewer")
