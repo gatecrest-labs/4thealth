@@ -34,6 +34,16 @@ CPU_WARN=70  CPU_CRIT=90
 MEM_WARN=75  MEM_CRIT=90
 SUMMARY_REFRESH_HOUR=1   # nightly summary recalculation hour (default 01:00)
 SUMMARY_REFRESH_MINUTE=0
+SNMP_ENABLED=false       # enable SNMPv3 polling for FortiManager/FortiAnalyzer/FortiAuthenticator CPU/mem
+SNMP_PORT=161
+SNMP_TIMEOUT=5
+SNMP_RETRIES=1
+SNMP_POLL_INTERVAL=60    # seconds between background poll cycles
+SNMP_USER=monitor
+SNMP_AUTH_PROTOCOL=SHA   # SHA | SHA256
+SNMP_AUTH_KEY=
+SNMP_PRIV_PROTOCOL=AES   # AES | AES192 | AES256
+SNMP_PRIV_KEY=
 ```
 
 Infrastructure dashboard targets (FortiManager, FortiAnalyzer, FortiCollector, FortiAuthenticator, etc.)
@@ -41,6 +51,22 @@ are defined in `infra_targets.json` (gitignored). Copy `infra_targets.example.js
 Each entry is `{ "label": "...", "host": "...", "type": "..." }`. Add or remove entries freely.
 An optional `"token"` field on any entry sets a per-device bearer token (each Fortinet appliance
 type generates its own token). Token priority: per-device `"token"` → `FMG_API_TOKEN` → username/password.
+
+CPU/memory for `FortiManager`, `FortiAnalyzer`, and `FortiAuthenticator` entries is sourced via
+SNMPv3 polling (see `app/infra_health_cache.py`), not FMG JSON-RPC — FortiAuthenticator in
+particular has no JSON-RPC status/resource API. A background poller
+(`app/infra_health_cache.py`, `SNMP_POLL_INTERVAL` seconds, default 60) queries each target and
+caches `{cpu, mem, snmp_status}`; `/api/infrastructure` reads instantly from this cache. Optional
+per-device `"snmp_user"` / `"snmp_auth_key"` / `"snmp_priv_key"` / `"snmp_auth_protocol"` /
+`"snmp_priv_protocol"` fields override the global `SNMP_*` `.env` defaults, following the same
+override-over-default pattern as `"token"`. `FortiCollector` entries (and any other type) continue
+to use the legacy FMG JSON-RPC CPU/mem path unchanged.
+
+CPU/mem OIDs live in `OID_MAP` in `app/infra_health_cache.py`. FortiManager/FortiAnalyzer OIDs are
+under Fortinet's shared `FORTINET-CORE-MIB`. The FortiAuthenticator OID has not been confirmed
+against a real device — verify with `snmpwalk` or Fortinet's official
+`FORTINET-FORTIAUTHENTICATOR-MIB` before enabling `SNMP_ENABLED=true` in an environment with
+FortiAuthenticator targets.
 
 ## User management
 
