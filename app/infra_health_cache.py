@@ -152,11 +152,14 @@ def poll_all_targets() -> None:
     for target in Config.INFRA_TARGETS:
         if target.get("type", "").lower() not in _SUPPORTED_TYPES:
             continue
+        host = target.get("host")
+        if not host:
+            continue
         result = _poll_target(target)
         if result is None:
             continue
         with _lock:
-            _cache[target["host"]] = result
+            _cache[host] = result
 
 
 def get_cached(host: str) -> dict | None:

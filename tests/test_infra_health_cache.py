@@ -119,3 +119,22 @@ def test_resolve_snmp_creds_per_device_override(monkeypatch):
     assert creds["user"] == "override-user"
     assert creds["auth_key"] == "default-auth"  # not overridden, falls back
     assert creds["priv_key"] == "default-priv"
+
+
+def test_poll_all_targets_skips_target_missing_host(snmp_targets, monkeypatch):
+    """Target missing 'host' key should be skipped without raising; other targets still polled."""
+    monkeypatch.setattr(
+        cache_mod.Config,
+        "INFRA_TARGETS",
+        [
+            {"label": "Bad Entry", "type": "FortiManager"},  # no "host" key
+            {"label": "FMG-01", "host": "10.0.0.1", "type": "FortiManager"},
+        ],
+    )
+    with patch.object(
+        cache_mod, "_snmp_get", new=AsyncMock(return_value=[1.0, 2.0])
+    ):
+        cache_mod.poll_all_targets()  # must not raise
+
+    # Good target was polled successfully
+    assert cache_mod.get_cached("10.0.0.1")["snmp_status"] == "ok"
