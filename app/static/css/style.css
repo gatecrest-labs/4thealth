@@ -252,6 +252,7 @@ a:hover { text-decoration: underline; }
 .infra-card.status-green  .infra-card-stripe { background: var(--status-green); }
 .infra-card.status-yellow .infra-card-stripe { background: var(--status-yellow); }
 .infra-card.status-red    .infra-card-stripe { background: var(--status-red); }
+.infra-card.status-gray   .infra-card-stripe { background: #9ca3af; }
 
 /* Card body: name block | detail block */
 .infra-card-body {

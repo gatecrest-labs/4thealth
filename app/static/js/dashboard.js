@@ -98,6 +98,16 @@ function renderCard(d) {
     ? `<div class="card-row"><span class="card-row-label">Disk</span><span class="card-row-value">${escHtml(d.disk_used)}</span></div>`
     : '';
 
+  let cpuMemRow;
+  if (d.snmp_status && d.snmp_status !== 'ok') {
+    const label = d.snmp_status === 'timeout' ? 'SNMP timeout' : 'SNMP unreachable';
+    cpuMemRow = `<div class="card-row"><span class="card-row-label">CPU / Mem</span><span class="card-row-value text-muted">${escHtml(label)}</span></div>`;
+  } else if (d.cpu !== null && d.cpu !== undefined && d.mem !== null && d.mem !== undefined) {
+    cpuMemRow = `<div class="card-row"><span class="card-row-label">CPU / Mem</span><span class="card-row-value">${d.cpu}% / ${d.mem}%</span></div>`;
+  } else {
+    cpuMemRow = '';
+  }
+
   const errorRow = d.error
     ? `<div class="card-row card-row-error"><span class="card-row-value text-danger">${escHtml(d.error)}</span></div>`
     : '';
@@ -118,6 +128,7 @@ function renderCard(d) {
         <div class="card-row"><span class="card-row-label">Version</span><span class="card-row-value">${escHtml(d.version)}</span></div>
         <div class="card-row"><span class="card-row-label">Serial</span><span class="card-row-value">${escHtml(d.serial)}</span></div>
         <div class="card-row"><span class="card-row-label">HA Mode / Role</span><span class="card-row-value">${escHtml(d.ha_mode)} / ${escHtml(d.ha_role)}</span></div>
+        ${cpuMemRow}
         ${diskRow}
       </div>
       ${errorRow}
