@@ -107,6 +107,7 @@
       <select id="zpPolAccessFilter" class="form-select-sm">
         <option value="">All access types</option>
         <option value="allow all">Allow all</option>
+        <option value="allow only">Allow only</option>
         <option value="block all">Block all</option>
         <option value="block only">Block only</option>
       </select>
@@ -245,6 +246,7 @@
           <select id="epToZone" class="form-select" style="flex:1 1 160px"></select>
           <select id="epAccessType" class="form-select-sm">
             <option value="allow all">allow all</option>
+            <option value="allow only">allow only</option>
             <option value="block all">block all</option>
             <option value="block only">block only</option>
           </select>
@@ -252,7 +254,7 @@
             <option value="high">high</option>
             <option value="critical">critical</option>
           </select>
-          <input type="text" id="epServices" class="form-control" placeholder="Services (comma-sep, required for block only)" style="flex:1 1 200px" />
+          <input type="text" id="epServices" class="form-control" placeholder="Services (comma-sep, required for block only / allow only)" style="flex:1 1 200px" />
           <input type="text" id="epDesc" class="form-control" placeholder="Description" style="flex:2 1 220px" />
           <button class="btn btn-sm btn-primary" id="epAddBtn">Add Rule</button>
         </div>

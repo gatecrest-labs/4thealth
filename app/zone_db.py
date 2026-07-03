@@ -15,7 +15,7 @@ from pathlib import Path
 # policy_db.json sits at the project root (one level above app/)
 DB_PATH = Path(__file__).parent.parent / "policy_db.json"
 
-VALID_ACCESS_TYPES: set[str] = {"allow all", "block all", "block only"}
+VALID_ACCESS_TYPES: set[str] = {"allow all", "block all", "block only", "allow only"}
 VALID_SEVERITIES: set[str] = {"high", "critical"}
 ZONE_MUTABLE_FIELDS: set[str] = {"domain", "description", "is_shared"}
 POLICY_MUTABLE_FIELDS: set[str] = {
@@ -262,6 +262,17 @@ def evaluate(
                 ):
                     return "BLOCKED", [p]
 
+        for p in policies:
+            if p["access_type"] == "allow only":
+                policy_svcs = p.get("services", [])
+                if any(_is_wildcard(s) for s in policy_svcs):
+                    return "ALLOWED", [p]
+                rn = [s.lower() for s in policy_svcs]
+                if any(
+                    alias.lower() in rn for aliases in alias_sets for alias in aliases
+                ):
+                    return "ALLOWED", [p]
+
     for p in policies:
         if p["access_type"] == "allow all":
             return "ALLOWED", [p]
@@ -357,8 +368,8 @@ def validate_db(db: dict) -> dict:
             zn = p.get(zf, "")
             if zn and zn not in zones:
                 warnings.append(f"Policy #{i}: {zf} '{zn}' not in zones")
-        if at == "block only" and not p.get("services"):
-            warnings.append(f"Policy #{i}: 'block only' has empty services list")
+        if at in ("block only", "allow only") and not p.get("services"):
+            warnings.append(f"Policy #{i}: '{at}' has empty services list")
 
     total_subnets = sum(len(z.get("subnets", [])) for z in zones.values())
     return {
@@ -462,8 +473,8 @@ def policy_add(
     if access_type not in VALID_ACCESS_TYPES:
         raise ValueError(f"Invalid access_type '{access_type}'.")
     services = normalize_service_list(services or [])
-    if access_type == "block only" and not services:
-        raise ValueError("'block only' requires at least one service.")
+    if access_type in ("block only", "allow only") and not services:
+        raise ValueError(f"'{access_type}' requires at least one service.")
     db["policies"].append(
         {
             "policy_set": policy_set,

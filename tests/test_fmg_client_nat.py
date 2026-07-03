@@ -1,5 +1,6 @@
 """Tests for get_vip_objects and get_ippool_objects FMG client methods."""
-from unittest.mock import patch
+import pytest
+from unittest.mock import patch, MagicMock
 from app.fmg_client import FMGClient
 
 

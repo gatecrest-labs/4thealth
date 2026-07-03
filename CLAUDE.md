@@ -261,7 +261,13 @@ Backend: `app/zone_db.py` is the single source of truth — query engine, valida
 - `GET /api/zone/zones`, `GET /api/zone/policies`, `GET /api/zone/validate` — read-only (tab_required)
 - Zone/subnet/policy mutation routes — admin_required
 
-Zone evaluation logic: block all > block only (service match) > allow all > implicit UNKNOWN. Zone hierarchy is supported via `parents[]` and zone name expansion.
+Zone evaluation logic: block all > block only (service match) > allow only (service match) > allow all > implicit UNKNOWN. Zone hierarchy is supported via `parents[]` and zone name expansion.
+
+**Access types:**
+- `allow all` — permits all traffic between zones regardless of service
+- `allow only` — permits traffic only if the requested service matches the policy's service list; non-matching services fall through to later rules (allowlist semantics)
+- `block all` — denies all traffic between zones regardless of service
+- `block only` — denies traffic only if the requested service matches the policy's service list (denylist semantics)
 
 #### policy_db.json
 
