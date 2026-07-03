@@ -62,11 +62,10 @@ per-device `"snmp_user"` / `"snmp_auth_key"` / `"snmp_priv_key"` / `"snmp_auth_p
 override-over-default pattern as `"token"`. `FortiCollector` entries (and any other type) continue
 to use the legacy FMG JSON-RPC CPU/mem path unchanged.
 
-CPU/mem OIDs live in `OID_MAP` in `app/infra_health_cache.py`. FortiManager/FortiAnalyzer OIDs are
-under Fortinet's shared `FORTINET-CORE-MIB`. The FortiAuthenticator OID has not been confirmed
-against a real device — verify with `snmpwalk` or Fortinet's official
-`FORTINET-FORTIAUTHENTICATOR-MIB` before enabling `SNMP_ENABLED=true` in an environment with
-FortiAuthenticator targets.
+CPU/mem OIDs live in `OID_MAP` in `app/infra_health_cache.py`. None of the three device types'
+OIDs (FortiManager, FortiAnalyzer, FortiAuthenticator) have been confirmed against real hardware —
+verify all three with `snmpwalk` or Fortinet's official MIBs before enabling `SNMP_ENABLED=true`
+in any production environment.
 
 ## User management
 

@@ -1,6 +1,7 @@
 """Unit tests for app.infra_health_cache — SNMP polling and cache."""
 
 import os
+import time
 from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
@@ -138,3 +139,34 @@ def test_poll_all_targets_skips_target_missing_host(snmp_targets, monkeypatch):
 
     # Good target was polled successfully
     assert cache_mod.get_cached("10.0.0.1")["snmp_status"] == "ok"
+
+
+def test_poll_now_does_not_block_caller(snmp_targets):
+    """poll_now() must return immediately even if the underlying poll is slow,
+    and the poll must still complete in the background."""
+
+    async def _slow_snmp_get(host, oids, creds):
+        time.sleep(0.3)
+        return [7.0, 8.0]
+
+    with patch.object(cache_mod, "_snmp_get", new=_slow_snmp_get):
+        start = time.monotonic()
+        cache_mod.poll_now()
+        elapsed = time.monotonic() - start
+
+        # Returning to the caller should take a tiny fraction of the 0.3s poll time.
+        assert elapsed < 0.1
+
+        # Poll for the cache to be populated in the background, with a timeout
+        # to avoid flakiness instead of a fixed sleep.
+        deadline = time.monotonic() + 2.0
+        entry = None
+        while time.monotonic() < deadline:
+            entry = cache_mod.get_cached("10.0.0.1")
+            if entry is not None:
+                break
+            time.sleep(0.02)
+
+    assert entry is not None
+    assert entry["snmp_status"] == "ok"
+    assert entry["cpu"] == 7.0

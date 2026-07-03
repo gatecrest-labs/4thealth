@@ -40,12 +40,13 @@ _cache: dict = {}
 
 _SUPPORTED_TYPES = {"fortimanager", "fortianalyzer", "fortiauthenticator"}
 
-# CPU/mem OIDs per device type, under Fortinet's proprietary FORTINET-CORE-MIB
-# (fnSysCpuUsage / fnSysMemUsage) for FortiOS-family products. FortiManager and
-# FortiAnalyzer share this MIB. FortiAuthenticator's OID below is NOT yet
-# confirmed against a real device or Fortinet's official
-# FORTINET-FORTIAUTHENTICATOR-MIB — see Task 5 for the verification step
-# required before relying on this in production.
+# CPU/mem OIDs per device type. FortiManager/FortiAnalyzer OIDs below are
+# under the Fortinet enterprise arc commonly used by fnSysCpuUsage/
+# fnSysMemUsage-style objects, but FortiManager/FortiAnalyzer have their own
+# MIB arc distinct from FortiGate's — these values are NOT yet confirmed
+# against real hardware. FortiAuthenticator's OID is similarly unconfirmed.
+# Verify all three via snmpwalk or Fortinet's official MIBs before enabling
+# SNMP_ENABLED=true in production — see CLAUDE.md.
 OID_MAP = {
     "fortimanager": {
         "cpu": "1.3.6.1.4.1.12356.101.4.1.3.0",
@@ -169,11 +170,21 @@ def get_cached(host: str) -> dict | None:
         return dict(entry) if entry is not None else None
 
 
+def poll_now() -> None:
+    """Kick off a non-blocking poll of all targets in a daemon thread."""
+    t = threading.Thread(
+        target=poll_all_targets,
+        name="infra_health_poll_now",
+        daemon=True,
+    )
+    t.start()
+
+
 def init_scheduler(app: Flask) -> None:
     """Register a recurring APScheduler job and run the first poll immediately."""
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    poll_all_targets()  # initial poll at startup
+    poll_now()  # initial poll at startup, non-blocking
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(
