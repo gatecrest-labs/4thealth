@@ -79,5 +79,7 @@ def test_infrastructure_no_cache_entry_yet(monkeypatch, logged_in_admin):
     with patch("app.infra_health_cache.get_cached", return_value=None):
         resp = logged_in_admin.get("/api/infrastructure")
     data = resp.get_json()
+    # FMG API is unreachable in this test env too, so with no cache entry
+    # either, there's no signal at all -> gray.
     assert data[0]["status"] == "gray"
-    assert data[0]["snmp_status"] is None
+    assert data[0]["snmp_status"] == "disabled"

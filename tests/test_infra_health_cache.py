@@ -36,10 +36,16 @@ def snmp_targets(monkeypatch):
     monkeypatch.setattr(cache_mod.Config, "SNMP_ENABLED", True)
 
 
+async def _fake_snmp_get(host, oids, creds):
+    """FortiManager queries 3 OIDs (cpu, mem_used, mem_total); other SNMP-polled
+    types query 2 (cpu, mem). mem_total=100 makes mem_used read directly as %."""
+    if len(oids) == 3:
+        return [12.5, 34.0, 100.0]
+    return [12.5, 34.0]
+
+
 def test_poll_all_targets_populates_cache_for_supported_types(snmp_targets):
-    with patch.object(
-        cache_mod, "_snmp_get", new=AsyncMock(return_value=[12.5, 34.0])
-    ):
+    with patch.object(cache_mod, "_snmp_get", new=_fake_snmp_get):
         cache_mod.poll_all_targets()
 
     assert cache_mod.get_cached("10.0.0.1") == {
@@ -97,9 +103,10 @@ def test_poll_all_targets_noop_when_snmp_disabled(snmp_targets, monkeypatch):
 
 
 def test_get_cached_returns_copy_not_reference(snmp_targets):
-    with patch.object(
-        cache_mod, "_snmp_get", new=AsyncMock(return_value=[5.0, 6.0])
-    ):
+    async def _fake(host, oids, creds):
+        return [5.0, 6.0, 100.0] if len(oids) == 3 else [5.0, 6.0]
+
+    with patch.object(cache_mod, "_snmp_get", new=_fake):
         cache_mod.poll_all_targets()
 
     entry = cache_mod.get_cached("10.0.0.1")
@@ -132,9 +139,10 @@ def test_poll_all_targets_skips_target_missing_host(snmp_targets, monkeypatch):
             {"label": "FMG-01", "host": "10.0.0.1", "type": "FortiManager"},
         ],
     )
-    with patch.object(
-        cache_mod, "_snmp_get", new=AsyncMock(return_value=[1.0, 2.0])
-    ):
+    async def _fake(host, oids, creds):
+        return [1.0, 2.0, 100.0] if len(oids) == 3 else [1.0, 2.0]
+
+    with patch.object(cache_mod, "_snmp_get", new=_fake):
         cache_mod.poll_all_targets()  # must not raise
 
     # Good target was polled successfully
@@ -147,7 +155,7 @@ def test_poll_now_does_not_block_caller(snmp_targets):
 
     async def _slow_snmp_get(host, oids, creds):
         time.sleep(0.3)
-        return [7.0, 8.0]
+        return [7.0, 8.0, 100.0] if len(oids) == 3 else [7.0, 8.0]
 
     with patch.object(cache_mod, "_snmp_get", new=_slow_snmp_get):
         start = time.monotonic()
