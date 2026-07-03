@@ -140,8 +140,9 @@ function ruleRowHtml(p) {
   const svc = p.services && p.services.length
     ? `<span class="rr-rule-svc">[${esc(p.services.join(', '))}]</span>` : '';
   const sev = p.severity ? `<span class="rr-rule-sev">(${esc(p.severity)})</span>` : '';
-  const atColor = p.access_type === 'allow all' ? 'var(--success)'
-                : p.access_type === 'block all' ? 'var(--danger)' : 'var(--warning)';
+  const atColor = p.access_type === 'allow all'  ? 'var(--success)'
+                : p.access_type === 'allow only' ? 'var(--info)'
+                : p.access_type === 'block all'  ? 'var(--danger)' : 'var(--warning)';
   return `<div class="rr-rule-row">
     <span class="rr-rule-set">[${esc(p.policy_set || '')}]</span>
     ${esc(p.matched_from_zone || p.from_zone || '')} → ${esc(p.matched_to_zone || p.to_zone || '')}
@@ -299,9 +300,10 @@ function renderPolicies() {
     `${visible.length} rule${visible.length !== 1 ? 's' : ''}`;
 
   const ACCESS_COLORS = {
-    'allow all': { bg: 'rgba(34,197,94,.15)', color: 'var(--success)' },
-    'block all': { bg: 'rgba(239,68,68,.15)', color: 'var(--danger)' },
-    'block only':{ bg: 'rgba(245,158,11,.15)', color: 'var(--warning)' },
+    'allow all':  { bg: 'rgba(34,197,94,.15)',  color: 'var(--success)' },
+    'allow only': { bg: 'rgba(6,182,212,.15)',   color: 'var(--info)' },
+    'block all':  { bg: 'rgba(239,68,68,.15)',   color: 'var(--danger)' },
+    'block only': { bg: 'rgba(245,158,11,.15)',  color: 'var(--warning)' },
   };
 
   document.getElementById('zpPolTbody').innerHTML = visible.map(p => {

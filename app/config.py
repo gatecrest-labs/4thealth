@@ -74,3 +74,15 @@ class Config:
     RADIUS_TIMEOUT = int(os.environ.get("RADIUS_TIMEOUT", "10"))
     RADIUS_GROUP_ADMIN = os.environ.get("RADIUS_GROUP_ADMIN", "")
     RADIUS_GROUP_VIEWER = os.environ.get("RADIUS_GROUP_VIEWER", "")
+
+    # SNMP (FortiManager / FortiAnalyzer / FortiAuthenticator CPU & memory polling)
+    SNMP_ENABLED = os.environ.get("SNMP_ENABLED", "false").lower() == "true"
+    SNMP_PORT = int(os.environ.get("SNMP_PORT", "161"))
+    SNMP_TIMEOUT = int(os.environ.get("SNMP_TIMEOUT", "5"))
+    SNMP_RETRIES = int(os.environ.get("SNMP_RETRIES", "1"))
+    SNMP_POLL_INTERVAL = int(os.environ.get("SNMP_POLL_INTERVAL", "60"))
+    SNMP_USER = os.environ.get("SNMP_USER", "")
+    SNMP_AUTH_PROTOCOL = os.environ.get("SNMP_AUTH_PROTOCOL", "SHA")
+    SNMP_AUTH_KEY = os.environ.get("SNMP_AUTH_KEY", "")
+    SNMP_PRIV_PROTOCOL = os.environ.get("SNMP_PRIV_PROTOCOL", "AES")
+    SNMP_PRIV_KEY = os.environ.get("SNMP_PRIV_KEY", "")

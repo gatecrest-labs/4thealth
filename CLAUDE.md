@@ -34,6 +34,16 @@ CPU_WARN=70  CPU_CRIT=90
 MEM_WARN=75  MEM_CRIT=90
 SUMMARY_REFRESH_HOUR=1   # nightly summary recalculation hour (default 01:00)
 SUMMARY_REFRESH_MINUTE=0
+SNMP_ENABLED=false       # enable SNMPv3 polling for FortiManager/FortiAnalyzer/FortiAuthenticator CPU/mem
+SNMP_PORT=161
+SNMP_TIMEOUT=5
+SNMP_RETRIES=1
+SNMP_POLL_INTERVAL=60    # seconds between background poll cycles
+SNMP_USER=
+SNMP_AUTH_PROTOCOL=SHA   # SHA | SHA256
+SNMP_AUTH_KEY=
+SNMP_PRIV_PROTOCOL=AES   # AES | AES192 | AES256
+SNMP_PRIV_KEY=
 ```
 
 Infrastructure dashboard targets (FortiManager, FortiAnalyzer, FortiCollector, FortiAuthenticator, etc.)
@@ -41,6 +51,27 @@ are defined in `infra_targets.json` (gitignored). Copy `infra_targets.example.js
 Each entry is `{ "label": "...", "host": "...", "type": "..." }`. Add or remove entries freely.
 An optional `"token"` field on any entry sets a per-device bearer token (each Fortinet appliance
 type generates its own token). Token priority: per-device `"token"` → `FMG_API_TOKEN` → username/password.
+
+CPU/memory for `FortiManager`, `FortiAnalyzer`, and `FortiAuthenticator` entries is sourced via
+SNMPv3 polling (see `app/infra_health_cache.py`), not FMG JSON-RPC — FortiAuthenticator in
+particular has no JSON-RPC status/resource API. A background poller
+(`app/infra_health_cache.py`, `SNMP_POLL_INTERVAL` seconds, default 60) queries each target and
+caches `{cpu, mem, snmp_status}`; `/api/infrastructure` reads instantly from this cache. Optional
+per-device `"snmp_user"` / `"snmp_auth_key"` / `"snmp_priv_key"` / `"snmp_auth_protocol"` /
+`"snmp_priv_protocol"` fields override the global `SNMP_*` `.env` defaults, following the same
+override-over-default pattern as `"token"`. `FortiCollector` entries (and any other type) continue
+to use the legacy FMG JSON-RPC CPU/mem path unchanged.
+
+CPU/mem OIDs live in `OID_MAP` in `app/infra_health_cache.py`. FortiManager's OIDs are confirmed
+against a real FMG-VM64-KVM (v7.6.7), cross-checked against the FMG GUI's System Resources widget
+— CPU is a direct percentage OID (`fmSystem` group, `1.3.6.1.4.1.12356.103.2.1.1.0`), but memory
+has no native percentage OID and is derived from used-KB/total-KB. FortiAnalyzer and
+FortiAuthenticator OIDs are still NOT confirmed against real hardware — verify both with
+`snmpwalk` or Fortinet's official MIBs before enabling `SNMP_ENABLED=true` for those types in any
+production environment.
+
+SNMPv3 privacy (AES) requires the `cryptography` package — without it, `pysnmp` fails silently
+with `Ciphering services not available` on every request needing `authPriv`.
 
 ## User management
 
@@ -261,7 +292,13 @@ Backend: `app/zone_db.py` is the single source of truth — query engine, valida
 - `GET /api/zone/zones`, `GET /api/zone/policies`, `GET /api/zone/validate` — read-only (tab_required)
 - Zone/subnet/policy mutation routes — admin_required
 
-Zone evaluation logic: block all > block only (service match) > allow all > implicit UNKNOWN. Zone hierarchy is supported via `parents[]` and zone name expansion.
+Zone evaluation logic: block all > block only (service match) > allow only (service match) > allow all > implicit UNKNOWN. Zone hierarchy is supported via `parents[]` and zone name expansion.
+
+**Access types:**
+- `allow all` — permits all traffic between zones regardless of service
+- `allow only` — permits traffic only if the requested service matches the policy's service list; non-matching services fall through to later rules (allowlist semantics)
+- `block all` — denies all traffic between zones regardless of service
+- `block only` — denies traffic only if the requested service matches the policy's service list (denylist semantics)
 
 #### policy_db.json
 

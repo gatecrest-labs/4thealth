@@ -21,6 +21,9 @@ def _health_status(cpu: float, mem: float) -> str:
     return "green"
 
 
+_SNMP_POLLED_TYPES = {"fortimanager", "fortianalyzer", "fortiauthenticator"}
+
+
 def _extract_percent(resource_payload, key: str) -> float:
     """Pull the current usage % from a resource/usage proxy payload."""
     if not resource_payload:
@@ -192,6 +195,8 @@ def summary_refresh():
 @bp.route("/infrastructure")
 @tab_required("dashboard")
 def infrastructure():
+    from app import infra_health_cache
+
     devices = []
     for target in Config.INFRA_TARGETS:
         entry = {
@@ -205,10 +210,14 @@ def infrastructure():
             "uptime": "n/a",
             "cpu": None,
             "mem": None,
+            "snmp_status": None,
             "ha_mode": "n/a",
             "ha_role": "n/a",
             "disk_used": "n/a",
         }
+
+        is_snmp_type = target.get("type", "").lower() in _SNMP_POLLED_TYPES
+
         try:
             # Per-device token takes priority, then global token, then username/password
             client = FMGClient(
@@ -219,10 +228,31 @@ def infrastructure():
                 verify_ssl=Config.FMG_VERIFY_SSL,
                 timeout=Config.FMG_TIMEOUT,
             )
-            with client:
-                sys_status = client.get_system_status()
-                perf = client.get_performance()
-                usage = client.get_resource_usage()
+            perf, usage = {}, {}
+            api_ok = False
+            if is_snmp_type:
+                # For SNMP-polled types (FortiManager/FortiAnalyzer/
+                # FortiAuthenticator), CPU/mem/status come from the SNMP
+                # cache below and must not depend on FMG JSON-RPC
+                # reachability — only hostname/version/serial/etc (cosmetic
+                # detail) come from FMG, so a connection failure here is
+                # swallowed rather than failing the whole entry. api_ok
+                # tracks whether the FMG API itself is reachable, so the
+                # status color can fall back on it when SNMP is unavailable.
+                try:
+                    with client:
+                        sys_status = client.get_system_status()
+                    api_ok = True
+                except Exception:
+                    sys_status = {}
+            else:
+                # Legacy FMG JSON-RPC path (FortiCollector, etc.) — unchanged:
+                # a connection failure here falls through to the outer
+                # except and marks the entry red, exactly as before.
+                with client:
+                    sys_status = client.get_system_status()
+                    perf = client.get_performance()
+                    usage = client.get_resource_usage()
 
             # /sys/status may return a list or dict depending on FMG version
             if isinstance(sys_status, list) and sys_status:
@@ -276,42 +306,50 @@ def infrastructure():
                 total = disk_info.get("total", disk_info.get("Total", "n/a"))
                 entry["disk_used"] = f"{used}/{total}" if used != "n/a" else "n/a"
 
-            # ── CPU & Memory ──────────────────────────────────────────────
-            # Try every known shape across FMG versions.  Store raw blocks
-            # from both endpoints so _parse_cpu/_parse_mem can pick the first
-            # non-zero value.
-            if isinstance(perf, list) and perf:
-                perf = perf[0]
-            if not isinstance(perf, dict):
-                perf = {}
-            if isinstance(usage, list) and usage:
-                usage = usage[0]
-            if not isinstance(usage, dict):
-                usage = {}
-
-            # If both resource endpoints returned nothing, the device type doesn't
-            # expose CPU/mem via these paths — use null so the UI shows n/a
-            # instead of a misleading 0%.
-            no_resource_data = not perf and not usage
-            cpu_val = _parse_cpu(perf, usage, sys_status)
-            mem_val = _parse_mem(perf, usage, sys_status)
-
-            if no_resource_data and cpu_val == 0.0 and mem_val == 0.0:
-                entry["cpu"] = None
-                entry["mem"] = None
+            if is_snmp_type:
+                # ── CPU & Memory — sourced from the SNMP background cache ──
+                # Gray is reserved for "no signal at all" (both SNMP and the
+                # FMG API are unreachable). If the FMG API is reachable but
+                # SNMP CPU/mem isn't available (disabled, timing out, wrong
+                # creds, etc.), the device is still up — show green rather
+                # than gray, just without a CPU/mem reading.
+                cached = infra_health_cache.get_cached(target["host"])
+                if cached is not None and cached["snmp_status"] == "ok":
+                    entry["cpu"] = round(cached["cpu"], 1)
+                    entry["mem"] = round(cached["mem"], 1)
+                    entry["snmp_status"] = "ok"
+                    entry["status"] = _health_status(cached["cpu"], cached["mem"])
+                else:
+                    entry["snmp_status"] = cached["snmp_status"] if cached else "disabled"
+                    entry["status"] = "green" if api_ok else "gray"
             else:
-                entry["cpu"] = round(cpu_val, 1)
-                entry["mem"] = round(mem_val, 1)
-            entry["status"] = _health_status(cpu_val, mem_val)
-            # Stash raw perf data so the debug endpoint can show it
-            entry["_perf_raw"] = perf
-            entry["_usage_raw"] = usage
+                # ── CPU & Memory — legacy FMG JSON-RPC path (FortiCollector, etc.) ──
+                # perf/usage were already fetched above, inside the client's
+                # session context.
+                if isinstance(perf, list) and perf:
+                    perf = perf[0]
+                if not isinstance(perf, dict):
+                    perf = {}
+                if isinstance(usage, list) and usage:
+                    usage = usage[0]
+                if not isinstance(usage, dict):
+                    usage = {}
+
+                no_resource_data = not perf and not usage
+                cpu_val = _parse_cpu(perf, usage, sys_status)
+                mem_val = _parse_mem(perf, usage, sys_status)
+
+                if no_resource_data and cpu_val == 0.0 and mem_val == 0.0:
+                    entry["cpu"] = None
+                    entry["mem"] = None
+                else:
+                    entry["cpu"] = round(cpu_val, 1)
+                    entry["mem"] = round(mem_val, 1)
+                entry["status"] = _health_status(cpu_val, mem_val)
 
         except Exception:
             entry["status"] = "red"
             entry["error"] = "Unable to query target"
-        entry.pop("_perf_raw", None)
-        entry.pop("_usage_raw", None)
         devices.append(entry)
     return jsonify(devices)
 

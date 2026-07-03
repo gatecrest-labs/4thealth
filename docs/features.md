@@ -149,7 +149,14 @@ A self-contained network segmentation policy browser. It reads `policy_db.json` 
 
 ### Zone Evaluation Precedence
 
-Block all → block only (service match) → allow all → implicit UNKNOWN.
+Block all → block only (service match) → allow only (service match) → allow all → implicit UNKNOWN.
+
+| Access Type | Semantics |
+|-------------|-----------|
+| `allow all` | Permits all traffic regardless of service |
+| `allow only` | Permits traffic only if the service matches the list (allowlist); non-matching services fall through |
+| `block all` | Denies all traffic regardless of service |
+| `block only` | Denies traffic only if the service matches the list (denylist); non-matching services fall through |
 
 ### policy_db.json Format
 

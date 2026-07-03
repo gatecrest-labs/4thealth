@@ -9,6 +9,8 @@ dependencies = [
     "bcrypt>=4.1",
     "apscheduler>=3.11.2",
     "openpyxl>=3.1.5",
+    "pysnmp>=7.1.27",
+    "cryptography>=49.0.0",
 ]
 
 [project.optional-dependencies]
