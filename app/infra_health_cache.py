@@ -1,0 +1,184 @@
+"""Background cache for SNMPv3-polled CPU/memory of infra dashboard targets.
+
+Polls FortiManager, FortiAnalyzer, and FortiAuthenticator entries from
+Config.INFRA_TARGETS over SNMPv3 on a timer, storing results in an
+in-memory dict keyed by host.  Mirrors the adom_cache.py pattern: a
+BackgroundScheduler job feeds a lock-guarded dict, and callers get an
+instant snapshot instead of blocking on a live device query.
+
+FortiGate firewall CPU/mem (handled elsewhere, via the FMG proxy) is out
+of scope here.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import datetime
+import threading
+
+from flask import Flask
+
+from pysnmp.hlapi.v3arch.asyncio import (
+    SnmpEngine,
+    UsmUserData,
+    UdpTransportTarget,
+    ContextData,
+    ObjectType,
+    ObjectIdentity,
+    get_cmd,
+    USM_AUTH_HMAC96_SHA,
+    USM_AUTH_HMAC192_SHA256,
+    USM_PRIV_CFB128_AES,
+    USM_PRIV_CFB192_AES,
+    USM_PRIV_CFB256_AES,
+)
+
+from app.config import Config
+
+_lock = threading.RLock()
+_cache: dict = {}
+
+_SUPPORTED_TYPES = {"fortimanager", "fortianalyzer", "fortiauthenticator"}
+
+# CPU/mem OIDs per device type, under Fortinet's proprietary FORTINET-CORE-MIB
+# (fnSysCpuUsage / fnSysMemUsage) for FortiOS-family products. FortiManager and
+# FortiAnalyzer share this MIB. FortiAuthenticator's OID below is NOT yet
+# confirmed against a real device or Fortinet's official
+# FORTINET-FORTIAUTHENTICATOR-MIB — see Task 5 for the verification step
+# required before relying on this in production.
+OID_MAP = {
+    "fortimanager": {
+        "cpu": "1.3.6.1.4.1.12356.101.4.1.3.0",
+        "mem": "1.3.6.1.4.1.12356.101.4.1.4.0",
+    },
+    "fortianalyzer": {
+        "cpu": "1.3.6.1.4.1.12356.101.4.1.3.0",
+        "mem": "1.3.6.1.4.1.12356.101.4.1.4.0",
+    },
+    "fortiauthenticator": {
+        "cpu": "1.3.6.1.4.1.12356.113.1.2.0",
+        "mem": "1.3.6.1.4.1.12356.113.1.3.0",
+    },
+}
+
+_AUTH_PROTOCOLS = {
+    "SHA": USM_AUTH_HMAC96_SHA,
+    "SHA256": USM_AUTH_HMAC192_SHA256,
+}
+_PRIV_PROTOCOLS = {
+    "AES": USM_PRIV_CFB128_AES,
+    "AES192": USM_PRIV_CFB192_AES,
+    "AES256": USM_PRIV_CFB256_AES,
+}
+
+
+class SnmpTimeout(Exception):
+    """Raised when an SNMP GET does not receive a response before timeout."""
+
+
+class SnmpQueryError(Exception):
+    """Raised for any other SNMP failure (auth failure, bad OID, etc.)."""
+
+
+def _resolve_snmp_creds(target: dict) -> dict:
+    """Per-device snmp_* fields override the global Config.SNMP_* defaults."""
+    return {
+        "user": target.get("snmp_user", Config.SNMP_USER),
+        "auth_key": target.get("snmp_auth_key", Config.SNMP_AUTH_KEY),
+        "priv_key": target.get("snmp_priv_key", Config.SNMP_PRIV_KEY),
+        "auth_protocol": target.get("snmp_auth_protocol", Config.SNMP_AUTH_PROTOCOL),
+        "priv_protocol": target.get("snmp_priv_protocol", Config.SNMP_PRIV_PROTOCOL),
+    }
+
+
+async def _snmp_get(host: str, oids: list[str], creds: dict) -> list[float]:
+    """Perform a single SNMPv3 GET for the given OIDs. Raises SnmpTimeout / SnmpQueryError."""
+    engine = SnmpEngine()
+    auth_data = UsmUserData(
+        creds["user"],
+        authKey=creds["auth_key"],
+        privKey=creds["priv_key"],
+        authProtocol=_AUTH_PROTOCOLS.get(creds["auth_protocol"], USM_AUTH_HMAC96_SHA),
+        privProtocol=_PRIV_PROTOCOLS.get(creds["priv_protocol"], USM_PRIV_CFB128_AES),
+    )
+    target = await UdpTransportTarget.create(
+        (host, Config.SNMP_PORT),
+        timeout=Config.SNMP_TIMEOUT,
+        retries=Config.SNMP_RETRIES,
+    )
+    error_indication, error_status, _error_index, var_binds = await get_cmd(
+        engine,
+        auth_data,
+        target,
+        ContextData(),
+        *(ObjectType(ObjectIdentity(oid)) for oid in oids),
+    )
+    if error_indication:
+        message = str(error_indication)
+        if "timeout" in message.lower():
+            raise SnmpTimeout(message)
+        raise SnmpQueryError(message)
+    if error_status:
+        raise SnmpQueryError(str(error_status))
+    return [float(var_bind[1]) for var_bind in var_binds]
+
+
+def _now() -> str:
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _poll_target(target: dict) -> dict | None:
+    """Poll a single target. Returns None if its type isn't SNMP-supported."""
+    device_type = target.get("type", "").lower()
+    oids = OID_MAP.get(device_type)
+    if not oids:
+        return None
+    creds = _resolve_snmp_creds(target)
+    try:
+        cpu, mem = asyncio.run(
+            _snmp_get(target["host"], [oids["cpu"], oids["mem"]], creds)
+        )
+        return {"cpu": cpu, "mem": mem, "snmp_status": "ok", "last_updated": _now()}
+    except SnmpTimeout:
+        return {"cpu": None, "mem": None, "snmp_status": "timeout", "last_updated": _now()}
+    except Exception:
+        return {"cpu": None, "mem": None, "snmp_status": "error", "last_updated": _now()}
+
+
+def poll_all_targets() -> None:
+    """Poll every SNMP-supported target in Config.INFRA_TARGETS and update the cache."""
+    if not Config.SNMP_ENABLED:
+        return
+    for target in Config.INFRA_TARGETS:
+        if target.get("type", "").lower() not in _SUPPORTED_TYPES:
+            continue
+        result = _poll_target(target)
+        if result is None:
+            continue
+        with _lock:
+            _cache[target["host"]] = result
+
+
+def get_cached(host: str) -> dict | None:
+    """Return a shallow copy of the cached entry for host, or None if not cached."""
+    with _lock:
+        entry = _cache.get(host)
+        return dict(entry) if entry is not None else None
+
+
+def init_scheduler(app: Flask) -> None:
+    """Register a recurring APScheduler job and run the first poll immediately."""
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    poll_all_targets()  # initial poll at startup
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(
+        func=poll_all_targets,
+        trigger="interval",
+        seconds=Config.SNMP_POLL_INTERVAL,
+        id="infra_health_snmp_poll",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.start()
