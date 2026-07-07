@@ -320,7 +320,9 @@ def infrastructure():
                     entry["snmp_status"] = "ok"
                     entry["status"] = _health_status(cached["cpu"], cached["mem"])
                 else:
-                    entry["snmp_status"] = cached["snmp_status"] if cached else "disabled"
+                    entry["snmp_status"] = (
+                        cached["snmp_status"] if cached else "disabled"
+                    )
                     entry["status"] = "green" if api_ok else "gray"
             else:
                 # ── CPU & Memory — legacy FMG JSON-RPC path (FortiCollector, etc.) ──
@@ -563,9 +565,28 @@ def _assemble_health(
     iface_monitor_raw = payload("interfaces")
     monitor_map: dict = {}
     if isinstance(iface_monitor_raw, dict):
-        for k, v in iface_monitor_raw.items():
-            if isinstance(v, dict):
-                monitor_map[k] = v
+        # vdom=* returns {vdom_name: {iface_name: {link: bool, ...}, ...}, ...}
+        # vdom=root (legacy) returns {iface_name: {link: bool, ...}, ...}
+        # Distinguish by checking whether values are dicts-of-dicts (vdom=*) or plain dicts (vdom=root).
+        first_val = (
+            next(iter(iface_monitor_raw.values()), None) if iface_monitor_raw else None
+        )
+        if (
+            isinstance(first_val, dict)
+            and not first_val.get("link")
+            and not first_val.get("rx_errors")
+        ):
+            # Nested: {vdom: {iface_name: iface_dict}} — flatten across all VDOMs
+            for vdom_ifaces in iface_monitor_raw.values():
+                if isinstance(vdom_ifaces, dict):
+                    for iname, idata in vdom_ifaces.items():
+                        if isinstance(idata, dict) and iname not in monitor_map:
+                            monitor_map[iname] = idata
+        else:
+            # Flat dict: {iface_name: iface_dict}
+            for k, v in iface_monitor_raw.items():
+                if isinstance(v, dict):
+                    monitor_map[k] = v
     elif isinstance(iface_monitor_raw, list):
         for v in iface_monitor_raw:
             if isinstance(v, dict):

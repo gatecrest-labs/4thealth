@@ -33,7 +33,7 @@ PROXY_ENDPOINTS = [
     {
         "key": "interfaces",
         "label": "Interfaces",
-        "resource": "/api/v2/monitor/system/interface?vdom=root",
+        "resource": "/api/v2/monitor/system/interface?vdom=*",
         "required": False,
     },
     {

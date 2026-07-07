@@ -160,9 +160,19 @@ def _poll_target(target: dict) -> dict | None:
             )
         return {"cpu": cpu, "mem": mem, "snmp_status": "ok", "last_updated": _now()}
     except SnmpTimeout:
-        return {"cpu": None, "mem": None, "snmp_status": "timeout", "last_updated": _now()}
+        return {
+            "cpu": None,
+            "mem": None,
+            "snmp_status": "timeout",
+            "last_updated": _now(),
+        }
     except Exception:
-        return {"cpu": None, "mem": None, "snmp_status": "error", "last_updated": _now()}
+        return {
+            "cpu": None,
+            "mem": None,
+            "snmp_status": "error",
+            "last_updated": _now(),
+        }
 
 
 def poll_all_targets() -> None:
