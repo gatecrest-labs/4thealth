@@ -297,7 +297,11 @@ def device_review_run():
                 continue
             reviewed.append(name)
             try:
-                device_data = _fetch_device_data(client, adom, name, needed, dev) if client else {}
+                device_data = (
+                    _fetch_device_data(client, adom, name, needed, dev)
+                    if client
+                    else {}
+                )
             except Exception:
                 device_data = {}
             rows.extend(run_checks(name, device_data, check_keys, check_params))

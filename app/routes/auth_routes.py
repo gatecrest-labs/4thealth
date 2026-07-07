@@ -34,8 +34,7 @@ def _is_rate_limited(ip: str, username: str) -> bool:
         _ip_failures[ip] = [t for t in _ip_failures[ip] if t > cutoff]
         _user_failures[norm] = [t for t in _user_failures[norm] if t > cutoff]
         return (
-            len(_ip_failures[ip]) >= _IP_MAX
-            or len(_user_failures[norm]) >= _USER_MAX
+            len(_ip_failures[ip]) >= _IP_MAX or len(_user_failures[norm]) >= _USER_MAX
         )
 
 
@@ -45,7 +44,10 @@ def _record_failure(ip: str, username: str) -> None:
     with _lock:
         _ip_failures[ip].append(now)
         # Evict oldest key if at capacity (FIFO approximation using dict ordering)
-        if len(_user_failures) >= _USER_FAILURES_MAX_KEYS and norm not in _user_failures:
+        if (
+            len(_user_failures) >= _USER_FAILURES_MAX_KEYS
+            and norm not in _user_failures
+        ):
             oldest_key = next(iter(_user_failures))
             del _user_failures[oldest_key]
         _user_failures[norm].append(now)

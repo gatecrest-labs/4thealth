@@ -38,7 +38,11 @@ def _revalidate_session() -> "tuple | None":
     lifetime = current_app.config.get("SESSION_ABSOLUTE_LIFETIME", 36000)
     if _time.time() - login_at > lifetime:
         flask_session.clear()
-        if request.path.startswith("/api/") or request.path.startswith("/admin/api/") or request.path.startswith("/external/api/"):
+        if (
+            request.path.startswith("/api/")
+            or request.path.startswith("/admin/api/")
+            or request.path.startswith("/external/api/")
+        ):
             return jsonify({"error": "Session expired"}), 401
         return redirect(url_for("auth.login")), 302
 
@@ -47,11 +51,16 @@ def _revalidate_session() -> "tuple | None":
     if username:
         from app.auth import _load_users
         from app.groups import get_allowed_tabs
+
         users = _load_users()
         entry = users.get(username)
         if entry is None:
             flask_session.clear()
-            if request.path.startswith("/api/") or request.path.startswith("/admin/api/") or request.path.startswith("/external/api/"):
+            if (
+                request.path.startswith("/api/")
+                or request.path.startswith("/admin/api/")
+                or request.path.startswith("/external/api/")
+            ):
                 return jsonify({"error": "Not authenticated"}), 401
             return redirect(url_for("auth.login")), 302
         # Re-sync role and tabs from disk
@@ -150,7 +159,9 @@ def check_adom_access(adom: str) -> "tuple | None":
     from app.groups import user_can_access_adom
 
     ad_groups = flask_session.get("ad_groups", [])
-    if not user_can_access_adom(flask_session.get("user", ""), adom, ad_groups=ad_groups):
+    if not user_can_access_adom(
+        flask_session.get("user", ""), adom, ad_groups=ad_groups
+    ):
         return jsonify(
             {"error": f"Access to ADOM '{adom}' is not permitted for your account"}
         ), 403
