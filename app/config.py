@@ -42,6 +42,8 @@ class Config:
         os.environ.get("COOKIE_SECURE", "auto").lower() == "auto" and _ssl_active
     )
     PERMANENT_SESSION_LIFETIME = 3600  # 1 hour
+    # Absolute session cap — no matter how active, sessions expire after this many seconds.
+    SESSION_ABSOLUTE_LIFETIME = int(os.environ.get("SESSION_ABSOLUTE_LIFETIME", str(10 * 3600)))  # 10 h
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", str(4 * 1024 * 1024)))
 
     # Infrastructure dashboard targets — loaded from infra_targets.json

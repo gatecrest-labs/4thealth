@@ -6,6 +6,16 @@ load_dotenv()
 
 app = create_app()
 
+try:
+    _proxy_count = int(os.environ.get("TRUSTED_PROXY_COUNT", "0"))
+except ValueError:
+    import logging as _logging
+    _logging.warning("TRUSTED_PROXY_COUNT is not a valid integer; ProxyFix not applied")
+    _proxy_count = 0
+if _proxy_count > 0:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app = ProxyFix(app, x_for=_proxy_count, x_proto=_proxy_count, x_host=_proxy_count)
+
 if __name__ == "__main__":
     cert = os.environ.get("SSL_CERT", "certs/cert.pem")
     key = os.environ.get("SSL_KEY", "certs/key.pem")

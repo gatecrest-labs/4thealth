@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
 from pathlib import Path
 
@@ -72,8 +73,10 @@ def load_db() -> dict:
 
 
 def save_db(db: dict) -> None:
-    with open(DB_PATH, "w", encoding="utf-8") as f:
+    tmp = DB_PATH.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(db, f, indent=2)
+    os.replace(tmp, DB_PATH)
 
 
 def db_available() -> bool:

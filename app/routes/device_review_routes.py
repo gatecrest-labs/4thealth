@@ -281,20 +281,29 @@ def device_review_run():
     rows = []
     reviewed = []
 
-    for dev in all_devices:
-        if not isinstance(dev, dict):
-            continue
-        name = dev.get("name", "")
-        if not name:
-            continue
-        reviewed.append(name)
-        try:
-            with make_client() as client:
-                device_data = _fetch_device_data(client, adom, name, needed, dev)
-        except Exception:
-            device_data = {}
+    try:
+        _client_ctx = make_client()
+        client = _client_ctx.__enter__()
+    except Exception:
+        client = None
+        _client_ctx = None
 
-        rows.extend(run_checks(name, device_data, check_keys, check_params))
+    try:
+        for dev in all_devices:
+            if not isinstance(dev, dict):
+                continue
+            name = dev.get("name", "")
+            if not name:
+                continue
+            reviewed.append(name)
+            try:
+                device_data = _fetch_device_data(client, adom, name, needed, dev) if client else {}
+            except Exception:
+                device_data = {}
+            rows.extend(run_checks(name, device_data, check_keys, check_params))
+    finally:
+        if _client_ctx is not None:
+            _client_ctx.__exit__(None, None, None)
 
     run_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     checks_run = (

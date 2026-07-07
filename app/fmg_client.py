@@ -115,6 +115,7 @@ class FMGClient:
         self.timeout = timeout
         self.session = None
         self._req_id = 0
+        self._http = requests.Session()
 
     def _next_id(self) -> int:
         self._req_id += 1
@@ -124,7 +125,7 @@ class FMGClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-        resp = requests.post(
+        resp = self._http.post(
             self.base_url,
             json=body,
             verify=self.verify_ssl,
@@ -179,6 +180,7 @@ class FMGClient:
 
     def __exit__(self, *_):
         self.logout()
+        self._http.close()
 
     def _get(self, url: str) -> dict:
         body = {
@@ -669,12 +671,10 @@ class FMGClient:
             }
             if self.session:
                 body["session"] = self.session
-            import requests as _req
-
             headers = {"Content-Type": "application/json", "Accept": "application/json"}
             if self.token:
                 headers["Authorization"] = f"Bearer {self.token}"
-            resp = _req.post(
+            resp = self._http.post(
                 self.base_url,
                 json=body,
                 verify=self.verify_ssl,

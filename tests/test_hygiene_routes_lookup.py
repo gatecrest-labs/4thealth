@@ -1,6 +1,7 @@
 """Tests for interface and NAT lookup endpoints."""
 import os
 import json
+import time
 import pytest
 from unittest.mock import patch
 
@@ -13,13 +14,18 @@ def app():
     return create_app()
 
 
+_TEST_USERS = {"admin": {"password_hash": "$2b$12$placeholder", "role": "admin"}}
+
+
 @pytest.fixture
 def client(app):
-    with app.test_client() as c:
+    with app.test_client() as c, \
+         patch("app.auth._load_users", return_value=_TEST_USERS):
         with c.session_transaction() as sess:
             sess["user"] = "admin"
             sess["role"] = "admin"
             sess["_csrf_token"] = "test-csrf"
+            sess["login_at"] = int(time.time())
         yield c
 
 
