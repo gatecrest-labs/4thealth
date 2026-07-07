@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 from pathlib import Path
+
+from app.atomic_io import atomic_write_json
 
 _SETTINGS_PATH = Path(__file__).parent.parent / "app_settings.json"
 _DEFAULTS: dict = {
@@ -26,10 +27,7 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
-    tmp = _SETTINGS_PATH.with_suffix(".tmp")
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, _SETTINGS_PATH)
+    atomic_write_json(_SETTINGS_PATH, data)
 
 
 def get_setting(key: str, default=None):

@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import ipaddress
 import json
-import os
 import re
 from pathlib import Path
+
+from app.atomic_io import atomic_write_json
 
 # policy_db.json sits at the project root (one level above app/)
 DB_PATH = Path(__file__).parent.parent / "policy_db.json"
@@ -73,10 +74,7 @@ def load_db() -> dict:
 
 
 def save_db(db: dict) -> None:
-    tmp = DB_PATH.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(db, f, indent=2)
-    os.replace(tmp, DB_PATH)
+    atomic_write_json(DB_PATH, db)
 
 
 def db_available() -> bool:
