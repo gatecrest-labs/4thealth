@@ -20,5 +20,5 @@ def test_save_db_uses_replace(tmp_path, monkeypatch):
     """Verify os.replace is used (not a plain open write) by inspecting source."""
     import app.zone_db as zdb
     src = inspect.getsource(zdb.save_db)
-    assert "os.replace" in src or "replace(" in src, \
-        "save_db must use os.replace for atomic writes"
+    assert "os.replace" in src or "replace(" in src or "atomic_write_json(" in src, \
+        "save_db must use os.replace or atomic_write_json for atomic writes"
