@@ -146,7 +146,9 @@ def delete_group(name: str) -> bool:
     return True
 
 
-def get_allowed_tabs(username: str, ad_groups: list[str] | None = None) -> set[str]:
+def get_allowed_tabs(
+    username: str, ad_groups: list[str] | None = None, role: str | None = None
+) -> set[str]:
     """Return the set of tab keys the user may access.
 
     Rules:
@@ -158,6 +160,10 @@ def get_allowed_tabs(username: str, ad_groups: list[str] | None = None) -> set[s
     - If a user is in no group they get no tabs (empty set).
     """
     from app.auth import _load_users  # local import to avoid circular
+
+    # role passed explicitly (e.g. from RADIUS) takes precedence over users.json
+    if role == "admin":
+        return set(KNOWN_TABS.keys())
 
     users = _load_users()
     user_entry = users.get(username, {})
@@ -180,7 +186,7 @@ def user_can_access_tab(username: str, tab_key: str) -> bool:
 
 
 def get_allowed_adoms(
-    username: str, ad_groups: list[str] | None = None
+    username: str, ad_groups: list[str] | None = None, role: str | None = None
 ) -> list[str] | None:
     """Return the list of ADOM names the user may access, or None for unrestricted.
 
@@ -195,6 +201,10 @@ def get_allowed_adoms(
     overlap between ad_groups and group['ad_groups'].
     """
     from app.auth import _load_users  # local import to avoid circular
+
+    # role passed explicitly (e.g. from RADIUS) takes precedence over users.json
+    if role == "admin":
+        return None  # unrestricted
 
     users = _load_users()
     user_entry = users.get(username, {})

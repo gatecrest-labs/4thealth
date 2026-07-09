@@ -107,7 +107,7 @@ def login():
             session["user"] = username
             session["role"] = role
             session["ad_groups"] = ad_groups
-            allowed = list(get_allowed_tabs(username, ad_groups=ad_groups))
+            allowed = list(get_allowed_tabs(username, ad_groups=ad_groups, role=role))
             session["allowed_tabs"] = allowed
             session["login_at"] = int(time.time())
             app_log(

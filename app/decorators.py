@@ -54,20 +54,26 @@ def _revalidate_session() -> "tuple | None":
 
         users = _load_users()
         entry = users.get(username)
-        if entry is None:
-            flask_session.clear()
-            if (
-                request.path.startswith("/api/")
-                or request.path.startswith("/admin/api/")
-                or request.path.startswith("/external/api/")
-            ):
-                return jsonify({"error": "Not authenticated"}), 401
-            return redirect(url_for("auth.login")), 302
-        # Re-sync role and tabs from disk
-        flask_session["role"] = entry.get("role", "viewer")
         ad_groups = flask_session.get("ad_groups", [])
+        if entry is None:
+            # RADIUS-only users are not in users.json — keep session valid
+            # as long as they have a role set from authentication.
+            if not flask_session.get("role"):
+                flask_session.clear()
+                if (
+                    request.path.startswith("/api/")
+                    or request.path.startswith("/admin/api/")
+                    or request.path.startswith("/external/api/")
+                ):
+                    return jsonify({"error": "Not authenticated"}), 401
+                return redirect(url_for("auth.login")), 302
+        else:
+            # Re-sync role and tabs from disk for local users
+            flask_session["role"] = entry.get("role", "viewer")
         flask_session["allowed_tabs"] = list(
-            get_allowed_tabs(username, ad_groups=ad_groups)
+            get_allowed_tabs(
+                username, ad_groups=ad_groups, role=flask_session.get("role")
+            )
         )
 
     return None
