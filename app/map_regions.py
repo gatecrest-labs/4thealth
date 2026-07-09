@@ -9,8 +9,9 @@ import copy
 import json
 import os
 import re
-import tempfile
 import threading
+
+from app.atomic_io import atomic_write_json
 
 _LOCK = threading.Lock()
 
@@ -115,13 +116,7 @@ def save(data: dict) -> None:
     out = copy.deepcopy(data)
     out.pop("all_states", None)
     with _LOCK:
-        dir_ = os.path.dirname(_PATH)
-        with tempfile.NamedTemporaryFile(
-            "w", dir=dir_, delete=False, suffix=".tmp"
-        ) as tmp:
-            json.dump(out, tmp, indent=2)
-            tmp_path = tmp.name
-        os.replace(tmp_path, _PATH)
+        atomic_write_json(_PATH, out)
 
 
 def is_valid_color(color: str) -> bool:

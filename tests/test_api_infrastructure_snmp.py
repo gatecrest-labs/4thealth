@@ -1,6 +1,7 @@
 """Tests for /api/infrastructure sourcing CPU/mem from the SNMP cache."""
 
 import os
+import time
 from unittest.mock import patch
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
@@ -24,13 +25,18 @@ def client(app):
     return app.test_client()
 
 
+_TEST_USERS = {"test-admin": {"password_hash": "$2b$12$placeholder", "role": "admin"}}
+
+
 @pytest.fixture
 def logged_in_admin(client):
     with client.session_transaction() as sess:
         sess["user"] = "test-admin"
         sess["role"] = "admin"
         sess["allowed_tabs"] = ["dashboard"]
-    return client
+        sess["login_at"] = int(time.time())
+    with patch("app.auth._load_users", return_value=_TEST_USERS):
+        yield client
 
 
 def test_infrastructure_uses_snmp_cache_for_fortimanager(monkeypatch, logged_in_admin):

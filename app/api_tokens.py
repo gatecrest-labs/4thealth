@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import secrets
 import threading
 import uuid
 from pathlib import Path
 from typing import Optional
+
+from app.atomic_io import atomic_write_json
 
 _TOKENS_PATH = Path(__file__).parent.parent / "api_tokens.json"
 _lock = threading.Lock()
@@ -33,10 +34,7 @@ def _load() -> list[dict]:
 
 
 def _save(tokens: list[dict]) -> None:
-    tmp = _TOKENS_PATH.with_suffix(".tmp")
-    with open(tmp, "w") as f:
-        json.dump({"tokens": tokens}, f, indent=2)
-    os.replace(tmp, _TOKENS_PATH)
+    atomic_write_json(_TOKENS_PATH, {"tokens": tokens})
 
 
 def _hash(raw: str) -> str:
