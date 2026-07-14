@@ -27,7 +27,9 @@ from app.security import internal_api_error, upstream_api_error
 
 bp = Blueprint("pending_changes", __name__)
 
-registry.register("pending_changes", "Pending Changes", "pending_changes.pending_changes_page")
+registry.register(
+    "pending_changes", "Pending Changes", "pending_changes.pending_changes_page"
+)
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
@@ -53,7 +55,9 @@ def pending_changes_adoms():
             for a in raw
             if isinstance(a, dict)
         ]
-        items = [i for i in items if i["name"] and not i["name"].lower().startswith("forti")]
+        items = [
+            i for i in items if i["name"] and not i["name"].lower().startswith("forti")
+        ]
         allowed = get_allowed_adoms(
             session.get("user", ""), ad_groups=session.get("ad_groups", [])
         )
@@ -100,14 +104,16 @@ def pending_changes_devices(adom: str):
                 version = f"v{major}.{mr}"
             else:
                 version = "n/a"
-            devices.append({
-                "name": name,
-                "ip": d.get("ip", d.get("mgmt_ip", "")),
-                "platform": d.get("platform_str", d.get("platform", "")),
-                "version": version,
-                "conf_status": d.get("conf_status", "unknown"),
-                "serial": d.get("sn", d.get("serial", "")),
-            })
+            devices.append(
+                {
+                    "name": name,
+                    "ip": d.get("ip", d.get("mgmt_ip", "")),
+                    "platform": d.get("platform_str", d.get("platform", "")),
+                    "version": version,
+                    "conf_status": d.get("conf_status", "unknown"),
+                    "serial": d.get("sn", d.get("serial", "")),
+                }
+            )
         return jsonify(devices)
     except FMGError as exc:
         return upstream_api_error("pending_changes", exc)
@@ -129,18 +135,20 @@ def pending_changes_preview(adom: str, device: str):
             raw_devices = client.get_devices_with_sync_status(adom)
             device_meta = next(
                 (d for d in raw_devices if d.get("name", "").lower() == device.lower()),
-                {}
+                {},
             )
             raw = client.get_install_preview(adom, device)
         parsed = parse_preview_diff(raw)
-        return jsonify({
-            "device": device,
-            "ip": device_meta.get("ip", device_meta.get("mgmt_ip", "")),
-            "conf_status": device_meta.get("conf_status", "unknown"),
-            "summary": parsed["summary"],
-            "vdoms": parsed["vdoms"],
-            "raw": parsed["raw"],
-        })
+        return jsonify(
+            {
+                "device": device,
+                "ip": device_meta.get("ip", device_meta.get("mgmt_ip", "")),
+                "conf_status": device_meta.get("conf_status", "unknown"),
+                "summary": parsed["summary"],
+                "vdoms": parsed["vdoms"],
+                "raw": parsed["raw"],
+            }
+        )
     except FMGError as exc:
         return upstream_api_error("pending_changes", exc)
     except Exception as exc:

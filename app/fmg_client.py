@@ -99,10 +99,22 @@ _CONF_STATUS_MAP = {0: "unknown", 1: "insync", 2: "outofsync"}
 
 _SUMMARY_KEYWORDS = [
     (["firewall policy", "firewall policy6"], "firewall_policy"),
-    (["router static", "router policy", "router ospf", "router bgp", "router rip"], "routing"),
+    (
+        ["router static", "router policy", "router ospf", "router bgp", "router rip"],
+        "routing",
+    ),
     (["firewall address", "firewall addrgrp", "firewall wildcard-fqdn"], "address"),
     (["firewall service"], "service"),
-    (["system global", "system interface", "system settings", "system admin", "system dns"], "system"),
+    (
+        [
+            "system global",
+            "system interface",
+            "system settings",
+            "system admin",
+            "system dns",
+        ],
+        "system",
+    ),
 ]
 
 
@@ -145,7 +157,11 @@ def parse_preview_diff(raw: str) -> dict:
         "other": 0,
     }
     if not raw or not raw.strip():
-        return {"summary": empty_summary, "vdoms": [{"name": "root", "changes": []}], "raw": raw}
+        return {
+            "summary": empty_summary,
+            "vdoms": [{"name": "root", "changes": []}],
+            "raw": raw,
+        }
 
     # Split into VDOM blocks if multi-VDOM markers present
     vdom_split = re.split(r"^\s*vdom\s+(\S+)\s*$", raw, flags=re.MULTILINE)
@@ -169,7 +185,7 @@ def parse_preview_diff(raw: str) -> dict:
         for line_obj in changes:
             line = line_obj["line"].strip().lower()
             if line.startswith("config "):
-                block = line[len("config "):]
+                block = line[len("config ") :]
                 cat = "other"
                 for keywords, key in _SUMMARY_KEYWORDS:
                     if any(block.startswith(k) for k in keywords):
@@ -334,15 +350,21 @@ class FMGClient:
         trigger_body = {
             "id": self._next_id(),
             "method": "exec",
-            "params": [{"url": "/securityconsole/install/preview",
-                        "data": {"adom": adom, "device": {"name": device}}}],
+            "params": [
+                {
+                    "url": "/securityconsole/install/preview",
+                    "data": {"adom": adom, "device": {"name": device}},
+                }
+            ],
         }
         if self.session:
             trigger_body["session"] = self.session
         trigger_resp = self._post(trigger_body)
         trigger_result = trigger_resp.get("result", [{}])[0]
         if trigger_result.get("status", {}).get("code", -1) != 0:
-            raise FMGError(f"Preview trigger failed for {device}: {trigger_result.get('status')}")
+            raise FMGError(
+                f"Preview trigger failed for {device}: {trigger_result.get('status')}"
+            )
         taskid = trigger_result.get("data", {}).get("task")
         if not taskid:
             raise FMGError(f"No task ID returned for preview of {device}")
@@ -371,7 +393,9 @@ class FMGClient:
                     raise FMGError(f"Preview task {taskid} failed with state {state}")
             time.sleep(2)
         else:
-            raise FMGError(f"Preview task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s")
+            raise FMGError(
+                f"Preview task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s"
+            )
 
         # Step 3: fetch result
         result_body = {
@@ -386,7 +410,10 @@ class FMGClient:
         if not isinstance(result_data, list):
             return ""
         for entry in result_data:
-            if isinstance(entry, dict) and entry.get("device", "").lower() == device.lower():
+            if (
+                isinstance(entry, dict)
+                and entry.get("device", "").lower() == device.lower()
+            ):
                 return entry.get("content", "")
         return ""
 
