@@ -47,10 +47,11 @@ def _trigger_response(taskid=42):
 
 
 def _preview_result_response(device_name, diff_text):
+    import json as _json
     return {
         "result": [{
             "status": {"code": 0},
-            "data": [{"device": device_name, "content": diff_text}]
+            "data": {"message": _json.dumps([{"name": device_name, "result": diff_text}])}
         }]
     }
 
@@ -113,8 +114,8 @@ def test_get_install_preview_returns_empty_string_when_no_changes():
     responses = [
         _trigger_response(taskid=3),
         _task_response(100),
-        # result list has no entry matching device name
-        {"result": [{"status": {"code": 0}, "data": []}]},
+        # result message has no entry matching device name
+        {"result": [{"status": {"code": 0}, "data": {"message": "[]"}}]},
     ]
     with patch.object(client, "_post", side_effect=responses), \
          patch("time.sleep"):
