@@ -364,7 +364,9 @@ class FMGClient:
         device_info = self.get_device(adom, device)
         device_oid = device_info.get("oid")
         vdoms = device_info.get("vdom") or []
-        vdom_oids = [v.get("oid") for v in vdoms if isinstance(v, dict) and v.get("oid")]
+        vdom_oids = [
+            v.get("oid") for v in vdoms if isinstance(v, dict) and v.get("oid")
+        ]
         if adom_oid is None or device_oid is None:
             raise FMGError(f"Could not resolve adom/device oid for {device}")
         scope = [{"oid": device_oid, "vdom_oid": v} for v in vdom_oids] or [
@@ -422,7 +424,8 @@ class FMGClient:
                                 (
                                     line_obj
                                     for line_obj in lines
-                                    if isinstance(line_obj, dict) and line_obj.get("err")
+                                    if isinstance(line_obj, dict)
+                                    and line_obj.get("err")
                                 ),
                                 lines[0] if isinstance(lines[0], dict) else {},
                             )
