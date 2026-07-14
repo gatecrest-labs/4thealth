@@ -135,6 +135,229 @@ def _cidr_from_mask(ip_mask: str) -> str:
     return ip_mask
 
 
+def _parse_subnet_to_networks(subnet_str: str) -> frozenset | None:
+    """Parse a FortiManager subnet/range string to a frozenset of ip_network objects.
+
+    Handles:
+      "10.1.0.0 255.255.0.0"  → ipmask
+      "10.1.0.0/16"           → CIDR
+      "10.1.0.1-10.1.0.254"   → iprange (expanded into /32s via summarize_address_range)
+    Returns None for FQDN, geography, or any unresolvable value.
+    """
+    s = subnet_str.strip()
+    if not s:
+        return None
+    # ipmask: "A.B.C.D M.M.M.M"
+    parts = s.split()
+    if len(parts) == 2:
+        try:
+            net = ipaddress.ip_network(f"{parts[0]}/{parts[1]}", strict=False)
+            return frozenset([net])
+        except ValueError:
+            pass
+    # CIDR or single IP
+    if "/" in s or (len(parts) == 1 and s.replace(".", "").isdigit()):
+        try:
+            net = ipaddress.ip_network(s, strict=False)
+            return frozenset([net])
+        except ValueError:
+            pass
+    # iprange: "start-end"
+    if "-" in s and len(parts) == 1:
+        try:
+            start_s, _, end_s = s.partition("-")
+            start = ipaddress.ip_address(start_s.strip())
+            end = ipaddress.ip_address(end_s.strip())
+            nets = list(ipaddress.summarize_address_range(start, end))
+            return frozenset(nets)
+        except ValueError:
+            pass
+    return None
+
+
+def build_addr_resolver(
+    addr_objects: list, addr_groups: list
+) -> dict:
+    """Build a name→frozenset[ip_network] resolver for address objects and groups.
+
+    Values are frozenset of ip_network objects, or None for FQDN/geography/
+    unresolvable objects (which should block the IP containment pass).
+    """
+    raw: dict[str, frozenset | None] = {}
+
+    for ao in addr_objects:
+        if not isinstance(ao, dict):
+            continue
+        name = ao.get("name", "")
+        if not name:
+            continue
+        subnet_str = _addr_subnet(ao)
+        if not subnet_str:
+            raw[name] = None  # FQDN, geography, or unresolvable
+            continue
+        nets = _parse_subnet_to_networks(subnet_str)
+        raw[name] = nets  # may be None if parse failed
+
+    # Build a flat membership map first: group_name → [member_names]
+    grp_members: dict[str, list[str]] = {}
+    for ag in addr_groups:
+        if not isinstance(ag, dict):
+            continue
+        name = ag.get("name", "")
+        members = ag.get("member", []) or []
+        if name:
+            grp_members[name] = [
+                (m.get("name") if isinstance(m, dict) else str(m))
+                for m in members
+            ]
+
+    # Recursively resolve groups; guard against cycles.
+    resolved: dict[str, frozenset | None] = {}
+
+    def _resolve_group(name: str, seen: set) -> frozenset | None:
+        if name in resolved:
+            return resolved[name]
+        if name in seen:
+            return None  # cycle
+        seen = seen | {name}
+        if name in raw:
+            return raw[name]
+        if name not in grp_members:
+            return None
+        union: set = set()
+        for member in grp_members[name]:
+            nets = _resolve_group(member, seen)
+            if nets is None:
+                resolved[name] = None
+                return None
+            union.update(nets)
+        result = frozenset(union) if union else None
+        resolved[name] = result
+        return result
+
+    # Resolve all group names
+    for gname in grp_members:
+        _resolve_group(gname, set())
+
+    # Merge raw + resolved groups into one dict
+    combined: dict[str, frozenset | None] = {}
+    combined.update(raw)
+    combined.update(resolved)
+    return combined
+
+
+def _parse_portrange(portrange_str: str, proto: str) -> frozenset | None:
+    """Parse a FortiManager portrange string into frozenset of (proto, low, high) tuples.
+
+    FortiManager portrange format: "80", "1024-65535", "80:8080" (src:dst).
+    We only care about the destination port range for containment purposes.
+    Returns None if the service cannot be represented as simple port ranges.
+    """
+    s = str(portrange_str or "").strip()
+    if not s:
+        return None
+    p = proto.lower() if proto else "tcp"
+    ranges: set = set()
+    for part in s.split():
+        # "src:dst" — take dst portion only
+        if ":" in part:
+            part = part.split(":", 1)[1]
+        # "low-high" or single port
+        if "-" in part:
+            try:
+                low, high = part.split("-", 1)
+                ranges.add((p, int(low), int(high)))
+            except ValueError:
+                return None
+        else:
+            try:
+                port = int(part)
+                ranges.add((p, port, port))
+            except ValueError:
+                return None
+    return frozenset(ranges) if ranges else None
+
+
+def build_svc_resolver(svc_objects: list, svc_groups: list) -> dict:
+    """Build a name→frozenset[(proto, low, high)] resolver for service objects/groups.
+
+    Values are frozenset of (proto_str, low_port, high_port) tuples, or None
+    for ICMP/non-TCP-UDP services that cannot be represented as port ranges.
+    """
+    raw: dict[str, frozenset | None] = {}
+
+    for so in svc_objects:
+        if not isinstance(so, dict):
+            continue
+        name = so.get("name", "")
+        if not name:
+            continue
+        proto = str(so.get("protocol", "") or "").lower()
+        # Only handle TCP and UDP for containment; ICMP/IP/etc → opaque
+        if proto and proto not in ("tcp", "udp", "tcp/udp", ""):
+            raw[name] = None
+            continue
+        tcp_r = so.get("tcp-portrange", "") or ""
+        udp_r = so.get("udp-portrange", "") or ""
+        all_ranges: set = set()
+        if tcp_r:
+            nets = _parse_portrange(tcp_r, "tcp")
+            if nets is None:
+                raw[name] = None
+                continue
+            all_ranges.update(nets)
+        if udp_r:
+            nets = _parse_portrange(udp_r, "udp")
+            if nets is None:
+                raw[name] = None
+                continue
+            all_ranges.update(nets)
+        raw[name] = frozenset(all_ranges) if all_ranges else None
+
+    grp_members: dict[str, list[str]] = {}
+    for sg in svc_groups:
+        if not isinstance(sg, dict):
+            continue
+        name = sg.get("name", "")
+        members = sg.get("member", []) or []
+        if name:
+            grp_members[name] = [
+                (m.get("name") if isinstance(m, dict) else str(m))
+                for m in members
+            ]
+
+    resolved: dict[str, frozenset | None] = {}
+
+    def _resolve_svc_group(name: str, seen: set) -> frozenset | None:
+        if name in resolved:
+            return resolved[name]
+        if name in seen:
+            return None
+        seen = seen | {name}
+        if name in raw:
+            return raw[name]
+        if name not in grp_members:
+            return None
+        union: set = set()
+        for member in grp_members[name]:
+            nets = _resolve_svc_group(member, seen)
+            if nets is None:
+                resolved[name] = None
+                return None
+            union.update(nets)
+        result = frozenset(union) if union else None
+        resolved[name] = result
+        return result
+
+    for gname in grp_members:
+        _resolve_svc_group(gname, set())
+
+    combined: dict[str, frozenset | None] = {}
+    combined.update(raw)
+    combined.update(resolved)
+    return combined
+
+
 # ── API: raw policy list (debug) ─────────────────────────────────────────────
 
 
@@ -797,6 +1020,9 @@ def hygiene_run():
     if not valid_checks:
         return jsonify({"error": "No valid check keys provided"}), 400
 
+    addr_resolver = None
+    svc_resolver = None
+
     try:
         with make_client() as client:
             policies = client.get_policies(adom, path)
@@ -833,12 +1059,35 @@ def hygiene_run():
                             p["_hitcount"] = live_hits.get(
                                 int(pid), p.get("_hitcount") or 0
                             )
+
+            # For the shadow check, fetch address and service objects so the
+            # check engine can detect IP-containment shadowing in addition to
+            # exact name-match shadowing.
+            if "shadow" in valid_checks:
+                try:
+                    addr_objects = client.get_address_objects(adom)
+                    addr_groups = client.get_address_groups(adom)
+                    svc_objects = client.get_service_objects(adom)
+                    svc_groups = client.get_service_groups(adom)
+                    addr_resolver = build_addr_resolver(addr_objects, addr_groups)
+                    svc_resolver = build_svc_resolver(svc_objects, svc_groups)
+                except Exception:
+                    # Object fetch failure is non-fatal — fall back to name-only matching.
+                    addr_resolver = None
+                    svc_resolver = None
+
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
         return internal_api_error("hygiene", exc)
 
-    findings = run_checks(policies, valid_checks, pkg_settings=pkg_settings)
+    findings = run_checks(
+        policies,
+        valid_checks,
+        pkg_settings=pkg_settings,
+        addr_resolver=addr_resolver,
+        svc_resolver=svc_resolver,
+    )
 
     # Build a lookup so each finding can carry its rule's detail fields.
     # Shadow findings already carry shadow_rule/shadowing_rule; all others get rule_detail.

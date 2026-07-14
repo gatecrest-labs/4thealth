@@ -13,7 +13,11 @@ CHECKS maps key -> display name.  Order here controls the dropdown order in the 
 """
 
 from __future__ import annotations
+import ipaddress
+import logging
 from datetime import datetime, timezone
+
+log = logging.getLogger(__name__)
 
 
 # ── Check registry ────────────────────────────────────────────────────────────
@@ -143,19 +147,72 @@ def _rule_summary(p: dict) -> dict:
     }
 
 
-def _covers(a_names: set[str], b_names: set[str]) -> bool:
+def _covers(
+    a_names: set[str],
+    b_names: set[str],
+    resolver: "dict[str, frozenset | None] | None" = None,
+) -> bool:
     """Return True if address/service set A fully covers set B.
 
-    True when A contains a wildcard name ('any'/'all'), or every name in B is
-    also present in A (A is an exact superset of B by object name).
-    Note: this cannot detect IP-range containment without expanding address
-    objects, so it conservatively misses cases where A's subnets contain B's.
+    Pass 1 — wildcards: True if A contains 'any' or 'all'.
+    Pass 2 — exact name subset: True if every name in B is also in A.
+    Pass 3 — IP containment (requires resolver): expand each name to a
+    frozenset of ip_network objects and check that every network in B is
+    contained within at least one network in A.  Names that resolve to None
+    (FQDN, geography, parse failure) cause this pass to be skipped for safety.
     """
     if not b_names:
         return True
     if any(n.lower() in ("any", "all") for n in a_names):
         return True
-    return b_names <= a_names
+    if b_names <= a_names:
+        return True
+    if resolver is None:
+        return False
+
+    # IP containment pass — resolve every name to a set of ip_network objects.
+    try:
+        a_nets: set[ipaddress.IPv4Network | ipaddress.IPv6Network] = set()
+        for name in a_names:
+            resolved = resolver.get(name)
+            if resolved is None:
+                return False  # opaque (FQDN/geo) — cannot guarantee containment
+            a_nets.update(resolved)
+
+        b_nets: set[ipaddress.IPv4Network | ipaddress.IPv6Network] = set()
+        for name in b_names:
+            resolved = resolver.get(name)
+            if resolved is None:
+                return False
+            b_nets.update(resolved)
+
+        if not a_nets or not b_nets:
+            return False
+
+        # Dispatch on value type: tuples → port-range containment; ip_network → subnet containment.
+        sample = next(iter(a_nets))
+        if isinstance(sample, tuple):
+            # Service containment: (proto, low, high) in B must fit inside some A range.
+            return all(
+                any(
+                    isinstance(a_t, tuple)
+                    and a_t[0] == b_t[0]  # same protocol
+                    and a_t[1] <= b_t[1]  # A low <= B low
+                    and b_t[2] <= a_t[2]  # B high <= A high
+                    for a_t in a_nets
+                )
+                for b_t in b_nets
+            )
+        return all(
+            any(
+                b_net.version == a_net.version and b_net.subnet_of(a_net)
+                for a_net in a_nets
+            )
+            for b_net in b_nets
+        )
+    except Exception as exc:
+        log.debug("_covers IP containment check failed: %s", exc)
+        return False
 
 
 # ── Individual check functions ────────────────────────────────────────────────
@@ -224,7 +281,11 @@ def check_unlogged(policies: list[dict]) -> list[dict]:
     return findings
 
 
-def check_shadow(policies: list[dict]) -> list[dict]:
+def check_shadow(
+    policies: list[dict],
+    addr_resolver: "dict[str, frozenset | None] | None" = None,
+    svc_resolver: "dict[str, frozenset | None] | None" = None,
+) -> list[dict]:
     """Flag rules that will never be hit because an earlier rule already matches
     every connection that could reach them.
 
@@ -234,18 +295,20 @@ def check_shadow(policies: list[dict]) -> list[dict]:
       - A's destination addresses cover all of B's destination addresses
       - A's services cover all of B's services
 
-    Coverage means either: A uses 'any'/'all', or every named object in B is
-    also present in A.  Action is intentionally NOT required to match — when A
-    fully covers B's traffic scope, B is unreachable regardless of action.
-    A difference in action (e.g. A=accept vs B=deny) is called out in the
-    detail message as it often signals a policy ordering mistake.
+    Coverage is checked in three passes per dimension:
+      1. Wildcard: A uses 'any'/'all'
+      2. Exact name subset: every name in B is also in A
+      3. IP containment (when addr_resolver/svc_resolver provided): every
+         network in B's resolved IP set is contained within A's resolved set.
+         Names resolving to None (FQDN, geography) block this pass safely.
+
+    Action is intentionally NOT required to match — when A fully covers B's
+    traffic scope, B is unreachable regardless of action.  A difference in
+    action is called out in the detail message as it often signals a policy
+    ordering mistake.
 
     Only enabled rules are evaluated. Each shadowed rule is reported once,
     against the first shadowing rule found above it.
-
-    Limitation: IP-range containment (e.g. 10.0.0.0/8 covering 10.1.0.0/24) is
-    not detected without expanding address objects. Only exact name matches and
-    'any'/'all' wildcards are checked.
     """
     findings = []
     enabled = [
@@ -267,9 +330,9 @@ def check_shadow(policies: list[dict]) -> list[dict]:
             a_identity = _identity_set(a)
 
             if not (
-                _covers(a_src, b_src)
-                and _covers(a_dst, b_dst)
-                and _covers(a_svc, b_svc)
+                _covers(a_src, b_src, resolver=addr_resolver)
+                and _covers(a_dst, b_dst, resolver=addr_resolver)
+                and _covers(a_svc, b_svc, resolver=svc_resolver)
             ):
                 continue
 
@@ -440,6 +503,8 @@ def run_checks(
     policies: list[dict],
     checks: list[str],
     pkg_settings: dict | None = None,
+    addr_resolver: "dict[str, frozenset | None] | None" = None,
+    svc_resolver: "dict[str, frozenset | None] | None" = None,
 ) -> list[dict]:
     """Run the requested checks against the policy list.  Returns combined findings."""
     results = []
@@ -447,5 +512,10 @@ def run_checks(
         fn = _CHECK_FNS.get(key)
         if not fn:
             continue
-        results.extend(fn(policies))
+        if key == "shadow":
+            results.extend(
+                check_shadow(policies, addr_resolver=addr_resolver, svc_resolver=svc_resolver)
+            )
+        else:
+            results.extend(fn(policies))
     return results
