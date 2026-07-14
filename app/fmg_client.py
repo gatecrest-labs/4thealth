@@ -95,7 +95,7 @@ PROXY_ENDPOINTS = [
     },
 ]
 
-PREVIEW_TIMEOUT_SECS = 90
+PREVIEW_TIMEOUT_SECS = 120
 _CONF_STATUS_MAP = {0: "unknown", 1: "insync", 2: "outofsync"}
 
 _SUMMARY_KEYWORDS = [
@@ -124,7 +124,7 @@ def _classify_lines(content: str) -> list:
     changes = []
     for line in content.splitlines():
         stripped = line.strip()
-        if not stripped:
+        if not stripped or stripped.startswith("==="):
             continue
         if stripped.startswith("delete ") or stripped.startswith("unset "):
             changes.append({"type": "remove", "line": line})
@@ -157,7 +157,7 @@ def parse_preview_diff(raw: str) -> dict:
         "system": 0,
         "other": 0,
     }
-    if not raw or not raw.strip():
+    if not raw or not raw.strip() or raw.strip() == "=== No preview result ===":
         return {
             "summary": empty_summary,
             "vdoms": [{"name": "root", "changes": []}],

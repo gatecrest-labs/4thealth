@@ -150,6 +150,13 @@ def pending_changes_preview(adom: str, device: str):
             }
         )
     except FMGError as exc:
+        msg = str(exc)
+        if "timed out" in msg:
+            return jsonify(
+                {
+                    "error": f"Preview timed out for {device} — FMG could not reach the device in time."
+                }
+            ), 504
         return upstream_api_error("pending_changes", exc)
     except Exception as exc:
         return internal_api_error("pending_changes", exc)
