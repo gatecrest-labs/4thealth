@@ -1,5 +1,6 @@
 """FortiManager JSON-RPC client — read-only, no device changes."""
 
+import json
 import os
 import re
 import time
@@ -94,8 +95,10 @@ PROXY_ENDPOINTS = [
     },
 ]
 
-PREVIEW_TIMEOUT_SECS = 90
+PREVIEW_TIMEOUT_SECS = 120
 _CONF_STATUS_MAP = {0: "unknown", 1: "insync", 2: "outofsync"}
+# db_status: whether FMG DB has been modified since the last install
+_DB_STATUS_MAP = {0: "unknown", 1: "nomod", 2: "modified"}
 
 _SUMMARY_KEYWORDS = [
     (["firewall policy", "firewall policy6"], "firewall_policy"),
@@ -123,7 +126,7 @@ def _classify_lines(content: str) -> list:
     changes = []
     for line in content.splitlines():
         stripped = line.strip()
-        if not stripped:
+        if not stripped or stripped.startswith("==="):
             continue
         if stripped.startswith("delete ") or stripped.startswith("unset "):
             changes.append({"type": "remove", "line": line})
@@ -156,7 +159,7 @@ def parse_preview_diff(raw: str) -> dict:
         "system": 0,
         "other": 0,
     }
-    if not raw or not raw.strip():
+    if not raw or not raw.strip() or raw.strip() == "=== No preview result ===":
         return {
             "summary": empty_summary,
             "vdoms": [{"name": "root", "changes": []}],
@@ -325,7 +328,7 @@ class FMGClient:
         return self._get(f"/dvmdb/adom/{adom}/device") or []
 
     def get_devices_with_sync_status(self, adom: str) -> list:
-        """Return devices in an ADOM with normalized conf_status string."""
+        """Return devices in an ADOM with normalized conf_status and db_status strings."""
         raw = self._get(f"/dvmdb/adom/{adom}/device") or []
         result = []
         for d in raw:
@@ -337,6 +340,12 @@ class FMGClient:
             except (TypeError, ValueError):
                 cs_int = 0
             d["conf_status"] = _CONF_STATUS_MAP.get(cs_int, "unknown")
+            db_int = d.get("db_status", 0)
+            try:
+                db_int = int(db_int)
+            except (TypeError, ValueError):
+                db_int = 0
+            d["db_status"] = _DB_STATUS_MAP.get(db_int, "unknown")
             result.append(d)
         return result
 
@@ -346,14 +355,17 @@ class FMGClient:
         Raises FMGError on task failure or timeout.
         Returns empty string if device has no pending changes.
         """
-        # Step 1: trigger
+        # Step 1: trigger — FMG requires scope array; omit vdom to cover all VDOMs
         trigger_body = {
             "id": self._next_id(),
             "method": "exec",
             "params": [
                 {
                     "url": "/securityconsole/install/preview",
-                    "data": {"adom": adom, "device": {"name": device}},
+                    "data": {
+                        "adom": adom,
+                        "scope": [{"name": device}],
+                    },
                 }
             ],
         }
@@ -397,24 +409,42 @@ class FMGClient:
                 f"Preview task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s"
             )
 
-        # Step 3: fetch result
+        # Step 3: fetch result — must use exec with scope; omit vdom to cover all VDOMs
         result_body = {
             "id": self._next_id(),
-            "method": "get",
-            "params": [{"url": f"/securityconsole/preview/result/{adom}"}],
+            "method": "exec",
+            "params": [
+                {
+                    "url": f"/securityconsole/preview/result/{adom}",
+                    "data": {
+                        "adom": adom,
+                        "scope": [{"name": device}],
+                    },
+                }
+            ],
         }
         if self.session:
             result_body["session"] = self.session
         result_resp = self._post(result_body)
-        result_data = result_resp.get("result", [{}])[0].get("data", [])
-        if not isinstance(result_data, list):
+        result_result = result_resp.get("result", [{}])[0]
+        if result_result.get("status", {}).get("code", -1) != 0:
             return ""
-        for entry in result_data:
+        message = result_result.get("data", {}).get("message", "")
+        if not message:
+            return ""
+        # message is a JSON-encoded list: [{"name": device, "oid": ..., "result": "..."}]
+        try:
+            entries = json.loads(message)
+        except (ValueError, TypeError):
+            return ""
+        if not isinstance(entries, list):
+            return ""
+        for entry in entries:
             if (
                 isinstance(entry, dict)
-                and entry.get("device", "").lower() == device.lower()
+                and entry.get("name", "").lower() == device.lower()
             ):
-                return entry.get("content", "")
+                return entry.get("result", "")
         return ""
 
     def _proxy(self, adom: str, device: str, resource: str) -> dict:
