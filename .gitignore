@@ -12,8 +12,6 @@ groups.json
 infra_targets.json
 policy_db.json
 summary_history.json
-app_settings.json
-api_tokens.json
 
 # Python
 .venv/
@@ -49,13 +47,6 @@ docker-compose.override.yml
 MEMORY.md
 memory/
 
-# Ansible — never commit real credentials or local variable overrides
-Ansible/group_vars/*_vault.yml
-Ansible/group_vars/*_secrets.yml
-Ansible/host_vars/
-Ansible/*.local.yml
-Ansible/vars_*.yml
-Ansible/.vault_pass*
-
+# Local planning notes (not for repo)
+todo-cis.md
 todo.md
-.worktrees/
