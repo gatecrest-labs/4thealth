@@ -355,7 +355,21 @@ class FMGClient:
         Raises FMGError on task failure or timeout.
         Returns empty string if device has no pending changes.
         """
-        # Step 1: trigger — FMG requires scope array; omit vdom to cover all VDOMs
+        # Step 1: trigger — FMG's own GUI addresses adom/scope by numeric oid, not by
+        # name (confirmed via network capture of a working GUI-triggered preview).
+        # Name-based scope without vdom fails outright ("No device"); name-based
+        # scope with vdom "succeeds" but silently yields an empty diff.
+        adom_info = self._get(f"/dvmdb/adom/{adom}")
+        adom_oid = adom_info.get("oid") if isinstance(adom_info, dict) else None
+        device_info = self.get_device(adom, device)
+        device_oid = device_info.get("oid")
+        vdoms = device_info.get("vdom") or []
+        vdom_oids = [v.get("oid") for v in vdoms if isinstance(v, dict) and v.get("oid")]
+        if adom_oid is None or device_oid is None:
+            raise FMGError(f"Could not resolve adom/device oid for {device}")
+        scope = [{"oid": device_oid, "vdom_oid": v} for v in vdom_oids] or [
+            {"oid": device_oid, "vdom_oid": adom_oid}
+        ]
         trigger_body = {
             "id": self._next_id(),
             "method": "exec",
@@ -363,8 +377,8 @@ class FMGClient:
                 {
                     "url": "/securityconsole/install/preview",
                     "data": {
-                        "adom": adom,
-                        "scope": [{"name": device}],
+                        "adom": adom_oid,
+                        "scope": scope,
                     },
                 }
             ],
@@ -398,27 +412,44 @@ class FMGClient:
                 task_data = task_data[0]
             if isinstance(task_data, dict):
                 percent = task_data.get("percent", 0)
-                state = task_data.get("state", 0)
+                num_err = task_data.get("num_err", 0)
                 if percent >= 100:
+                    if num_err:
+                        lines = task_data.get("line") or []
+                        detail = ""
+                        if isinstance(lines, list) and lines:
+                            failed = next(
+                                (
+                                    line_obj
+                                    for line_obj in lines
+                                    if isinstance(line_obj, dict) and line_obj.get("err")
+                                ),
+                                lines[0] if isinstance(lines[0], dict) else {},
+                            )
+                            detail = failed.get("detail", "")
+                        raise FMGError(
+                            f"Preview task {taskid} for {device} failed"
+                            f"{f': {detail}' if detail else ''}"
+                        )
                     break
-                if state not in (0, 1):  # error states — only check when not yet done
-                    raise FMGError(f"Preview task {taskid} failed with state {state}")
             time.sleep(2)
         else:
             raise FMGError(
                 f"Preview task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s"
             )
 
-        # Step 3: fetch result — must use exec with scope; omit vdom to cover all VDOMs
+        # Step 3: fetch result — endpoint takes no adom suffix; scope and
+        # preview_taskid must match the trigger request exactly.
         result_body = {
             "id": self._next_id(),
             "method": "exec",
             "params": [
                 {
-                    "url": f"/securityconsole/preview/result/{adom}",
+                    "url": "/securityconsole/preview/result",
                     "data": {
-                        "adom": adom,
-                        "scope": [{"name": device}],
+                        "adom": adom_oid,
+                        "scope": scope,
+                        "preview_taskid": taskid,
                     },
                 }
             ],

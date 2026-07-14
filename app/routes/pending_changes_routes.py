@@ -1,4 +1,4 @@
-"""Pending Changes tab — shows FortiManager install-pending diffs per device.
+"""DIFF (BETA) tab — shows FortiManager install-pending diffs per device.
 
 Page:
   GET  /pending-changes
@@ -28,7 +28,7 @@ from app.security import internal_api_error, upstream_api_error
 bp = Blueprint("pending_changes", __name__)
 
 registry.register(
-    "pending_changes", "Pending Changes", "pending_changes.pending_changes_page"
+    "pending_changes", "DIFF (BETA)", "pending_changes.pending_changes_page"
 )
 
 
