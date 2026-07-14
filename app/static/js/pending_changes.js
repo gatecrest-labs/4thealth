@@ -29,15 +29,24 @@ let exportQueue    = [];  // [{device, ip, adom, summary, vdoms, raw, timestamp}
 let _previewAbort  = null;
 
 /* ── Sync status badge ──────────────────────────────────────────────────────── */
-function syncBadge(status) {
-  switch (status) {
+function syncBadge(confStatus, dbStatus) {
+  // conf_status reflects the last-installed state; db_status reflects whether the FMG
+  // database has been modified since that install. Show both when they tell different stories.
+  let badge = '';
+  switch (confStatus) {
     case 'outofsync':
-      return '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fcd34d">Out of Sync</span>';
+      badge += '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fcd34d">Out of Sync</span>';
+      break;
     case 'insync':
-      return '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #86efac">In Sync</span>';
+      badge += '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #86efac">In Sync</span>';
+      break;
     default:
-      return '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db">Unknown</span>';
+      badge += '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db">Unknown</span>';
   }
+  if (dbStatus === 'modified') {
+    badge += ' <span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="FMG database has pending changes not yet installed to the device">Pending Install</span>';
+  }
+  return badge;
 }
 
 /* ── ADOM loading ───────────────────────────────────────────────────────────── */
@@ -86,7 +95,7 @@ async function fetchDevices(adom) {
 function applyFilters() {
   const q = filterText.toLowerCase();
   filteredDevices = allDevices.filter(d => {
-    if (pendingOnly && d.conf_status !== 'outofsync') return false;
+    if (pendingOnly && d.conf_status !== 'outofsync' && d.db_status !== 'modified') return false;
     if (!q) return true;
     return (d.name || '').toLowerCase().includes(q) ||
            (d.ip   || '').toLowerCase().includes(q);
@@ -120,7 +129,7 @@ function renderDeviceTable() {
       <td><strong>${esc(d.name)}</strong></td>
       <td><code style="font-size:.82rem">${esc(d.ip || '—')}</code></td>
       <td style="font-size:.82rem">${esc(d.platform || '—')}</td>
-      <td>${syncBadge(d.conf_status)}</td>
+      <td>${syncBadge(d.conf_status, d.db_status)}</td>
     </tr>`;
   }).join('');
 
@@ -262,7 +271,7 @@ function renderDiffPanel(diff) {
     <div style="display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem">
       <h4 style="margin:0">${esc(diff.device)}</h4>
       <code style="font-size:.85rem;color:var(--text-muted)">${esc(diff.ip || '')}</code>
-      ${syncBadge(diff.conf_status)}
+      ${syncBadge(diff.conf_status, diff.db_status)}
     </div>
 
     ${tilesHtml ? `<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.75rem">${tilesHtml}</div>` : ''}
@@ -366,6 +375,7 @@ function exportJson() {
       device: q.device,
       ip: q.ip,
       conf_status: q.conf_status,
+      db_status: q.db_status,
       summary: q.summary,
       vdoms: q.vdoms,
     })),
@@ -400,7 +410,7 @@ function exportPdf() {
     return `<div style="${idx > 0 ? 'page-break-before:always;' : ''}padding-top:${idx > 0 ? '1cm' : '0'}">
       <h2 style="font-size:14px;margin:0 0 4px">${escHtml(q.device)}</h2>
       <div style="font-size:10px;color:#6b7280;margin-bottom:6px">
-        <code>${escHtml(q.ip || '')}</code> &nbsp;|&nbsp; ${escHtml(q.conf_status)}
+        <code>${escHtml(q.ip || '')}</code> &nbsp;|&nbsp; ${escHtml(q.conf_status)}${q.db_status === 'modified' ? ' &nbsp;|&nbsp; <strong style="color:#92400e">Pending Install</strong>' : ''}
       </div>
       ${summaryItems ? `<div style="margin-bottom:8px;font-size:10px">${summaryItems}</div>` : ''}
       ${vdomBlocks || '<p style="font-size:10px;color:#6b7280;font-style:italic">No pending changes found.</p>'}

@@ -111,6 +111,7 @@ def pending_changes_devices(adom: str):
                     "platform": d.get("platform_str", d.get("platform", "")),
                     "version": version,
                     "conf_status": d.get("conf_status", "unknown"),
+                    "db_status": d.get("db_status", "unknown"),
                     "serial": d.get("sn", d.get("serial", "")),
                 }
             )
@@ -144,6 +145,7 @@ def pending_changes_preview(adom: str, device: str):
                 "device": device,
                 "ip": device_meta.get("ip", device_meta.get("mgmt_ip", "")),
                 "conf_status": device_meta.get("conf_status", "unknown"),
+                "db_status": device_meta.get("db_status", "unknown"),
                 "summary": parsed["summary"],
                 "vdoms": parsed["vdoms"],
                 "raw": parsed["raw"],

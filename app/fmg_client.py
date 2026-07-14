@@ -1,6 +1,9 @@
 """FortiManager JSON-RPC client — read-only, no device changes."""
 
+import json
 import os
+import re
+import time
 import warnings
 
 import requests
@@ -91,6 +94,110 @@ PROXY_ENDPOINTS = [
         "required": False,
     },
 ]
+
+PREVIEW_TIMEOUT_SECS = 120
+_CONF_STATUS_MAP = {0: "unknown", 1: "insync", 2: "outofsync"}
+# db_status: whether FMG DB has been modified since the last install
+_DB_STATUS_MAP = {0: "unknown", 1: "nomod", 2: "modified"}
+
+_SUMMARY_KEYWORDS = [
+    (["firewall policy", "firewall policy6"], "firewall_policy"),
+    (
+        ["router static", "router policy", "router ospf", "router bgp", "router rip"],
+        "routing",
+    ),
+    (["firewall address", "firewall addrgrp", "firewall wildcard-fqdn"], "address"),
+    (["firewall service"], "service"),
+    (
+        [
+            "system global",
+            "system interface",
+            "system settings",
+            "system admin",
+            "system dns",
+        ],
+        "system",
+    ),
+]
+
+
+def _classify_lines(content: str) -> list:
+    """Classify each line in a FortiOS CLI diff block as add/remove/modify."""
+    changes = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("==="):
+            continue
+        if stripped.startswith("delete ") or stripped.startswith("unset "):
+            changes.append({"type": "remove", "line": line})
+        elif stripped.startswith("config ") or stripped.startswith("end"):
+            changes.append({"type": "modify", "line": line})
+        elif stripped.startswith("edit ") or stripped.startswith("next"):
+            changes.append({"type": "modify", "line": line})
+        elif stripped.startswith("set "):
+            changes.append({"type": "add", "line": line})
+        else:
+            changes.append({"type": "modify", "line": line})
+    return changes
+
+
+def parse_preview_diff(raw: str) -> dict:
+    """Parse raw FMG install-preview CLI text into structured diff.
+
+    Returns:
+        {
+          "summary": {"firewall_policy": int, "routing": int, ...},
+          "vdoms": [{"name": str, "changes": [{"type": str, "line": str}]}],
+          "raw": str,
+        }
+    """
+    empty_summary = {
+        "firewall_policy": 0,
+        "routing": 0,
+        "address": 0,
+        "service": 0,
+        "system": 0,
+        "other": 0,
+    }
+    if not raw or not raw.strip() or raw.strip() == "=== No preview result ===":
+        return {
+            "summary": empty_summary,
+            "vdoms": [{"name": "root", "changes": []}],
+            "raw": raw,
+        }
+
+    # Split into VDOM blocks if multi-VDOM markers present
+    vdom_split = re.split(r"^\s*vdom\s+(\S+)\s*$", raw, flags=re.MULTILINE)
+
+    if len(vdom_split) > 1:
+        # Odd indices are vdom names, even indices >=2 are their content
+        vdom_blocks = []
+        for i in range(1, len(vdom_split), 2):
+            vname = vdom_split[i].strip()
+            content = vdom_split[i + 1] if i + 1 < len(vdom_split) else ""
+            vdom_blocks.append((vname, content))
+    else:
+        vdom_blocks = [("root", raw)]
+
+    summary = dict(empty_summary)
+    vdoms_out = []
+
+    for vname, content in vdom_blocks:
+        changes = _classify_lines(content)
+        # Count config blocks per category
+        for line_obj in changes:
+            line = line_obj["line"].strip().lower()
+            if line.startswith("config "):
+                block = line[len("config ") :]
+                cat = "other"
+                for keywords, key in _SUMMARY_KEYWORDS:
+                    if any(block.startswith(k) for k in keywords):
+                        cat = key
+                        break
+                summary[cat] += 1
+        vdoms_out.append({"name": vname, "changes": changes})
+
+    return {"summary": summary, "vdoms": vdoms_out, "raw": raw}
 
 
 class FMGError(Exception):
@@ -219,6 +326,126 @@ class FMGClient:
 
     def get_devices(self, adom: str) -> list:
         return self._get(f"/dvmdb/adom/{adom}/device") or []
+
+    def get_devices_with_sync_status(self, adom: str) -> list:
+        """Return devices in an ADOM with normalized conf_status and db_status strings."""
+        raw = self._get(f"/dvmdb/adom/{adom}/device") or []
+        result = []
+        for d in raw:
+            if not isinstance(d, dict):
+                continue
+            cs_int = d.get("conf_status", 0)
+            try:
+                cs_int = int(cs_int)
+            except (TypeError, ValueError):
+                cs_int = 0
+            d["conf_status"] = _CONF_STATUS_MAP.get(cs_int, "unknown")
+            db_int = d.get("db_status", 0)
+            try:
+                db_int = int(db_int)
+            except (TypeError, ValueError):
+                db_int = 0
+            d["db_status"] = _DB_STATUS_MAP.get(db_int, "unknown")
+            result.append(d)
+        return result
+
+    def get_install_preview(self, adom: str, device: str) -> str:
+        """Trigger FMG install preview for device, poll until done, return raw CLI diff text.
+
+        Raises FMGError on task failure or timeout.
+        Returns empty string if device has no pending changes.
+        """
+        # Step 1: trigger — FMG requires scope array; omit vdom to cover all VDOMs
+        trigger_body = {
+            "id": self._next_id(),
+            "method": "exec",
+            "params": [
+                {
+                    "url": "/securityconsole/install/preview",
+                    "data": {
+                        "adom": adom,
+                        "scope": [{"name": device}],
+                    },
+                }
+            ],
+        }
+        if self.session:
+            trigger_body["session"] = self.session
+        trigger_resp = self._post(trigger_body)
+        trigger_result = trigger_resp.get("result", [{}])[0]
+        if trigger_result.get("status", {}).get("code", -1) != 0:
+            raise FMGError(
+                f"Preview trigger failed for {device}: {trigger_result.get('status')}"
+            )
+        taskid = trigger_result.get("data", {}).get("task")
+        if not taskid:
+            raise FMGError(f"No task ID returned for preview of {device}")
+
+        # Step 2: poll
+        deadline = time.time() + PREVIEW_TIMEOUT_SECS
+        while time.time() < deadline:
+            poll_body = {
+                "id": self._next_id(),
+                "method": "get",
+                "params": [{"url": f"/task/task/{taskid}"}],
+            }
+            if self.session:
+                poll_body["session"] = self.session
+            poll_resp = self._post(poll_body)
+            poll_result = poll_resp.get("result", [{}])[0]
+            task_data = poll_result.get("data", [])
+            if isinstance(task_data, list) and task_data:
+                task_data = task_data[0]
+            if isinstance(task_data, dict):
+                percent = task_data.get("percent", 0)
+                state = task_data.get("state", 0)
+                if percent >= 100:
+                    break
+                if state not in (0, 1):  # error states — only check when not yet done
+                    raise FMGError(f"Preview task {taskid} failed with state {state}")
+            time.sleep(2)
+        else:
+            raise FMGError(
+                f"Preview task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s"
+            )
+
+        # Step 3: fetch result — must use exec with scope; omit vdom to cover all VDOMs
+        result_body = {
+            "id": self._next_id(),
+            "method": "exec",
+            "params": [
+                {
+                    "url": f"/securityconsole/preview/result/{adom}",
+                    "data": {
+                        "adom": adom,
+                        "scope": [{"name": device}],
+                    },
+                }
+            ],
+        }
+        if self.session:
+            result_body["session"] = self.session
+        result_resp = self._post(result_body)
+        result_result = result_resp.get("result", [{}])[0]
+        if result_result.get("status", {}).get("code", -1) != 0:
+            return ""
+        message = result_result.get("data", {}).get("message", "")
+        if not message:
+            return ""
+        # message is a JSON-encoded list: [{"name": device, "oid": ..., "result": "..."}]
+        try:
+            entries = json.loads(message)
+        except (ValueError, TypeError):
+            return ""
+        if not isinstance(entries, list):
+            return ""
+        for entry in entries:
+            if (
+                isinstance(entry, dict)
+                and entry.get("name", "").lower() == device.lower()
+            ):
+                return entry.get("result", "")
+        return ""
 
     def _proxy(self, adom: str, device: str, resource: str) -> dict:
         body = {
@@ -776,9 +1003,7 @@ class FMGClient:
         so callers can degrade gracefully if the FMG version doesn't support
         this endpoint.
         """
-        import time as _time
-
-        since = int(_time.time()) - (hours * 3600)
+        since = int(time.time()) - (hours * 3600)
         try:
             body = {
                 "id": self._next_id(),
