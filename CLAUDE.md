@@ -378,6 +378,47 @@ Provides read-only zone policy access to external programs (e.g. FW-Analyst) via
 - `POST /admin/api/tokens` — create token (returns plaintext once)
 - `DELETE /admin/api/tokens/<id>` — revoke token
 
+### Pending Changes tab
+
+`GET /pending-changes` → `pending_changes.html` + `pending_changes.js`
+
+Shows FortiManager install-pending changes — config committed in FortiManager but not yet pushed to physical FortiGate devices. Uses the FMG Install Preview API (async task-based diff generation).
+
+**Tab key:** `pending_changes`
+
+**Workflow:**
+1. Select ADOM → device list loads with sync status badges.
+2. Optionally filter via search (name or IP) or "Pending only" toggle.
+3. Click a device → right panel shows spinner while FMG generates the diff (10–60s).
+4. Diff renders as CLI-format lines grouped by VDOM (add/remove/modify).
+5. "Add to Export Queue" → chip appears in sticky footer bar.
+6. Export queue: CSV, JSON, or PDF covering all queued devices in one document.
+
+**`conf_status` integer-to-string mapping** (from FMG dvmdb):
+- `0` → `"unknown"`
+- `1` → `"insync"`
+- `2` → `"outofsync"`
+
+The "Pending only" toggle filters the device list by `conf_status`. It does not gate the preview call — clicking any device always triggers a live preview because `conf_status` can lag behind actual state.
+
+**New FMGClient methods** (`app/fmg_client.py`):
+
+`get_devices_with_sync_status(adom)` — calls `/dvmdb/adom/{adom}/device`; normalises `conf_status` integer to string.
+
+`get_install_preview(adom, device)` — async three-step:
+1. POST `/securityconsole/install/preview` → `taskid`
+2. Poll `/task/task/{taskid}` every 2s until `percent == 100` (timeout: `PREVIEW_TIMEOUT_SECS = 90`)
+3. GET `/securityconsole/preview/result/{adom}` → raw CLI diff text
+
+`parse_preview_diff(raw)` — module-level helper; parses CLI diff into `{summary, vdoms, raw}`. **Implementation note:** The FMG preview output format must be verified against a real FMG instance — the parser in `_classify_lines()` may need adjustment based on actual output. The `raw` field is always returned so the frontend has an unprocessed fallback.
+
+**Export queue pattern:** Export queue is client-side only (`exportQueue` array in `pending_changes.js`). Queue clears on ADOM change (with confirmation dialog). CSV/JSON/PDF exports cover all queued devices in one document.
+
+**API endpoints:**
+- `GET  /api/pending-changes/adoms` — ADOM list (filtered by access)
+- `GET  /api/pending-changes/adoms/<adom>/devices` — device list with `conf_status`
+- `POST /api/pending-changes/adoms/<adom>/device/<device>/preview` — trigger preview, return structured diff
+
 ## Dependency management
 
 This project uses `uv`. `uv.lock` is committed; `pyproject.toml` should be too. Do not use `pip install` directly — use `uv add <package>` to keep the lockfile in sync.

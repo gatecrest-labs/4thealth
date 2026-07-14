@@ -16,6 +16,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.zone_routes",
     "app.routes.map_routes",
     "app.routes.external_api_routes",
+    "app.routes.pending_changes_routes",
     # "app.routes.my_new_module",  ← add future modules here
 ]
 

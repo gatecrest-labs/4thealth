@@ -15,35 +15,49 @@ from app import registry
 _WINDOW_SECONDS = 600  # 10 minutes
 _IP_MAX = 10  # max failures per IP per window
 _USER_MAX = 5  # max failures per username per window
+_USER_FAILURES_MAX_KEYS = 10_000  # memory bound on the attacker-controlled key space
 
 _lock = threading.Lock()
 _ip_failures: dict[str, list[float]] = defaultdict(list)
 _user_failures: dict[str, list[float]] = defaultdict(list)
 
 
+def _norm_username(username: str) -> str:
+    return username.strip().lower()
+
+
 def _is_rate_limited(ip: str, username: str) -> bool:
     now = time.monotonic()
     cutoff = now - _WINDOW_SECONDS
+    norm = _norm_username(username)
     with _lock:
         _ip_failures[ip] = [t for t in _ip_failures[ip] if t > cutoff]
-        _user_failures[username] = [t for t in _user_failures[username] if t > cutoff]
+        _user_failures[norm] = [t for t in _user_failures[norm] if t > cutoff]
         return (
-            len(_ip_failures[ip]) >= _IP_MAX
-            or len(_user_failures[username]) >= _USER_MAX
+            len(_ip_failures[ip]) >= _IP_MAX or len(_user_failures[norm]) >= _USER_MAX
         )
 
 
 def _record_failure(ip: str, username: str) -> None:
     now = time.monotonic()
+    norm = _norm_username(username)
     with _lock:
         _ip_failures[ip].append(now)
-        _user_failures[username].append(now)
+        # Evict oldest key if at capacity (FIFO approximation using dict ordering)
+        if (
+            len(_user_failures) >= _USER_FAILURES_MAX_KEYS
+            and norm not in _user_failures
+        ):
+            oldest_key = next(iter(_user_failures))
+            del _user_failures[oldest_key]
+        _user_failures[norm].append(now)
 
 
 def _clear_failures(ip: str, username: str) -> None:
+    norm = _norm_username(username)
     with _lock:
         _ip_failures.pop(ip, None)
-        _user_failures.pop(username, None)
+        _user_failures.pop(norm, None)
 
 
 def _safe_redirect(url: str) -> bool:
@@ -93,8 +107,9 @@ def login():
             session["user"] = username
             session["role"] = role
             session["ad_groups"] = ad_groups
-            allowed = list(get_allowed_tabs(username, ad_groups=ad_groups))
+            allowed = list(get_allowed_tabs(username, ad_groups=ad_groups, role=role))
             session["allowed_tabs"] = allowed
+            session["login_at"] = int(time.time())
             app_log(
                 "INFO",
                 "auth",
