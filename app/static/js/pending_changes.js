@@ -345,7 +345,7 @@ function buildMetaHeader() {
 function exportCsv() {
   if (!exportQueue.length) return;
   const { ts, adom, devices, user } = buildMetaHeader();
-  let csv = `# Pending Changes Export\n# Generated: ${ts}\n# User: ${user}\n# ADOM: ${adom}\n# Devices: ${devices}\n`;
+  let csv = `# DIFF (BETA) Export\n# Generated: ${ts}\n# User: ${user}\n# ADOM: ${adom}\n# Devices: ${devices}\n`;
   csv += '# Summary\n';
   exportQueue.forEach(q => {
     const s = q.summary;
@@ -363,7 +363,7 @@ function exportCsv() {
       });
     });
   });
-  download(`pending-changes-${adom || 'export'}.csv`, csv, 'text/csv');
+  download(`diff-beta-${adom || 'export'}.csv`, csv, 'text/csv');
 }
 
 function exportJson() {
@@ -380,13 +380,13 @@ function exportJson() {
       vdoms: q.vdoms,
     })),
   };
-  download(`pending-changes-${adom || 'export'}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  download(`diff-beta-${adom || 'export'}.json`, JSON.stringify(payload, null, 2), 'application/json');
 }
 
 function exportPdf() {
   if (!exportQueue.length) return;
   const { ts, adom, devices, user } = buildMetaHeader();
-  const title = `Pending Changes — ADOM: ${adom}`;
+  const title = `DIFF (BETA) — ADOM: ${adom}`;
 
   const deviceSections = exportQueue.map((q, idx) => {
     const s = q.summary;

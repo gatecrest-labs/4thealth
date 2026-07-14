@@ -38,12 +38,25 @@ def test_get_devices_with_sync_status_empty_adom():
 
 # ── get_install_preview ───────────────────────────────────────────────────────
 
-def _task_response(percent, state=0):
-    return {"result": [{"status": {"code": 0}, "data": [{"percent": percent, "state": state}]}]}
+def _task_response(percent, state=0, num_err=0):
+    return {"result": [{"status": {"code": 0}, "data": [{"percent": percent, "state": state, "num_err": num_err}]}]}
 
 
 def _trigger_response(taskid=42):
     return {"result": [{"status": {"code": 0}, "data": {"task": taskid}}]}
+
+
+def _adom_info_response(oid=1):
+    return {"result": [{"status": {"code": 0}, "data": {"oid": oid}}]}
+
+
+def _device_info_response(oid=101, vdom_oid=1, vdom_name="root"):
+    return {
+        "result": [{
+            "status": {"code": 0},
+            "data": {"oid": oid, "vdom": [{"oid": vdom_oid, "name": vdom_name}]},
+        }]
+    }
 
 
 def _preview_result_response(device_name, diff_text):
@@ -60,7 +73,9 @@ def test_get_install_preview_returns_diff_text():
     client = _make_client()
     diff = "config firewall policy\n    edit 1\n        set action accept\n    next\nend\n"
     responses = [
-        _trigger_response(taskid=99),       # POST securityconsole/install/preview
+        _adom_info_response(),               # GET dvmdb/adom/MyADOM
+        _device_info_response(),             # GET dvmdb/adom/MyADOM/device/FW1
+        _trigger_response(taskid=99),        # POST securityconsole/install/preview
         _task_response(100),                 # GET task/task/99 → done
         _preview_result_response("FW1", diff),  # GET securityconsole/preview/result
     ]
@@ -74,6 +89,8 @@ def test_get_install_preview_polls_until_complete():
     client = _make_client()
     diff = "config system global\nend\n"
     responses = [
+        _adom_info_response(),
+        _device_info_response(),
         _trigger_response(taskid=5),
         _task_response(33),        # first poll — not done
         _task_response(66),        # second poll — still not done
@@ -91,15 +108,18 @@ def test_get_install_preview_raises_on_timeout(monkeypatch):
     # Override PREVIEW_TIMEOUT_SECS to 0 so we time out immediately
     monkeypatch.setattr("app.fmg_client.PREVIEW_TIMEOUT_SECS", 0)
 
-    def always_pending(*args, **kwargs):
-        return _task_response(50)
-
+    adom_info = _adom_info_response()
+    device_info = _device_info_response()
     trigger = _trigger_response(taskid=7)
     call_count = [0]
 
     def side_effect(*args, **kwargs):
         call_count[0] += 1
         if call_count[0] == 1:
+            return adom_info
+        if call_count[0] == 2:
+            return device_info
+        if call_count[0] == 3:
             return trigger
         return _task_response(50)
 
@@ -112,6 +132,8 @@ def test_get_install_preview_raises_on_timeout(monkeypatch):
 def test_get_install_preview_returns_empty_string_when_no_changes():
     client = _make_client()
     responses = [
+        _adom_info_response(),
+        _device_info_response(),
         _trigger_response(taskid=3),
         _task_response(100),
         # result message has no entry matching device name
@@ -126,7 +148,12 @@ def test_get_install_preview_returns_empty_string_when_no_changes():
 def test_get_install_preview_raises_on_trigger_failure():
     client = _make_client()
     trigger_failure = {"result": [{"status": {"code": -6}, "data": {}}]}
-    with patch.object(client, "_post", return_value=trigger_failure), \
+    responses = [
+        _adom_info_response(),
+        _device_info_response(),
+        trigger_failure,
+    ]
+    with patch.object(client, "_post", side_effect=responses), \
          patch("time.sleep"):
         with pytest.raises(FMGError):
             client.get_install_preview("MyADOM", "FW1")
@@ -135,8 +162,10 @@ def test_get_install_preview_raises_on_trigger_failure():
 def test_get_install_preview_raises_on_task_error_state():
     client = _make_client()
     responses = [
+        _adom_info_response(),
+        _device_info_response(),
         _trigger_response(taskid=10),
-        _task_response(50, state=3),  # state=3 is an error state
+        _task_response(100, num_err=1),  # num_err > 0 signals task failure
     ]
     with patch.object(client, "_post", side_effect=responses), \
          patch("time.sleep"):

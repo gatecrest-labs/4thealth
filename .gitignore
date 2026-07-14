@@ -50,3 +50,11 @@ memory/
 # Local planning notes (not for repo)
 todo-cis.md
 todo.md
+
+# Graphify build outputs
+graphify-out/
+
+# Claude Code local user overrides
+.claude/settings.local.json
+.claude/CLAUDE.local.md
+
