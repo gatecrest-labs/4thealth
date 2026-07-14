@@ -514,7 +514,9 @@ def run_checks(
             continue
         if key == "shadow":
             results.extend(
-                check_shadow(policies, addr_resolver=addr_resolver, svc_resolver=svc_resolver)
+                check_shadow(
+                    policies, addr_resolver=addr_resolver, svc_resolver=svc_resolver
+                )
             )
         else:
             results.extend(fn(policies))

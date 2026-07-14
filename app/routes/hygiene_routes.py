@@ -175,9 +175,7 @@ def _parse_subnet_to_networks(subnet_str: str) -> frozenset | None:
     return None
 
 
-def build_addr_resolver(
-    addr_objects: list, addr_groups: list
-) -> dict:
+def build_addr_resolver(addr_objects: list, addr_groups: list) -> dict:
     """Build a name→frozenset[ip_network] resolver for address objects and groups.
 
     Values are frozenset of ip_network objects, or None for FQDN/geography/
@@ -207,8 +205,7 @@ def build_addr_resolver(
         members = ag.get("member", []) or []
         if name:
             grp_members[name] = [
-                (m.get("name") if isinstance(m, dict) else str(m))
-                for m in members
+                (m.get("name") if isinstance(m, dict) else str(m)) for m in members
             ]
 
     # Recursively resolve groups; guard against cycles.
@@ -322,8 +319,7 @@ def build_svc_resolver(svc_objects: list, svc_groups: list) -> dict:
         members = sg.get("member", []) or []
         if name:
             grp_members[name] = [
-                (m.get("name") if isinstance(m, dict) else str(m))
-                for m in members
+                (m.get("name") if isinstance(m, dict) else str(m)) for m in members
             ]
 
     resolved: dict[str, frozenset | None] = {}
