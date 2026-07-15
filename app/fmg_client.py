@@ -537,21 +537,46 @@ class FMGClient:
             raise FMGError(f"No task ID returned for install/preview of {device}")
         _poll(preview_taskid, "Preview")
 
-        # Step 3: fetch result — keyed by the STAGE task's ID, not the
-        # install/preview task's ID (see note on Step 1 above).
-        message = ""
-        try:
-            result_data = _exec(
-                "/securityconsole/preview/result",
-                {
-                    "adom": adom,
-                    "scope": scope,
-                    "preview_taskid": last_stage_taskid or preview_taskid,
-                },
-            )
+        def _fetch_result(taskid: int) -> str:
+            """Call preview/result with the given key and return this device's
+            CLI diff text, or "" if absent / no diff / lookup failed."""
+            try:
+                result_data = _exec(
+                    "/securityconsole/preview/result",
+                    {"adom": adom, "scope": scope, "preview_taskid": taskid},
+                )
+            except FMGError:
+                return ""
             message = result_data.get("message", "")
-        except FMGError:
-            pass
+            if not message:
+                return ""
+            try:
+                entries = json.loads(message)
+            except (ValueError, TypeError):
+                return message
+            if not isinstance(entries, list):
+                return ""
+            for entry in entries:
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("name", "").lower() == device.lower()
+                ):
+                    result = entry.get("result", "")
+                    if result.strip() == "=== No preview result ===":
+                        return ""
+                    return result
+            return ""
+
+        # Step 3: fetch result. Try the install/preview task's own ID first —
+        # this is the exact key confirmed working against FMG 7.4.10 in
+        # production. On FMG 7.6.7 this call succeeds (status=OK) but returns
+        # "=== No preview result ===" for this device; in that case retry
+        # keyed by the STAGE task's ID instead, which FMG 7.6.7's own GUI uses
+        # for this same lookup (confirmed by capturing its JSON-RPC traffic).
+        # Trying the proven key first means 7.4.x behavior is unchanged.
+        result = _fetch_result(preview_taskid)
+        if not result and last_stage_taskid and last_stage_taskid != preview_taskid:
+            result = _fetch_result(last_stage_taskid)
 
         # Step 4: cleanup — FMG holds a pending-install lock until cancelled
         try:
@@ -562,22 +587,7 @@ class FMGClient:
         except Exception:
             pass
 
-        if not message:
-            return ""
-        # message is a JSON-encoded list: [{"name": device, "oid": ..., "result": "..."}]
-        try:
-            entries = json.loads(message)
-        except (ValueError, TypeError):
-            return message
-        if not isinstance(entries, list):
-            return ""
-        for entry in entries:
-            if (
-                isinstance(entry, dict)
-                and entry.get("name", "").lower() == device.lower()
-            ):
-                return entry.get("result", "")
-        return ""
+        return result
 
     def _proxy(self, adom: str, device: str, resource: str) -> dict:
         body = {
