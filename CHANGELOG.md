@@ -11,6 +11,15 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ---
 
+## [2026-07-15] — DIFF (Beta) fix for FortiManager 7.6.x
+
+### Fixed
+- `get_package_info()` didn't recognize FMG 7.6.x's `"conflict"` package status (previously only `"modified"`/`"installed"` were handled), so a device with a modified-but-conflicted package was treated as unassigned and its package was never staged for preview — the DIFF tab reported "No pending changes found" even when a real diff existed.
+- `get_install_preview()` now links the staged package's task ID through to `install/preview` and `preview/result` via `preview_taskid`. FMG 7.6.7 requires this linkage to return diff content; without it, `install/preview` reports `status=OK` but `preview/result` always returns `"=== No preview result ==="` for the device.
+- The result lookup tries the previously-working key first (the `install/preview` call's own task ID, confirmed against FMG 7.4.10 in production) and only falls back to the stage task's ID when that returns no diff, so 7.4.x behavior is unchanged.
+
+---
+
 ## [2026-07-15] — DIFF (Beta) tab polish
 
 ### Changed

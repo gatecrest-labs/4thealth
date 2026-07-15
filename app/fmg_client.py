@@ -489,7 +489,15 @@ class FMGClient:
         # Failure modes:
         #   - RPC rejected (no task): fall through silently, try next pkg.
         #   - Task accepted but fails mid-run (num_err > 0): propagate.
+        #
+        # FMG's own web GUI links preview/result back to the STAGE task's ID via
+        # a "preview_taskid" field passed into both the install/preview call and
+        # the final preview/result call — not the install/preview call's own task
+        # ID. Confirmed by capturing the GUI's own JSON-RPC traffic on FMG 7.6.7;
+        # without this, install/preview reports status=OK but preview/result
+        # always returns "No preview result" even though a real diff exists.
         stage_ok = False
+        last_stage_taskid = None
         for pkg_name in pkg_names:
             try:
                 stage_data = _exec(
@@ -505,17 +513,18 @@ class FMGClient:
                 if stage_taskid:
                     _poll(stage_taskid, "Stage")
                     stage_ok = True
+                    last_stage_taskid = stage_taskid
             except FMGError as exc:
                 if "Stage task" in str(exc):
                     raise
                 # RPC rejection for this pkg — try the next one
 
-        # Step 2: generate preview diff report
+        # Step 2: generate preview diff report, linked to the stage task above
+        preview_request: dict = {"adom": adom, "flags": ["none"], "scope": scope}
+        if last_stage_taskid:
+            preview_request["preview_taskid"] = last_stage_taskid
         try:
-            preview_data = _exec(
-                "/securityconsole/install/preview",
-                {"adom": adom, "flags": ["none"], "scope": scope},
-            )
+            preview_data = _exec("/securityconsole/install/preview", preview_request)
         except FMGError:
             # Both stage and preview calls rejected — device has no pending changes
             if not stage_ok:
@@ -528,16 +537,46 @@ class FMGClient:
             raise FMGError(f"No task ID returned for install/preview of {device}")
         _poll(preview_taskid, "Preview")
 
-        # Step 3: fetch result
-        message = ""
-        try:
-            result_data = _exec(
-                "/securityconsole/preview/result",
-                {"adom": adom, "scope": scope, "preview_taskid": preview_taskid},
-            )
+        def _fetch_result(taskid: int) -> str:
+            """Call preview/result with the given key and return this device's
+            CLI diff text, or "" if absent / no diff / lookup failed."""
+            try:
+                result_data = _exec(
+                    "/securityconsole/preview/result",
+                    {"adom": adom, "scope": scope, "preview_taskid": taskid},
+                )
+            except FMGError:
+                return ""
             message = result_data.get("message", "")
-        except FMGError:
-            pass
+            if not message:
+                return ""
+            try:
+                entries = json.loads(message)
+            except (ValueError, TypeError):
+                return message
+            if not isinstance(entries, list):
+                return ""
+            for entry in entries:
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("name", "").lower() == device.lower()
+                ):
+                    result = entry.get("result", "")
+                    if result.strip() == "=== No preview result ===":
+                        return ""
+                    return result
+            return ""
+
+        # Step 3: fetch result. Try the install/preview task's own ID first —
+        # this is the exact key confirmed working against FMG 7.4.10 in
+        # production. On FMG 7.6.7 this call succeeds (status=OK) but returns
+        # "=== No preview result ===" for this device; in that case retry
+        # keyed by the STAGE task's ID instead, which FMG 7.6.7's own GUI uses
+        # for this same lookup (confirmed by capturing its JSON-RPC traffic).
+        # Trying the proven key first means 7.4.x behavior is unchanged.
+        result = _fetch_result(preview_taskid)
+        if not result and last_stage_taskid and last_stage_taskid != preview_taskid:
+            result = _fetch_result(last_stage_taskid)
 
         # Step 4: cleanup — FMG holds a pending-install lock until cancelled
         try:
@@ -548,22 +587,7 @@ class FMGClient:
         except Exception:
             pass
 
-        if not message:
-            return ""
-        # message is a JSON-encoded list: [{"name": device, "oid": ..., "result": "..."}]
-        try:
-            entries = json.loads(message)
-        except (ValueError, TypeError):
-            return message
-        if not isinstance(entries, list):
-            return ""
-        for entry in entries:
-            if (
-                isinstance(entry, dict)
-                and entry.get("name", "").lower() == device.lower()
-            ):
-                return entry.get("result", "")
-        return ""
+        return result
 
     def _proxy(self, adom: str, device: str, resource: str) -> dict:
         body = {
@@ -649,9 +673,12 @@ class FMGClient:
         """Return policy package info for a device/vdom.
 
         Calls /pm/config/adom/{adom}/_package/status/{device}/{vdom}.
-        Response fields (confirmed against FMG 7.4.x):
+        Response fields (confirmed against FMG 7.4.x, extended for 7.6.x):
           "pkg"    — package path string, e.g. "PROD/LMR/Device_Policy" (absent if unassigned)
-          "status" — plain string: "installed" | "modified" | "unassigned"
+          "status" — plain string: "installed" | "modified" | "conflict" | "unassigned"
+                     "conflict" is a 7.6.x value meaning the assigned package differs from
+                     what's installed on the device — same install-preview handling as
+                     "modified", it just isn't surfaced on 7.4.x.
         Returns {"pkg_name": str, "pkg_status": str} where pkg_status is one of
         "modified", "nomod", or "" (unassigned / error).
         """
@@ -661,7 +688,7 @@ class FMGClient:
                 return {"pkg_name": "", "pkg_status": ""}
             pkg_name = data.get("pkg", "")
             raw_status = data.get("status", "")
-            if raw_status == "modified":
+            if raw_status in ("modified", "conflict"):
                 pkg_status = "modified"
             elif raw_status == "installed":
                 pkg_status = "nomod"
