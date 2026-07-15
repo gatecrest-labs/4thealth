@@ -161,30 +161,28 @@ def _split_vdom_blocks(raw: str) -> list[tuple[str, str]]:
             blocks.append((vname, content))
         return blocks
 
-    # Format B: "config vdom\n    edit <name>\n    ...\n    next\nend" sections
-    # Each vdom section starts with "config vdom" and contains "edit <name>" subsections.
+    # Format B: "config vdom\n    edit <name>\n    ...\n    next\nend" sections.
+    # Split on "config vdom" markers, then take only the FIRST "edit" line in
+    # each block as the vdom name. All subsequent "edit" lines are diff content
+    # (address objects, policy IDs, etc.) and must not be used as vdom names.
     config_vdom_blocks = re.split(
         r"^config\s+vdom\s*$", raw, flags=re.MULTILINE | re.IGNORECASE
     )
     if len(config_vdom_blocks) > 1:
         blocks = []
         for block in config_vdom_blocks[1:]:
-            # Each block: "    edit <name>\n    <content>\n    next\nend\n..."
-            # Split on "    edit <name>" / "    next" pairs
-            edit_split = re.split(r"^\s+edit\s+(\S+)\s*$", block, flags=re.MULTILINE)
-            if len(edit_split) > 1:
-                for j in range(1, len(edit_split), 2):
-                    vname = edit_split[j].strip().strip('"')
-                    content = edit_split[j + 1] if j + 1 < len(edit_split) else ""
-                    # Strip trailing "next" and "end" wrapper lines
-                    content = re.sub(r"^\s*next\s*$", "", content, flags=re.MULTILINE)
-                    content = re.sub(
-                        r"^\s*end\s*$", "", content, count=1, flags=re.MULTILINE
-                    )
-                    blocks.append((vname, content))
-            else:
-                # Malformed block — skip
+            # The first "edit" line at any leading whitespace is the vdom name.
+            m = re.search(r"^\s+edit\s+(\S+)\s*$", block, flags=re.MULTILINE)
+            if not m:
                 continue
+            vname = m.group(1).strip('"')
+            # Everything after "edit <vdom>" is the diff content for this vdom.
+            content = block[m.end() :]
+            # Strip the outer wrapper lines (next / end) that belong to
+            # "config vdom", not to the diff content itself.
+            content = re.sub(r"^\s*next\s*$", "", content, flags=re.MULTILINE)
+            content = re.sub(r"^\s*end\s*$", "", content, count=1, flags=re.MULTILINE)
+            blocks.append((vname, content))
         if blocks:
             return blocks
 
@@ -682,15 +680,19 @@ class FMGClient:
         return self.get_package_info(adom, device, vdom)["pkg_status"]
 
     def get_device_pkg_status(self, adom: str, device: str, vdom_names: list) -> str:
-        """Check package status across all vdoms — returns "modified" if any are modified."""
-        statuses = [
-            self.get_package_info(adom, device, v)["pkg_status"] for v in vdom_names
-        ]
-        if "modified" in statuses:
-            return "modified"
-        if "nomod" in statuses:
-            return "nomod"
-        return ""
+        """Check package status across all vdoms — returns "modified" if any are modified.
+
+        Short-circuits on the first "modified" vdom so multi-vdom devices with many
+        vdoms don't make unnecessary extra calls once a modified package is found.
+        """
+        found_nomod = False
+        for vname in vdom_names:
+            status = self.get_package_info(adom, device, vname)["pkg_status"]
+            if status == "modified":
+                return "modified"
+            if status == "nomod":
+                found_nomod = True
+        return "nomod" if found_nomod else ""
 
     def get_policy_packages(self, adom: str) -> list:
         """Return all policy packages in an ADOM, recursing into folder subobj lists.
