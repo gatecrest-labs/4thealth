@@ -51,6 +51,14 @@ All endpoints require an authenticated session (HTTP 401 otherwise).
 | GET | `/api/zone/policies` | List all segmentation policies |
 | GET | `/api/zone/validate` | Validate the zone policy database schema |
 
+## DIFF (Beta)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/pending-changes/adoms` | List ADOMs accessible to the current user |
+| GET | `/api/pending-changes/adoms/<adom>/devices` | Device list with `conf_status`, `db_status`, and `pkg_status` |
+| POST | `/api/pending-changes/adoms/<adom>/device/<device>/preview` | Trigger FortiManager install-preview and return parsed CLI diff |
+
 ## Map
 
 | Method | Path | Description |

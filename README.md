@@ -35,6 +35,7 @@ JSON-RPC API** — no direct device connections are made.
 | **Rule Validation** | Pre-change analysis — enter requested flows, select policy packages, get per-flow verdicts; integrates zone segmentation policy checks |
 | **Zone Policy** | Self-contained network segmentation policy browser — query flows, browse zones and rules, validate schema, edit database (admin only) |
 | **Map (Beta)** | Interactive geographic map of all managed FortiGate devices, coloured by configurable US geographic region |
+| **DIFF (Beta)** | Per-device install-pending diff viewer — shows exactly which FortiOS CLI lines will change on the next install; export queue for CSV, JSON, or PDF change records |
 | **Admin** | *(admin only)* Group management, tab-level and ADOM-level permissions, map region configuration, log viewer, External API management |
 | **Auto-refresh** | Configurable: manual, 1 min, 5 min (default), 10 min, 15 min |
 | **Light / Dark mode** | Toggle in the nav bar; preference saved in `localStorage` |
@@ -74,6 +75,7 @@ JSON-RPC API** — no direct device connections are made.
 │       ├── rule_review_routes.py     /rule-review  /api/rule-review/*
 │       ├── zone_routes.py            /zone-policy  /api/zone/*
 │       ├── map_routes.py             /map  /api/map/*
+│       ├── pending_changes_routes.py /pending-changes  /api/pending-changes/*
 │       └── external_api_routes.py    /external/api/*  (bearer-token, no session required)
 ├── wsgi.py                      WSGI entry point; wires SSL context for Gunicorn
 ├── manage_users.py              CLI: add / delete / list users / generate SECRET_KEY
@@ -238,6 +240,7 @@ Ansible/
 | [docs/hardening.md](docs/hardening.md) | File permissions, fail2ban, Nginx rate limiting, SELinux, master security checklist |
 | [docs/operations.md](docs/operations.md) | Monitoring, updates, backup, SSL renewal, GitLab CI/CD |
 | [container.md](container.md) | Docker and Docker Compose deployment |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 
 ---
 

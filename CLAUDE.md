@@ -111,6 +111,7 @@ app/
     zone_routes.py            # /zone-policy page + /api/zone/* endpoints
     device_review_routes.py   # /device-review page + /api/device-review/* endpoints
     admin_routes.py           # /admin page + /admin/api/* group/user/log/ADOM/settings/token endpoints
+    pending_changes_routes.py # /pending-changes page + /api/pending-changes/* endpoints
     external_api_routes.py    # /external/api/* bearer-token endpoints for FW-Analyst integration
 wsgi.py                # Entry point; SSL context wiring
 policy_db.json         # Network segmentation policy database (gitignored — runtime data)
@@ -178,7 +179,7 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
    - Interface badges (source = blue, destination = green)
    - Page size 10/25/50/100 with `<< < … > >>` pagination
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
-2. **Hygiene Analysis** (below) — select ADOM + package, run 7 checks, filter/export findings (CSV/JSON/PDF).
+2. **Hygiene Analysis** (below) — select ADOM + package, run 6 checks, filter/export findings (CSV/JSON/PDF).
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
 
@@ -350,6 +351,39 @@ Interactive Leaflet map displaying all managed devices in selected ADOMs. Device
 `#mapHealthLedger` is a `position:fixed` overlay (bottom-right, `z-index:1000`) populated by `updateHealthLedger()` in `map.js`. It counts `.status` values from the `allDevices` array and displays four `.ledger-item` spans using `.status-dot` color classes (`green`, `yellow`, `red`, `offline`). Called once from `loadDevices()` after `renderMarkers()`. Fleet-wide counts — not affected by ADOM filter.
 
 New CSS classes added to `style.css`: `.map-health-ledger`, `.ledger-item`, `.map-popup-footer`, `.map-popup-details-link`.
+
+### DIFF tab (Beta)
+
+`GET /pending-changes` → `pending_changes.html` + `pending_changes.js`
+
+Shows FortiManager install-preview diffs per device. All operations are read-only — the tab triggers FMG's install-preview workflow but never pushes any configuration to devices.
+
+**Workflow:**
+1. Select ADOM → device table loads with sync status for every device (parallelised, 10-worker thread pool).
+2. Optionally filter by name/IP, or check **Pending only** to show only devices with outstanding changes.
+3. Click a device row → diff panel fetches and renders the per-VDOM CLI diff.
+4. Click **+ Add to Export Queue** to stage the diff for bulk export.
+5. Export the queue as CSV, JSON, or PDF.
+
+**Status fields per device:**
+
+| Field | Values | Meaning |
+|---|---|---|
+| `conf_status` | `insync` / `outofsync` | Device config vs. FMG database |
+| `db_status` | `modified` / `nochange` | FMG database has changes not yet installed |
+| `pkg_status` | `modified` / `nochange` | Policy package modified but not yet installed |
+
+Table rows show a single compact badge (highest-priority state). The diff panel header shows all three badges simultaneously.
+
+**Diff parsing:** `parse_preview_diff()` in `app/fmg_client.py` chains two FMG JSON-RPC calls — trigger (`_exec` on `/securityconsole/install/package`) then poll (`/task/taskid`) — to obtain the raw CLI diff text. It parses each line into `{type: "add"|"remove"|"modify", line: str}` objects grouped by VDOM.
+
+**Export queue:** Multiple devices can be staged before exporting. Changing ADOM clears the queue with a confirmation prompt. Each export includes a metadata header (ADOM, device list, timestamp, username via `PC_USER` template global).
+
+**Routes in `app/routes/pending_changes_routes.py`:**
+- `GET /pending-changes` — page (tab_required)
+- `GET /api/pending-changes/adoms` — ADOM list (forti-prefix filtered, ADOM-access filtered)
+- `GET /api/pending-changes/adoms/<adom>/devices` — device list with status fields
+- `POST /api/pending-changes/adoms/<adom>/device/<device>/preview` — trigger + return parsed diff
 
 ### External API
 
