@@ -2,6 +2,7 @@ import os
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")
 
+import json as _json
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -36,7 +37,48 @@ def test_get_devices_with_sync_status_empty_adom():
     assert result == []
 
 
+# ── get_package_status ────────────────────────────────────────────────────────
+
+def test_get_package_info_returns_name_and_status():
+    # FMG 7.4.x returns "pkg" and "status" (string), not "name"/"db_status"
+    client = _make_client()
+    with patch.object(client, "_get", return_value={"pkg": "PROD/LMR/Device_Policy", "status": "modified"}):
+        info = client.get_package_info("MyADOM", "FW1")
+    assert info["pkg_name"] == "PROD/LMR/Device_Policy"
+    assert info["pkg_status"] == "modified"
+
+def test_get_package_info_returns_nomod_for_installed():
+    client = _make_client()
+    with patch.object(client, "_get", return_value={"pkg": "Pkg1", "status": "installed"}):
+        assert client.get_package_info("MyADOM", "FW1")["pkg_status"] == "nomod"
+
+def test_get_package_info_returns_empty_for_unassigned():
+    client = _make_client()
+    with patch.object(client, "_get", return_value={"status": "unassigned"}):
+        info = client.get_package_info("MyADOM", "FW1")
+    assert info == {"pkg_name": "", "pkg_status": ""}
+
+def test_get_package_info_returns_empty_on_error():
+    client = _make_client()
+    with patch.object(client, "_get", side_effect=FMGError("not found")):
+        info = client.get_package_info("MyADOM", "FW1")
+    assert info == {"pkg_name": "", "pkg_status": ""}
+
+def test_get_package_status_delegates_to_get_package_info():
+    client = _make_client()
+    with patch.object(client, "_get", return_value={"pkg": "Pkg", "status": "modified"}):
+        assert client.get_package_status("MyADOM", "FW1") == "modified"
+
+
 # ── get_install_preview ───────────────────────────────────────────────────────
+#
+# New chained workflow (7 _post calls for happy path):
+#   1. POST securityconsole/install/package  → stage task ID
+#   2. GET  task/task/<stage_id>             → stage done
+#   3. POST securityconsole/install/preview  → preview task ID
+#   4. GET  task/task/<preview_id>           → preview done
+#   5. POST securityconsole/preview/result   → diff text
+#   6. POST securityconsole/package/cancel/install → cleanup (best-effort)
 
 def _task_response(percent, state=0, num_err=0):
     return {"result": [{"status": {"code": 0}, "data": [{"percent": percent, "state": state, "num_err": num_err}]}]}
@@ -46,21 +88,7 @@ def _trigger_response(taskid=42):
     return {"result": [{"status": {"code": 0}, "data": {"task": taskid}}]}
 
 
-def _adom_info_response(oid=1):
-    return {"result": [{"status": {"code": 0}, "data": {"oid": oid}}]}
-
-
-def _device_info_response(oid=101, vdom_oid=1, vdom_name="root"):
-    return {
-        "result": [{
-            "status": {"code": 0},
-            "data": {"oid": oid, "vdom": [{"oid": vdom_oid, "name": vdom_name}]},
-        }]
-    }
-
-
 def _preview_result_response(device_name, diff_text):
-    import json as _json
     return {
         "result": [{
             "status": {"code": 0},
@@ -69,17 +97,34 @@ def _preview_result_response(device_name, diff_text):
     }
 
 
+def _cancel_response():
+    return {"result": [{"status": {"code": 0}, "data": {}}]}
+
+
+def _happy_path_responses(diff_text, stage_taskid=10, preview_taskid=20, device="FW1"):
+    """Build the standard 6-call response sequence for a successful preview."""
+    return [
+        _trigger_response(taskid=stage_taskid),          # 1. install/package
+        _task_response(100),                              # 2. stage poll done
+        _trigger_response(taskid=preview_taskid),         # 3. install/preview
+        _task_response(100),                              # 4. preview poll done
+        _preview_result_response(device, diff_text),      # 5. preview/result
+        _cancel_response(),                               # 6. cancel/install
+    ]
+
+
+_PKG_INFO_MOCK = {"pkg_name": "PROD/LMR/Device_Policy", "pkg_status": "modified"}
+_PKG_INFO_NONE = {"pkg_name": "", "pkg_status": ""}
+
+
 def test_get_install_preview_returns_diff_text():
     client = _make_client()
     diff = "config firewall policy\n    edit 1\n        set action accept\n    next\nend\n"
-    responses = [
-        _adom_info_response(),               # GET dvmdb/adom/MyADOM
-        _device_info_response(),             # GET dvmdb/adom/MyADOM/device/FW1
-        _trigger_response(taskid=99),        # POST securityconsole/install/preview
-        _task_response(100),                 # GET task/task/99 → done
-        _preview_result_response("FW1", diff),  # GET securityconsole/preview/result
-    ]
-    with patch.object(client, "_post", side_effect=responses), \
+    vdoms = [{"name": "root"}]
+    responses = _happy_path_responses(diff)
+    with patch.object(client, "get_device_vdoms", return_value=vdoms), \
+         patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
+         patch.object(client, "_post", side_effect=responses), \
          patch("time.sleep"):
         result = client.get_install_preview("MyADOM", "FW1")
     assert result == diff
@@ -88,16 +133,20 @@ def test_get_install_preview_returns_diff_text():
 def test_get_install_preview_polls_until_complete():
     client = _make_client()
     diff = "config system global\nend\n"
+    vdoms = [{"name": "root"}]
     responses = [
-        _adom_info_response(),
-        _device_info_response(),
-        _trigger_response(taskid=5),
-        _task_response(33),        # first poll — not done
-        _task_response(66),        # second poll — still not done
-        _task_response(100),       # third poll — done
-        _preview_result_response("FW1", diff),
+        _trigger_response(taskid=5),   # 1. install/package
+        _task_response(33),            # 2a. stage poll — not done
+        _task_response(100),           # 2b. stage poll done
+        _trigger_response(taskid=6),   # 3. install/preview
+        _task_response(50),            # 4a. preview poll — not done
+        _task_response(100),           # 4b. preview poll done
+        _preview_result_response("FW1", diff),  # 5. result
+        _cancel_response(),            # 6. cancel
     ]
-    with patch.object(client, "_post", side_effect=responses), \
+    with patch.object(client, "get_device_vdoms", return_value=vdoms), \
+         patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
+         patch.object(client, "_post", side_effect=responses), \
          patch("time.sleep"):
         result = client.get_install_preview("MyADOM", "FW1")
     assert result == diff
@@ -105,25 +154,19 @@ def test_get_install_preview_polls_until_complete():
 
 def test_get_install_preview_raises_on_timeout(monkeypatch):
     client = _make_client()
-    # Override PREVIEW_TIMEOUT_SECS to 0 so we time out immediately
     monkeypatch.setattr("app.fmg_client.PREVIEW_TIMEOUT_SECS", 0)
+    vdoms = [{"name": "root"}]
 
-    adom_info = _adom_info_response()
-    device_info = _device_info_response()
-    trigger = _trigger_response(taskid=7)
     call_count = [0]
-
     def side_effect(*args, **kwargs):
         call_count[0] += 1
         if call_count[0] == 1:
-            return adom_info
-        if call_count[0] == 2:
-            return device_info
-        if call_count[0] == 3:
-            return trigger
-        return _task_response(50)
+            return _trigger_response(taskid=7)  # install/package accepted
+        return _task_response(50)               # all polls → 50% → timeout
 
-    with patch.object(client, "_post", side_effect=side_effect), \
+    with patch.object(client, "get_device_vdoms", return_value=vdoms), \
+         patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
+         patch.object(client, "_post", side_effect=side_effect), \
          patch("time.sleep"):
         with pytest.raises(FMGError, match="timed out"):
             client.get_install_preview("MyADOM", "FW1")
@@ -131,46 +174,101 @@ def test_get_install_preview_raises_on_timeout(monkeypatch):
 
 def test_get_install_preview_returns_empty_string_when_no_changes():
     client = _make_client()
+    vdoms = [{"name": "root"}]
     responses = [
-        _adom_info_response(),
-        _device_info_response(),
-        _trigger_response(taskid=3),
-        _task_response(100),
-        # result message has no entry matching device name
+        _trigger_response(taskid=3),   # install/package
+        _task_response(100),           # stage done
+        _trigger_response(taskid=4),   # install/preview
+        _task_response(100),           # preview done
         {"result": [{"status": {"code": 0}, "data": {"message": "[]"}}]},
+        _cancel_response(),            # cancel
     ]
-    with patch.object(client, "_post", side_effect=responses), \
+    with patch.object(client, "get_device_vdoms", return_value=vdoms), \
+         patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
+         patch.object(client, "_post", side_effect=responses), \
          patch("time.sleep"):
         result = client.get_install_preview("MyADOM", "FW1")
     assert result == ""
 
 
-def test_get_install_preview_raises_on_trigger_failure():
+def test_get_install_preview_returns_empty_when_both_stage_and_preview_fail():
+    """In-sync device: both install/package and install/preview rejected → empty string."""
     client = _make_client()
-    trigger_failure = {"result": [{"status": {"code": -6}, "data": {}}]}
+    vdoms = [{"name": "root"}]
     responses = [
-        _adom_info_response(),
-        _device_info_response(),
-        trigger_failure,
+        {"result": [{"status": {"code": -6}, "data": {}}]},  # install/package rejected
+        {"result": [{"status": {"code": -6}, "data": {}}]},  # install/preview also rejected
     ]
-    with patch.object(client, "_post", side_effect=responses), \
+    with patch.object(client, "get_device_vdoms", return_value=vdoms), \
+         patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
+         patch.object(client, "_post", side_effect=responses), \
          patch("time.sleep"):
-        with pytest.raises(FMGError):
-            client.get_install_preview("MyADOM", "FW1")
+        result = client.get_install_preview("MyADOM", "FW1")
+    assert result == ""
+
+
+def test_get_install_preview_returns_diff_when_no_pkg_name():
+    """No pkg assigned: install/package skipped entirely, install/preview runs directly."""
+    client = _make_client()
+    diff = "config system global\nend\n"
+    vdoms = [{"name": "root"}]
+    # No install/package call — skipped when pkg_name is empty
+    responses = [
+        _trigger_response(taskid=20),   # install/preview
+        _task_response(100),
+        _preview_result_response("FW1", diff),
+        _cancel_response(),
+    ]
+    with patch.object(client, "get_device_vdoms", return_value=vdoms), \
+         patch.object(client, "get_package_info", return_value=_PKG_INFO_NONE), \
+         patch.object(client, "_post", side_effect=responses), \
+         patch("time.sleep"):
+        result = client.get_install_preview("MyADOM", "FW1")
+    assert result == diff
 
 
 def test_get_install_preview_raises_on_task_error_state():
+    """Task accepted but fails mid-run (num_err > 0) — must propagate, not return empty."""
     client = _make_client()
+    vdoms = [{"name": "root"}]
     responses = [
-        _adom_info_response(),
-        _device_info_response(),
-        _trigger_response(taskid=10),
-        _task_response(100, num_err=1),  # num_err > 0 signals task failure
+        _trigger_response(taskid=10),    # install/package accepted
+        _task_response(100, num_err=1),  # stage task fails with num_err
     ]
-    with patch.object(client, "_post", side_effect=responses), \
+    with patch.object(client, "get_device_vdoms", return_value=vdoms), \
+         patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
+         patch.object(client, "_post", side_effect=responses), \
          patch("time.sleep"):
-        with pytest.raises(FMGError):
+        with pytest.raises(FMGError, match="Stage task"):
             client.get_install_preview("MyADOM", "FW1")
+
+
+def test_get_install_preview_cleanup_runs_even_if_result_fails():
+    """Cancel/install must be called even when preview/result returns an error."""
+    client = _make_client()
+    vdoms = [{"name": "root"}]
+    responses = [
+        _trigger_response(taskid=10),
+        _task_response(100),
+        _trigger_response(taskid=11),
+        _task_response(100),
+        {"result": [{"status": {"code": -1}, "data": {}}]},  # result fails
+        _cancel_response(),
+    ]
+    post_calls = []
+    def tracking_post(body):
+        post_calls.append(body)
+        return responses[len(post_calls) - 1]
+
+    with patch.object(client, "get_device_vdoms", return_value=vdoms), \
+         patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK), \
+         patch.object(client, "_post", side_effect=tracking_post), \
+         patch("time.sleep"):
+        result = client.get_install_preview("MyADOM", "FW1")
+
+    urls = [c.get("params", [{}])[0].get("url", "") for c in post_calls]
+    assert any("cancel" in u for u in urls), "cancel/install was not called"
+    assert result == ""
 
 
 # ── parse_preview_diff ────────────────────────────────────────────────────────

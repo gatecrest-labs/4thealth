@@ -28,24 +28,41 @@ let currentDiff    = null;
 let exportQueue    = [];  // [{device, ip, adom, summary, vdoms, raw, timestamp}]
 let _previewAbort  = null;
 
-/* ── Sync status badge ──────────────────────────────────────────────────────── */
-function syncBadge(confStatus, dbStatus) {
-  // conf_status reflects the last-installed state; db_status reflects whether the FMG
-  // database has been modified since that install. Show both when they tell different stories.
+/* ── Status badges ───────────────────────────────────────────────────────────── */
+
+// Single-badge for the device table — shows only the highest-priority state so
+// rows stay compact and single-line.
+function tableBadge(confStatus, dbStatus, pkgStatus) {
+  const s = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:.72rem;font-weight:600;white-space:nowrap;';
+  if (confStatus === 'outofsync')
+    return `<span style="${s}background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="Device config is out of sync with FMG">Out of Sync</span>`;
+  if (dbStatus === 'modified')
+    return `<span style="${s}background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="FMG database has pending changes not yet installed">Pending</span>`;
+  if (pkgStatus === 'modified')
+    return `<span style="${s}background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="Policy package modified in FMG, not yet installed">Pkg Pending</span>`;
+  if (confStatus === 'insync')
+    return `<span style="${s}background:#dcfce7;color:#166534;border:1px solid #86efac">In Sync</span>`;
+  return `<span style="${s}background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db">Unknown</span>`;
+}
+
+// Multi-badge for the diff panel header — shows the full picture since there's room.
+function syncBadge(confStatus, dbStatus, pkgStatus) {
+  const s = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;white-space:nowrap;';
   let badge = '';
   switch (confStatus) {
     case 'outofsync':
-      badge += '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fcd34d">Out of Sync</span>';
+      badge += `<span style="${s}background:#fef3c7;color:#92400e;border:1px solid #fcd34d">Out of Sync</span>`;
       break;
     case 'insync':
-      badge += '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #86efac">In Sync</span>';
+      badge += `<span style="${s}background:#dcfce7;color:#166534;border:1px solid #86efac">In Sync</span>`;
       break;
     default:
-      badge += '<span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db">Unknown</span>';
+      badge += `<span style="${s}background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db">Unknown</span>`;
   }
-  if (dbStatus === 'modified') {
-    badge += ' <span style="display:inline-block;padding:1px 7px;border-radius:3px;font-size:.75rem;font-weight:600;background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="FMG database has pending changes not yet installed to the device">Pending Install</span>';
-  }
+  if (dbStatus === 'modified')
+    badge += ` <span style="${s}background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="FMG database has pending changes not yet installed to the device">Pending Install</span>`;
+  if (pkgStatus === 'modified' && dbStatus !== 'modified')
+    badge += ` <span style="${s}background:#fef3c7;color:#92400e;border:1px solid #fcd34d" title="Policy package has been modified in FMG but not yet installed">Pkg Modified</span>`;
   return badge;
 }
 
@@ -95,7 +112,7 @@ async function fetchDevices(adom) {
 function applyFilters() {
   const q = filterText.toLowerCase();
   filteredDevices = allDevices.filter(d => {
-    if (pendingOnly && d.conf_status !== 'outofsync' && d.db_status !== 'modified') return false;
+    if (pendingOnly && d.conf_status !== 'outofsync' && d.db_status !== 'modified' && d.pkg_status !== 'modified') return false;
     if (!q) return true;
     return (d.name || '').toLowerCase().includes(q) ||
            (d.ip   || '').toLowerCase().includes(q);
@@ -129,7 +146,7 @@ function renderDeviceTable() {
       <td><strong>${esc(d.name)}</strong></td>
       <td><code style="font-size:.82rem">${esc(d.ip || '—')}</code></td>
       <td style="font-size:.82rem">${esc(d.platform || '—')}</td>
-      <td>${syncBadge(d.conf_status, d.db_status)}</td>
+      <td>${tableBadge(d.conf_status, d.db_status, d.pkg_status)}</td>
     </tr>`;
   }).join('');
 
@@ -255,8 +272,9 @@ function renderDiffPanel(diff) {
       const prefix = c.type === 'add' ? '+' : c.type === 'remove' ? '-' : '~';
       return `<span class="${cls}">${esc(prefix + ' ' + c.line)}</span>`;
     }).join('\n');
-    return `<details open style="margin-top:.75rem">
-      <summary style="cursor:pointer;font-weight:600;font-size:.9rem;padding:.3rem 0">
+    return `<details open style="margin-top:.6rem">
+      <summary style="cursor:pointer;font-weight:500;font-size:.82rem;padding:.2rem 0;
+                       color:var(--text-muted);letter-spacing:.03em;text-transform:uppercase">
         vdom: ${esc(vdom.name)}
       </summary>
       <pre class="diff-block" style="background:var(--surface-alt);border:1px solid var(--border);
@@ -268,27 +286,26 @@ function renderDiffPanel(diff) {
   const addBtnLabel   = alreadyQueued ? 'Already in Queue' : '+ Add to Export Queue';
 
   document.getElementById('pcDiffPanel').innerHTML = `
-    <div style="display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:.75rem">
-      <h4 style="margin:0">${esc(diff.device)}</h4>
-      <code style="font-size:.85rem;color:var(--text-muted)">${esc(diff.ip || '')}</code>
-      ${syncBadge(diff.conf_status, diff.db_status)}
-    </div>
-
-    ${tilesHtml ? `<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.75rem">${tilesHtml}</div>` : ''}
-
-    <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem;flex-wrap:wrap">
-      <button class="btn btn-sm btn-secondary" id="pcAddToQueue" onclick="addToQueue()"
-              ${alreadyQueued ? 'disabled' : ''}
-              title="Accumulate multiple devices into a single export document for use in a change record.">
-        ${addBtnLabel}
-      </button>
-      <span style="font-size:.78rem;color:var(--text-muted)"
-            title="Changes are shown in CLI format. + added, - removed, ~ modified. Grouped by VDOM where applicable.">
-        ? CLI format: <code style="font-size:.78rem">+</code> added &nbsp;
-        <code style="font-size:.78rem">-</code> removed &nbsp;
-        <code style="font-size:.78rem">~</code> modified
+    <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.5rem">
+      <h4 style="margin:0;flex-shrink:0">${esc(diff.device)}</h4>
+      <code style="font-size:.82rem;color:var(--text-muted);flex-shrink:0">${esc(diff.ip || '')}</code>
+      <span style="display:flex;gap:.3rem;flex-wrap:nowrap;align-items:center">
+        ${syncBadge(diff.conf_status, diff.db_status, diff.pkg_status)}
+      </span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+        <button class="btn btn-sm btn-secondary" id="pcAddToQueue" onclick="addToQueue()"
+                ${alreadyQueued ? 'disabled' : ''}
+                title="Accumulate multiple devices into a single export document for use in a change record.">
+          ${addBtnLabel}
+        </button>
+        <span style="cursor:default;font-size:.8rem;color:var(--text-muted);border:1px solid var(--border);
+                     border-radius:50%;width:1.2rem;height:1.2rem;display:inline-flex;align-items:center;
+                     justify-content:center;flex-shrink:0"
+              title="CLI diff format: lines prefixed + are additions, - are deletions, ~ are modifications. Changes are grouped by VDOM.">?</span>
       </span>
     </div>
+
+    ${tilesHtml ? `<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-bottom:.6rem">${tilesHtml}</div>` : ''}
 
     ${hasChanges ? vdomsHtml : '<p style="color:var(--text-muted);font-style:italic">No pending changes found for this device.</p>'}
 
