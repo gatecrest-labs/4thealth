@@ -48,7 +48,6 @@ Two sections on a single page: a full **Policy Rules** viewer and a **Hygiene An
 | `disabled` | Disabled / Inactive Rules | Rules whose `status` field is `disable` |
 | `expired` | Expired Rules | Rules referencing a time-based schedule whose end-date has passed |
 | `unhit` | Unused / Un-Hit Rules | Rules where the hit counter is 0 |
-| `no_deny_all` | Missing Deny-All Default | Package-level finding when no deny-all rule exists |
 
 ---
 
@@ -64,12 +63,15 @@ Runs configurable security checks against the management-plane interfaces of eve
 4. Click **Run Analysis** — findings appear in a filterable, paginated table.
 5. Export results as **CSV**, **JSON**, or **PDF** (PDF includes ADOM, timestamp, and device count — suitable as compliance evidence).
 
-### Severity Levels
+### Result Values
 
-| Severity | Meaning |
+| Result | Meaning |
 |---|---|
 | `INSECURE` | Red — cleartext protocol (HTTP, Telnet) is enabled |
-| `WARN` | Yellow — no secure management alternative (HTTPS, SSH) is present |
+| `FAIL` | Red — CIS check failed (server missing, sync disabled, etc.) |
+| `WARN` | Yellow — no secure management alternative present |
+| `CONFIG_MISSING` | Yellow — CIS check ran but no expected values supplied; device value shown for information |
+| `PASS` | Green — CIS check passed |
 | `INFO` | Blue — informational finding (e.g. PING enabled) |
 
 ### Adding a New Check
@@ -78,13 +80,68 @@ The check registry in `app/device_review.py` is the single place to add checks:
 
 ```python
 {
-    "key":         "my_check",
-    "name":        "Display Name",
-    "description": "One-line summary",
-    "severity":    "INSECURE|WARN|INFO",
-    "run":         _my_check_function,   # callable(device_name, interfaces) -> list[Finding]
+    "key":          "my_check",
+    "name":         "Display Name",
+    "description":  "One-line summary",
+    "data_keys":    ["interfaces"],       # which device data blobs to fetch
+    "params_schema": [],                  # [] = binary, or list of input descriptors
+    "run":          _my_check_function,   # callable(device_name, device_data, params) -> list[Row]
 }
 ```
+
+---
+
+## DIFF (Beta)
+
+Shows exactly which FortiOS CLI configuration lines will change when the next install is pushed to a device. Useful for change-record preparation and pre-change validation.
+
+All calls are read-only — the tab triggers FortiManager's install-preview workflow via the JSON-RPC API but never pushes any configuration to devices.
+
+### Workflow
+
+1. Select an **ADOM** — the device table loads, showing all devices with their current sync status.
+2. Optionally filter by device name or IP, or check **Pending only** to show only devices with outstanding changes.
+3. Click any device row — the diff panel populates with a per-VDOM CLI diff.
+4. Review the colour-coded diff: **green** lines are additions (`+`), **red** lines are deletions (`-`), **amber** lines are modifications (`~`).
+5. Click **+ Add to Export Queue** to accumulate multiple devices into a single export document.
+6. Export the queue as **CSV**, **JSON**, or **PDF** for use in a change record.
+
+### Status Badges
+
+The device table shows a single compact badge per device representing the highest-priority state:
+
+| Badge | Meaning |
+|---|---|
+| **Out of Sync** | Device config has drifted from FortiManager — a re-install is required |
+| **Pending** | FortiManager database has changes not yet pushed to the device |
+| **Pkg Pending** | Policy package has been modified in FortiManager but not yet installed |
+| **In Sync** | Device is fully in sync with FortiManager |
+
+The diff panel header shows the full set of badges simultaneously (conf\_status, db\_status, and pkg\_status).
+
+### Summary Tiles
+
+Above the CLI diff, count tiles group changes by category: **Firewall Policy**, **Routing**, **Address**, **Service**, **System**, **Other**. Only categories with at least one change are shown.
+
+### Export Queue
+
+Devices can be staged into an export queue one at a time. The queue persists across device selections in the same ADOM. Changing ADOM clears the queue (with a confirmation prompt).
+
+Each export includes a metadata header with ADOM, device list, timestamp, and username.
+
+### Backend
+
+`parse_preview_diff()` in `app/fmg_client.py` chains two FMG JSON-RPC calls (trigger + poll) to retrieve the raw CLI diff text, then parses it into structured `{type, line}` change objects grouped by VDOM.
+
+**API endpoints:**
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/pending-changes/adoms` | List ADOMs accessible to the current user |
+| GET | `/api/pending-changes/adoms/<adom>/devices` | Device list with `conf_status`, `db_status`, `pkg_status` |
+| POST | `/api/pending-changes/adoms/<adom>/device/<device>/preview` | Trigger and return the install-preview diff |
+
+Device status lookups (`pkg_status`) are parallelised with a thread pool (10 workers) to avoid 504 timeouts on large ADOMs.
 
 ---
 
