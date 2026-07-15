@@ -352,125 +352,172 @@ class FMGClient:
     def get_install_preview(self, adom: str, device: str) -> str:
         """Trigger FMG install preview for device, poll until done, return raw CLI diff text.
 
+        Implements the 4-step chained workflow required for FMG 7.4.4+:
+          1. securityconsole/install/package  flags=["preview"] — stage the package
+          2. securityconsole/install/preview  flags=["none"]    — generate combined diff
+          3. securityconsole/preview/result                     — fetch CLI text
+          4. securityconsole/package/cancel/install             — cleanup (best-effort)
+
+        Scope uses name-based {"name": device, "vdom": vdom_name} format — OID-based scope
+        was silently broken by FMG 7.4.4.
+
         Raises FMGError on task failure or timeout.
         Returns empty string if device has no pending changes.
         """
-        # Step 1: trigger — FMG's own GUI addresses adom/scope by numeric oid, not by
-        # name (confirmed via network capture of a working GUI-triggered preview).
-        # Name-based scope without vdom fails outright ("No device"); name-based
-        # scope with vdom "succeeds" but silently yields an empty diff.
-        adom_info = self._get(f"/dvmdb/adom/{adom}")
-        adom_oid = adom_info.get("oid") if isinstance(adom_info, dict) else None
-        device_info = self.get_device(adom, device)
-        device_oid = device_info.get("oid")
-        vdoms = device_info.get("vdom") or []
-        vdom_oids = [
-            v.get("oid") for v in vdoms if isinstance(v, dict) and v.get("oid")
-        ]
-        if adom_oid is None or device_oid is None:
-            raise FMGError(f"Could not resolve adom/device oid for {device}")
-        scope = [{"oid": device_oid, "vdom_oid": v} for v in vdom_oids] or [
-            {"oid": device_oid, "vdom_oid": adom_oid}
-        ]
-        trigger_body = {
-            "id": self._next_id(),
-            "method": "exec",
-            "params": [
-                {
-                    "url": "/securityconsole/install/preview",
-                    "data": {
-                        "adom": adom_oid,
-                        "scope": scope,
-                    },
-                }
-            ],
-        }
-        if self.session:
-            trigger_body["session"] = self.session
-        trigger_resp = self._post(trigger_body)
-        trigger_result = trigger_resp.get("result", [{}])[0]
-        if trigger_result.get("status", {}).get("code", -1) != 0:
-            raise FMGError(
-                f"Preview trigger failed for {device}: {trigger_result.get('status')}"
-            )
-        taskid = trigger_result.get("data", {}).get("task")
-        if not taskid:
-            raise FMGError(f"No task ID returned for preview of {device}")
+        vdoms = self.get_device_vdoms(adom, device)
+        vdom_names = (
+            [
+                v.get("name", "root")
+                for v in vdoms
+                if isinstance(v, dict) and v.get("name")
+            ]
+            if vdoms
+            else ["root"]
+        )
+        scope = [{"name": device, "vdom": v} for v in vdom_names]
 
-        # Step 2: poll
-        deadline = time.time() + PREVIEW_TIMEOUT_SECS
-        while time.time() < deadline:
-            poll_body = {
+        # Resolve per-vdom package assignments. Only stage packages that are
+        # "modified" — staging an already-installed package overwrites the preview
+        # state and causes preview/result to return empty for the modified package.
+        pkg_names: list[str] = []
+        for vname in vdom_names:
+            info = self.get_package_info(adom, device, vname)
+            pname = info.get("pkg_name", "")
+            if (
+                pname
+                and pname not in pkg_names
+                and info.get("pkg_status") == "modified"
+            ):
+                pkg_names.append(pname)
+
+        def _exec(url: str, data: dict) -> dict:
+            body = {
                 "id": self._next_id(),
-                "method": "get",
-                "params": [{"url": f"/task/task/{taskid}"}],
+                "method": "exec",
+                "params": [{"url": url, "data": data}],
             }
             if self.session:
-                poll_body["session"] = self.session
-            poll_resp = self._post(poll_body)
-            poll_result = poll_resp.get("result", [{}])[0]
-            task_data = poll_result.get("data", [])
-            if isinstance(task_data, list) and task_data:
-                task_data = task_data[0]
-            if isinstance(task_data, dict):
-                percent = task_data.get("percent", 0)
-                num_err = task_data.get("num_err", 0)
-                if percent >= 100:
-                    if num_err:
-                        lines = task_data.get("line") or []
-                        detail = ""
-                        if isinstance(lines, list) and lines:
-                            failed = next(
-                                (
-                                    line_obj
-                                    for line_obj in lines
-                                    if isinstance(line_obj, dict)
-                                    and line_obj.get("err")
-                                ),
-                                lines[0] if isinstance(lines[0], dict) else {},
+                body["session"] = self.session
+            resp = self._post(body)
+            result = resp.get("result", [{}])[0]
+            if result.get("status", {}).get("code", -1) != 0:
+                raise FMGError(f"FMG error on {url}: {result.get('status')}")
+            return result.get("data", {})
+
+        def _poll(taskid: int, label: str) -> None:
+            deadline = time.time() + PREVIEW_TIMEOUT_SECS
+            while time.time() < deadline:
+                poll_body = {
+                    "id": self._next_id(),
+                    "method": "get",
+                    "params": [{"url": f"/task/task/{taskid}"}],
+                }
+                if self.session:
+                    poll_body["session"] = self.session
+                poll_resp = self._post(poll_body)
+                poll_result = poll_resp.get("result", [{}])[0]
+                task_data = poll_result.get("data", [])
+                if isinstance(task_data, list) and task_data:
+                    task_data = task_data[0]
+                if isinstance(task_data, dict):
+                    percent = task_data.get("percent", 0)
+                    num_err = task_data.get("num_err", 0)
+                    if percent >= 100:
+                        if num_err:
+                            lines = task_data.get("line") or []
+                            detail = ""
+                            if isinstance(lines, list) and lines:
+                                failed = next(
+                                    (
+                                        ln
+                                        for ln in lines
+                                        if isinstance(ln, dict) and ln.get("err")
+                                    ),
+                                    lines[0] if isinstance(lines[0], dict) else {},
+                                )
+                                detail = failed.get("detail", "")
+                            raise FMGError(
+                                f"{label} task {taskid} for {device} failed"
+                                f"{f': {detail}' if detail else ''}"
                             )
-                            detail = failed.get("detail", "")
-                        raise FMGError(
-                            f"Preview task {taskid} for {device} failed"
-                            f"{f': {detail}' if detail else ''}"
-                        )
-                    break
-            time.sleep(2)
-        else:
+                        return
+                time.sleep(2)
             raise FMGError(
-                f"Preview task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s"
+                f"{label} task {taskid} for {device} timed out after {PREVIEW_TIMEOUT_SECS}s"
             )
 
-        # Step 3: fetch result — endpoint takes no adom suffix; scope and
-        # preview_taskid must match the trigger request exactly.
-        result_body = {
-            "id": self._next_id(),
-            "method": "exec",
-            "params": [
-                {
-                    "url": "/securityconsole/preview/result",
-                    "data": {
-                        "adom": adom_oid,
+        # Step 1: stage each assigned policy package so policy changes appear in
+        # the diff. Multi-vdom devices can have a different package per vdom, so
+        # we stage each unique pkg_name. Skip entirely if none are assigned.
+        # Failure modes:
+        #   - RPC rejected (no task): fall through silently, try next pkg.
+        #   - Task accepted but fails mid-run (num_err > 0): propagate.
+        stage_ok = False
+        for pkg_name in pkg_names:
+            try:
+                stage_data = _exec(
+                    "/securityconsole/install/package",
+                    {
+                        "adom": adom,
+                        "flags": ["preview"],
                         "scope": scope,
-                        "preview_taskid": taskid,
+                        "pkg": pkg_name,
                     },
-                }
-            ],
-        }
-        if self.session:
-            result_body["session"] = self.session
-        result_resp = self._post(result_body)
-        result_result = result_resp.get("result", [{}])[0]
-        if result_result.get("status", {}).get("code", -1) != 0:
-            return ""
-        message = result_result.get("data", {}).get("message", "")
+                )
+                stage_taskid = stage_data.get("task")
+                if stage_taskid:
+                    _poll(stage_taskid, "Stage")
+                    stage_ok = True
+            except FMGError as exc:
+                if "Stage task" in str(exc):
+                    raise
+                # RPC rejection for this pkg — try the next one
+
+        # Step 2: generate preview diff report
+        try:
+            preview_data = _exec(
+                "/securityconsole/install/preview",
+                {"adom": adom, "flags": ["none"], "scope": scope},
+            )
+        except FMGError:
+            # Both stage and preview calls rejected — device has no pending changes
+            if not stage_ok:
+                return ""
+            raise
+        preview_taskid = preview_data.get("task")
+        if not preview_taskid:
+            if not stage_ok:
+                return ""
+            raise FMGError(f"No task ID returned for install/preview of {device}")
+        _poll(preview_taskid, "Preview")
+
+        # Step 3: fetch result
+        message = ""
+        try:
+            result_data = _exec(
+                "/securityconsole/preview/result",
+                {"adom": adom, "scope": scope, "preview_taskid": preview_taskid},
+            )
+            message = result_data.get("message", "")
+        except FMGError:
+            pass
+
+        # Step 4: cleanup — FMG holds a pending-install lock until cancelled
+        try:
+            _exec(
+                "/securityconsole/package/cancel/install",
+                {"adom": adom, "scope": scope},
+            )
+        except Exception:
+            pass
+
         if not message:
             return ""
         # message is a JSON-encoded list: [{"name": device, "oid": ..., "result": "..."}]
         try:
             entries = json.loads(message)
         except (ValueError, TypeError):
-            return ""
+            return message
         if not isinstance(entries, list):
             return ""
         for entry in entries:
@@ -560,6 +607,51 @@ class FMGClient:
             return []
         except Exception:
             return []
+
+    def get_package_info(self, adom: str, device: str, vdom: str = "root") -> dict:
+        """Return policy package info for a device/vdom.
+
+        Calls /pm/config/adom/{adom}/_package/status/{device}/{vdom}.
+        Response fields (confirmed against FMG 7.4.x):
+          "pkg"    — package path string, e.g. "PROD/LMR/Device_Policy" (absent if unassigned)
+          "status" — plain string: "installed" | "modified" | "unassigned"
+        Returns {"pkg_name": str, "pkg_status": str} where pkg_status is one of
+        "modified", "nomod", or "" (unassigned / error).
+        """
+        try:
+            data = self._get(f"/pm/config/adom/{adom}/_package/status/{device}/{vdom}")
+            if not isinstance(data, dict):
+                return {"pkg_name": "", "pkg_status": ""}
+            pkg_name = data.get("pkg", "")
+            raw_status = data.get("status", "")
+            if raw_status == "modified":
+                pkg_status = "modified"
+            elif raw_status == "installed":
+                pkg_status = "nomod"
+            else:
+                pkg_status = ""  # unassigned or unknown
+            return {"pkg_name": pkg_name, "pkg_status": pkg_status}
+        except Exception:
+            return {"pkg_name": "", "pkg_status": ""}
+
+    def get_package_status(self, adom: str, device: str, vdom: str = "root") -> str:
+        """Return the policy package install status string for a device/vdom.
+
+        Returns "modified" if any vdom's package is modified, "nomod" if all
+        are installed, or "" if all are unassigned/error.
+        """
+        return self.get_package_info(adom, device, vdom)["pkg_status"]
+
+    def get_device_pkg_status(self, adom: str, device: str, vdom_names: list) -> str:
+        """Check package status across all vdoms — returns "modified" if any are modified."""
+        statuses = [
+            self.get_package_info(adom, device, v)["pkg_status"] for v in vdom_names
+        ]
+        if "modified" in statuses:
+            return "modified"
+        if "nomod" in statuses:
+            return "nomod"
+        return ""
 
     def get_policy_packages(self, adom: str) -> list:
         """Return all policy packages in an ADOM, recursing into folder subobj lists.
