@@ -375,7 +375,7 @@ Shows FortiManager install-preview diffs per device. All operations are read-onl
 
 Table rows show a single compact badge (highest-priority state). The diff panel header shows all three badges simultaneously.
 
-**Diff parsing:** `parse_preview_diff()` in `app/fmg_client.py` chains two FMG JSON-RPC calls — trigger (`_exec` on `/securityconsole/install/package`) then poll (`/task/taskid`) — to obtain the raw CLI diff text. It parses each line into `{type: "add"|"remove"|"modify", line: str}` objects grouped by VDOM.
+**Diff generation:** `get_install_preview()` in `app/fmg_client.py` chains four FMG JSON-RPC calls: stage the modified package (`/securityconsole/install/package`, `flags=["preview"]`) → generate the combined preview (`/securityconsole/install/preview`) → fetch the CLI text (`/securityconsole/preview/result`) → cancel the pending-install lock (`/securityconsole/package/cancel/install`). `get_package_info()` treats FMG 7.6.x's `"conflict"` package status the same as `"modified"` for staging purposes (7.4.x never returns `"conflict"`). `preview/result` is looked up first by the `install/preview` task's own ID (the key confirmed working on FMG 7.4.10), falling back to the staging task's ID if that returns no diff (required on FMG 7.6.7) — this fallback ordering was reverse-engineered by capturing FMG 7.6.7's own GUI JSON-RPC traffic. `parse_preview_diff()` then parses the raw CLI text into `{type: "add"|"remove"|"modify", line: str}` objects grouped by VDOM.
 
 **Export queue:** Multiple devices can be staged before exporting. Changing ADOM clears the queue with a confirmation prompt. Each export includes a metadata header (ADOM, device list, timestamp, username via `PC_USER` template global).
 
