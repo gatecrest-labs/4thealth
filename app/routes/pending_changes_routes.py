@@ -8,15 +8,17 @@ API (JSON, all read-only):
        returns: [{name, desc}, ...]
 
   GET  /api/pending-changes/adoms/<adom>/devices
-       returns: [{name, ip, platform, version, conf_status, db_status, serial}, ...]
-       Note: pkg_status is NOT included in this list — it's fetched lazily at preview
-       time to avoid hundreds of serial API calls on large ADOMs.
+       returns: [{name, ip, platform, version, conf_status, db_status, pkg_status, serial}, ...]
+       pkg_status is fetched in parallel using root-vdom only (1 API call per device, not
+       per vdom) so large ADOMs with many VDOMs do not cause 504 timeouts.
 
   POST /api/pending-changes/adoms/<adom>/device/<device>/preview
        returns: {device, ip, conf_status, db_status, pkg_status, summary, vdoms, raw}
 """
 
 from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Blueprint, render_template, session, jsonify
 
@@ -84,41 +86,62 @@ def pending_changes_devices(adom: str):
         with make_client() as client:
             raw = client.get_devices_with_sync_status(adom)
 
-        seen: set[str] = set()
-        devices = []
-        for d in raw:
-            if not isinstance(d, dict):
-                continue
-            name = d.get("name", "")
-            if not name or name in seen:
-                continue
-            seen.add(name)
-            os_ver = d.get("os_ver", 0)
-            mr = d.get("mr")
-            patch = d.get("patch")
-            major = (
-                int(os_ver) // 100
-                if str(os_ver).isdigit() and int(os_ver) >= 100
-                else os_ver
-            )
-            if mr is not None and patch is not None:
-                version = f"v{major}.{mr}.{patch}"
-            elif mr is not None:
-                version = f"v{major}.{mr}"
-            else:
-                version = "n/a"
-            devices.append(
-                {
-                    "name": name,
-                    "ip": d.get("ip", d.get("mgmt_ip", "")),
-                    "platform": d.get("platform_str", d.get("platform", "")),
-                    "version": version,
-                    "conf_status": d.get("conf_status", "unknown"),
-                    "db_status": d.get("db_status", "unknown"),
-                    "pkg_status": "",  # fetched lazily at preview time
-                    "serial": d.get("sn", d.get("serial", "")),
-                }
-            )
+            seen: set[str] = set()
+            base_devices = []
+            for d in raw:
+                if not isinstance(d, dict):
+                    continue
+                name = d.get("name", "")
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+                os_ver = d.get("os_ver", 0)
+                mr = d.get("mr")
+                patch = d.get("patch")
+                major = (
+                    int(os_ver) // 100
+                    if str(os_ver).isdigit() and int(os_ver) >= 100
+                    else os_ver
+                )
+                if mr is not None and patch is not None:
+                    version = f"v{major}.{mr}.{patch}"
+                elif mr is not None:
+                    version = f"v{major}.{mr}"
+                else:
+                    version = "n/a"
+                base_devices.append(
+                    {
+                        "name": name,
+                        "ip": d.get("ip", d.get("mgmt_ip", "")),
+                        "platform": d.get("platform_str", d.get("platform", "")),
+                        "version": version,
+                        "conf_status": d.get("conf_status", "unknown"),
+                        "db_status": d.get("db_status", "unknown"),
+                        "serial": d.get("sn", d.get("serial", "")),
+                    }
+                )
+
+            # Fetch pkg_status in parallel — one call per device (root vdom only).
+            # Checking root only avoids N×vdom_count calls on large multi-vdom ADOMs
+            # while still catching the common case where the root package is modified.
+            def _fetch_pkg(entry: dict) -> tuple[str, str]:
+                try:
+                    return entry["name"], client.get_package_status(
+                        adom, entry["name"], "root"
+                    )
+                except Exception:
+                    return entry["name"], ""
+
+            pkg_map: dict[str, str] = {}
+            with ThreadPoolExecutor(max_workers=10) as pool:
+                futures = {pool.submit(_fetch_pkg, e): e["name"] for e in base_devices}
+                for fut in as_completed(futures):
+                    name, status = fut.result()
+                    pkg_map[name] = status
+
+        devices = [
+            {**d, "pkg_status": pkg_map.get(d["name"], "")} for d in base_devices
+        ]
         return jsonify(devices)
     except FMGError as exc:
         return upstream_api_error("pending_changes", exc)

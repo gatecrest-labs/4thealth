@@ -161,30 +161,28 @@ def _split_vdom_blocks(raw: str) -> list[tuple[str, str]]:
             blocks.append((vname, content))
         return blocks
 
-    # Format B: "config vdom\n    edit <name>\n    ...\n    next\nend" sections
-    # Each vdom section starts with "config vdom" and contains "edit <name>" subsections.
+    # Format B: "config vdom\n    edit <name>\n    ...\n    next\nend" sections.
+    # Split on "config vdom" markers, then take only the FIRST "edit" line in
+    # each block as the vdom name. All subsequent "edit" lines are diff content
+    # (address objects, policy IDs, etc.) and must not be used as vdom names.
     config_vdom_blocks = re.split(
         r"^config\s+vdom\s*$", raw, flags=re.MULTILINE | re.IGNORECASE
     )
     if len(config_vdom_blocks) > 1:
         blocks = []
         for block in config_vdom_blocks[1:]:
-            # Each block: "    edit <name>\n    <content>\n    next\nend\n..."
-            # Split on "    edit <name>" / "    next" pairs
-            edit_split = re.split(r"^\s+edit\s+(\S+)\s*$", block, flags=re.MULTILINE)
-            if len(edit_split) > 1:
-                for j in range(1, len(edit_split), 2):
-                    vname = edit_split[j].strip().strip('"')
-                    content = edit_split[j + 1] if j + 1 < len(edit_split) else ""
-                    # Strip trailing "next" and "end" wrapper lines
-                    content = re.sub(r"^\s*next\s*$", "", content, flags=re.MULTILINE)
-                    content = re.sub(
-                        r"^\s*end\s*$", "", content, count=1, flags=re.MULTILINE
-                    )
-                    blocks.append((vname, content))
-            else:
-                # Malformed block — skip
+            # The first "edit" line at any leading whitespace is the vdom name.
+            m = re.search(r"^\s+edit\s+(\S+)\s*$", block, flags=re.MULTILINE)
+            if not m:
                 continue
+            vname = m.group(1).strip('"')
+            # Everything after "edit <vdom>" is the diff content for this vdom.
+            content = block[m.end() :]
+            # Strip the outer wrapper lines (next / end) that belong to
+            # "config vdom", not to the diff content itself.
+            content = re.sub(r"^\s*next\s*$", "", content, flags=re.MULTILINE)
+            content = re.sub(r"^\s*end\s*$", "", content, count=1, flags=re.MULTILINE)
+            blocks.append((vname, content))
         if blocks:
             return blocks
 
