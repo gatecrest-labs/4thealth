@@ -489,7 +489,15 @@ class FMGClient:
         # Failure modes:
         #   - RPC rejected (no task): fall through silently, try next pkg.
         #   - Task accepted but fails mid-run (num_err > 0): propagate.
+        #
+        # FMG's own web GUI links preview/result back to the STAGE task's ID via
+        # a "preview_taskid" field passed into both the install/preview call and
+        # the final preview/result call — not the install/preview call's own task
+        # ID. Confirmed by capturing the GUI's own JSON-RPC traffic on FMG 7.6.7;
+        # without this, install/preview reports status=OK but preview/result
+        # always returns "No preview result" even though a real diff exists.
         stage_ok = False
+        last_stage_taskid = None
         for pkg_name in pkg_names:
             try:
                 stage_data = _exec(
@@ -505,17 +513,18 @@ class FMGClient:
                 if stage_taskid:
                     _poll(stage_taskid, "Stage")
                     stage_ok = True
+                    last_stage_taskid = stage_taskid
             except FMGError as exc:
                 if "Stage task" in str(exc):
                     raise
                 # RPC rejection for this pkg — try the next one
 
-        # Step 2: generate preview diff report
+        # Step 2: generate preview diff report, linked to the stage task above
+        preview_request: dict = {"adom": adom, "flags": ["none"], "scope": scope}
+        if last_stage_taskid:
+            preview_request["preview_taskid"] = last_stage_taskid
         try:
-            preview_data = _exec(
-                "/securityconsole/install/preview",
-                {"adom": adom, "flags": ["none"], "scope": scope},
-            )
+            preview_data = _exec("/securityconsole/install/preview", preview_request)
         except FMGError:
             # Both stage and preview calls rejected — device has no pending changes
             if not stage_ok:
@@ -528,12 +537,17 @@ class FMGClient:
             raise FMGError(f"No task ID returned for install/preview of {device}")
         _poll(preview_taskid, "Preview")
 
-        # Step 3: fetch result
+        # Step 3: fetch result — keyed by the STAGE task's ID, not the
+        # install/preview task's ID (see note on Step 1 above).
         message = ""
         try:
             result_data = _exec(
                 "/securityconsole/preview/result",
-                {"adom": adom, "scope": scope, "preview_taskid": preview_taskid},
+                {
+                    "adom": adom,
+                    "scope": scope,
+                    "preview_taskid": last_stage_taskid or preview_taskid,
+                },
             )
             message = result_data.get("message", "")
         except FMGError:
@@ -649,9 +663,12 @@ class FMGClient:
         """Return policy package info for a device/vdom.
 
         Calls /pm/config/adom/{adom}/_package/status/{device}/{vdom}.
-        Response fields (confirmed against FMG 7.4.x):
+        Response fields (confirmed against FMG 7.4.x, extended for 7.6.x):
           "pkg"    — package path string, e.g. "PROD/LMR/Device_Policy" (absent if unassigned)
-          "status" — plain string: "installed" | "modified" | "unassigned"
+          "status" — plain string: "installed" | "modified" | "conflict" | "unassigned"
+                     "conflict" is a 7.6.x value meaning the assigned package differs from
+                     what's installed on the device — same install-preview handling as
+                     "modified", it just isn't surfaced on 7.4.x.
         Returns {"pkg_name": str, "pkg_status": str} where pkg_status is one of
         "modified", "nomod", or "" (unassigned / error).
         """
@@ -661,7 +678,7 @@ class FMGClient:
                 return {"pkg_name": "", "pkg_status": ""}
             pkg_name = data.get("pkg", "")
             raw_status = data.get("status", "")
-            if raw_status == "modified":
+            if raw_status in ("modified", "conflict"):
                 pkg_status = "modified"
             elif raw_status == "installed":
                 pkg_status = "nomod"
