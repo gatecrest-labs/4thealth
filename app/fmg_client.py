@@ -680,15 +680,19 @@ class FMGClient:
         return self.get_package_info(adom, device, vdom)["pkg_status"]
 
     def get_device_pkg_status(self, adom: str, device: str, vdom_names: list) -> str:
-        """Check package status across all vdoms — returns "modified" if any are modified."""
-        statuses = [
-            self.get_package_info(adom, device, v)["pkg_status"] for v in vdom_names
-        ]
-        if "modified" in statuses:
-            return "modified"
-        if "nomod" in statuses:
-            return "nomod"
-        return ""
+        """Check package status across all vdoms — returns "modified" if any are modified.
+
+        Short-circuits on the first "modified" vdom so multi-vdom devices with many
+        vdoms don't make unnecessary extra calls once a modified package is found.
+        """
+        found_nomod = False
+        for vname in vdom_names:
+            status = self.get_package_info(adom, device, vname)["pkg_status"]
+            if status == "modified":
+                return "modified"
+            if status == "nomod":
+                found_nomod = True
+        return "nomod" if found_nomod else ""
 
     def get_policy_packages(self, adom: str) -> list:
         """Return all policy packages in an ADOM, recursing into folder subobj lists.

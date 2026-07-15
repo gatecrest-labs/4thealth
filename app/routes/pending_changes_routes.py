@@ -109,6 +109,18 @@ def pending_changes_devices(adom: str):
                     version = f"v{major}.{mr}"
                 else:
                     version = "n/a"
+                # Use the embedded vdom list from the device record so the
+                # pkg_status check below covers all vdoms without extra API calls.
+                embedded_vdoms = d.get("vdom") or []
+                vdom_list = (
+                    [
+                        v.get("name", "root")
+                        for v in embedded_vdoms
+                        if isinstance(v, dict) and v.get("name")
+                    ]
+                    if embedded_vdoms
+                    else ["root"]
+                )
                 base_devices.append(
                     {
                         "name": name,
@@ -118,16 +130,17 @@ def pending_changes_devices(adom: str):
                         "conf_status": d.get("conf_status", "unknown"),
                         "db_status": d.get("db_status", "unknown"),
                         "serial": d.get("sn", d.get("serial", "")),
+                        "_vdom_list": vdom_list,
                     }
                 )
 
-            # Fetch pkg_status in parallel — one call per device (root vdom only).
-            # Checking root only avoids N×vdom_count calls on large multi-vdom ADOMs
-            # while still catching the common case where the root package is modified.
+            # Fetch pkg_status in parallel — one call per vdom, but short-circuits
+            # as soon as any vdom is "modified". The vdom list comes from the device
+            # record already returned above, so no extra API round-trip is needed.
             def _fetch_pkg(entry: dict) -> tuple[str, str]:
                 try:
-                    return entry["name"], client.get_package_status(
-                        adom, entry["name"], "root"
+                    return entry["name"], client.get_device_pkg_status(
+                        adom, entry["name"], entry["_vdom_list"]
                     )
                 except Exception:
                     return entry["name"], ""
@@ -140,7 +153,9 @@ def pending_changes_devices(adom: str):
                     pkg_map[name] = status
 
         devices = [
-            {**d, "pkg_status": pkg_map.get(d["name"], "")} for d in base_devices
+            {k: v for k, v in d.items() if k != "_vdom_list"}
+            | {"pkg_status": pkg_map.get(d["name"], "")}
+            for d in base_devices
         ]
         return jsonify(devices)
     except FMGError as exc:
