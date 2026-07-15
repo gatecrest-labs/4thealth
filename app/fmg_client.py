@@ -141,6 +141,56 @@ def _classify_lines(content: str) -> list:
     return changes
 
 
+def _split_vdom_blocks(raw: str) -> list[tuple[str, str]]:
+    """Split raw FMG diff text into (vdom_name, content) blocks.
+
+    FMG uses two formats depending on version/mode:
+      Format A (standalone marker):  a bare line "vdom <name>" separates sections.
+      Format B (nested config block): "config vdom\\n    edit <name>\\n...\\n    next\\nend"
+        wraps each vdom's diff inside a config vdom block.
+
+    Returns list of (name, content) tuples, or [("root", raw)] if no markers found.
+    """
+    # Format A: standalone "vdom <name>" line
+    split_a = re.split(r"^\s*vdom\s+(\S+)\s*$", raw, flags=re.MULTILINE)
+    if len(split_a) > 1:
+        blocks = []
+        for i in range(1, len(split_a), 2):
+            vname = split_a[i].strip()
+            content = split_a[i + 1] if i + 1 < len(split_a) else ""
+            blocks.append((vname, content))
+        return blocks
+
+    # Format B: "config vdom\n    edit <name>\n    ...\n    next\nend" sections
+    # Each vdom section starts with "config vdom" and contains "edit <name>" subsections.
+    config_vdom_blocks = re.split(
+        r"^config\s+vdom\s*$", raw, flags=re.MULTILINE | re.IGNORECASE
+    )
+    if len(config_vdom_blocks) > 1:
+        blocks = []
+        for block in config_vdom_blocks[1:]:
+            # Each block: "    edit <name>\n    <content>\n    next\nend\n..."
+            # Split on "    edit <name>" / "    next" pairs
+            edit_split = re.split(r"^\s+edit\s+(\S+)\s*$", block, flags=re.MULTILINE)
+            if len(edit_split) > 1:
+                for j in range(1, len(edit_split), 2):
+                    vname = edit_split[j].strip().strip('"')
+                    content = edit_split[j + 1] if j + 1 < len(edit_split) else ""
+                    # Strip trailing "next" and "end" wrapper lines
+                    content = re.sub(r"^\s*next\s*$", "", content, flags=re.MULTILINE)
+                    content = re.sub(
+                        r"^\s*end\s*$", "", content, count=1, flags=re.MULTILINE
+                    )
+                    blocks.append((vname, content))
+            else:
+                # Malformed block — skip
+                continue
+        if blocks:
+            return blocks
+
+    return [("root", raw)]
+
+
 def parse_preview_diff(raw: str) -> dict:
     """Parse raw FMG install-preview CLI text into structured diff.
 
@@ -166,18 +216,7 @@ def parse_preview_diff(raw: str) -> dict:
             "raw": raw,
         }
 
-    # Split into VDOM blocks if multi-VDOM markers present
-    vdom_split = re.split(r"^\s*vdom\s+(\S+)\s*$", raw, flags=re.MULTILINE)
-
-    if len(vdom_split) > 1:
-        # Odd indices are vdom names, even indices >=2 are their content
-        vdom_blocks = []
-        for i in range(1, len(vdom_split), 2):
-            vname = vdom_split[i].strip()
-            content = vdom_split[i + 1] if i + 1 < len(vdom_split) else ""
-            vdom_blocks.append((vname, content))
-    else:
-        vdom_blocks = [("root", raw)]
+    vdom_blocks = _split_vdom_blocks(raw)
 
     summary = dict(empty_summary)
     vdoms_out = []
