@@ -317,6 +317,55 @@ def test_parse_preview_diff_raw_preserved():
     assert result["raw"] == raw
 
 
+def test_parse_preview_diff_nested_config_vdom_format():
+    """FMG wraps each vdom's diff in 'config vdom / edit <name>' blocks."""
+    from app.fmg_client import parse_preview_diff
+    raw = (
+        "config vdom\n"
+        "    edit root\n"
+        "    config firewall address\n"
+        "        edit \"host-1\"\n"
+        "            set subnet 10.0.0.1 255.255.255.255\n"
+        "        next\n"
+        "    end\n"
+        "    next\n"
+        "end\n"
+        "config vdom\n"
+        "    edit LOHOEX99\n"
+        "    config firewall policy\n"
+        "        edit 10033\n"
+        "            set action accept\n"
+        "        next\n"
+        "    end\n"
+        "    next\n"
+        "end\n"
+    )
+    result = parse_preview_diff(raw)
+    names = [v["name"] for v in result["vdoms"]]
+    assert "root" in names
+    assert "LOHOEX99" in names
+    # LOHOEX99 block should have firewall policy changes
+    loho = next(v for v in result["vdoms"] if v["name"] == "LOHOEX99")
+    assert len(loho["changes"]) > 0
+
+
+def test_parse_preview_diff_nested_single_vdom():
+    """Single config vdom block falls back correctly."""
+    from app.fmg_client import parse_preview_diff
+    raw = (
+        "config vdom\n"
+        "    edit PROD\n"
+        "    config system global\n"
+        "        set hostname myfw\n"
+        "    end\n"
+        "    next\n"
+        "end\n"
+    )
+    result = parse_preview_diff(raw)
+    assert result["vdoms"][0]["name"] == "PROD"
+    assert len(result["vdoms"][0]["changes"]) > 0
+
+
 # ── Route smoke tests ─────────────────────────────────────────────────────────
 
 @pytest.fixture

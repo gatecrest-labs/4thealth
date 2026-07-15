@@ -70,7 +70,7 @@
   </div>
 
   <!-- Right: diff panel -->
-  <div style="flex:1;min-width:0">
+  <div style="flex:1;min-width:0;overflow:hidden">
     <div id="pcDiffPanel">
       <p style="color:var(--text-muted);font-style:italic">Select a device to view pending changes.</p>
     </div>
@@ -81,7 +81,7 @@
 <!-- Export queue footer (hidden until queue has items) -->
 <div id="pcQueueFooter"
      style="display:none;position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);
-            padding:.6rem 1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;z-index:100">
+            padding:.6rem 1rem;align-items:center;gap:.75rem;flex-wrap:wrap;z-index:100">
   <strong style="font-size:.85rem;white-space:nowrap">Export Queue:</strong>
   <div id="pcQueueChips" style="display:flex;gap:.4rem;flex-wrap:wrap;flex:1"></div>
   <div style="display:flex;gap:.4rem;margin-left:auto">
