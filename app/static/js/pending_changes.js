@@ -297,7 +297,7 @@ function renderDiffPanel(diff) {
 
     const vn   = JSON.stringify(vdom.name); // safe JS string literal for onclick
     const pbtn = (label, p, disabled) =>
-      `<button class="btn btn-xs" onclick="setVdomPage(${vn},${p},null)" ${disabled ? 'disabled' : ''}>${label}</button>`;
+      `<button class="btn btn-xs" onclick='setVdomPage(${vn},${p},null)' ${disabled ? 'disabled' : ''}>${label}</button>`;
 
     const paginationHtml = totalLines > ps ? `
       <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-top:.4rem;font-size:.8rem">
@@ -307,7 +307,7 @@ function renderDiffPanel(diff) {
         ${pbtn('&rsaquo;', page + 1,  page === totalPages)}
         ${pbtn('&raquo;', totalPages,  page === totalPages)}
         <select class="form-select form-select-sm" style="width:70px;font-size:.8rem"
-                onchange="setVdomPage(${vn}, 1, parseInt(this.value, 10))">
+                onchange='setVdomPage(${vn}, 1, parseInt(this.value, 10))'>
           ${[10, 25, 50].map(n => `<option value="${n}"${n === ps ? ' selected' : ''}>${n}</option>`).join('')}
         </select>
         <span style="color:var(--text-muted)">${totalLines} lines total</span>
