@@ -22,10 +22,10 @@
 </div>
 
 <!-- Two-column layout -->
-<div style="display:flex;gap:1.25rem;margin-top:1.25rem;align-items:flex-start">
+<div class="pc-layout">
 
   <!-- Left: device list -->
-  <div style="flex:0 0 420px;min-width:280px">
+  <div class="pc-layout-left">
     <div style="display:flex;gap:.6rem;align-items:center;margin-bottom:.6rem;flex-wrap:wrap">
       <input type="text" id="pcSearch" class="form-control"
              placeholder="Search by name or IP…"
@@ -70,7 +70,7 @@
   </div>
 
   <!-- Right: diff panel -->
-  <div style="flex:1;min-width:0;overflow:hidden">
+  <div class="pc-layout-right">
     <div id="pcDiffPanel">
       <p style="color:var(--text-muted);font-style:italic">Select a device to view pending changes.</p>
     </div>
