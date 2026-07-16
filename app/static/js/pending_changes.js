@@ -27,6 +27,7 @@ let currentDevice  = null;
 let currentDiff    = null;
 let exportQueue    = [];  // [{device, ip, adom, summary, vdoms, raw, timestamp}]
 let _previewAbort  = null;
+let vdomPageState  = new Map(); // vdom.name → { page, pageSize }
 
 /* ── Status badges ───────────────────────────────────────────────────────────── */
 
@@ -185,6 +186,7 @@ function selectDevice(device) {
 }
 
 async function loadPreview(adom, deviceName) {
+  vdomPageState = new Map();
   if (_previewAbort) { _previewAbort.abort(); }
   _previewAbort = new AbortController();
   const signal = _previewAbort.signal;
@@ -214,6 +216,16 @@ async function loadPreview(adom, deviceName) {
     if (e.name === 'AbortError') return;
     showDiffError(deviceName, e.message);
   }
+}
+
+/* ── Per-VDOM pagination ────────────────────────────────────────────────── */
+function setVdomPage(vdomName, newPage, newPageSize) {
+  const current = vdomPageState.get(vdomName) || { page: 1, pageSize: 25 };
+  vdomPageState.set(vdomName, {
+    page: newPage,
+    pageSize: newPageSize != null ? newPageSize : current.pageSize,
+  });
+  renderDiffPanel(currentDiff);
 }
 
 /* ── Diff panel rendering ───────────────────────────────────────────────────── */
@@ -267,18 +279,48 @@ function renderDiffPanel(diff) {
   // VDOM diff blocks
   const vdomsHtml = diff.vdoms.map(vdom => {
     if (!vdom.changes.length) return '';
-    const linesHtml = vdom.changes.map(c => {
-      const cls = c.type === 'add' ? 'diff-add' : c.type === 'remove' ? 'diff-remove' : 'diff-modify';
+
+    if (!vdomPageState.has(vdom.name)) {
+      vdomPageState.set(vdom.name, { page: 1, pageSize: 25 });
+    }
+    const { page, pageSize: ps } = vdomPageState.get(vdom.name);
+    const totalLines  = vdom.changes.length;
+    const totalPages  = Math.ceil(totalLines / ps);
+    const sliceStart  = (page - 1) * ps;
+    const pageChanges = vdom.changes.slice(sliceStart, sliceStart + ps);
+
+    const linesHtml = pageChanges.map(c => {
+      const cls    = c.type === 'add' ? 'diff-add' : c.type === 'remove' ? 'diff-remove' : 'diff-modify';
       const prefix = c.type === 'add' ? '+' : c.type === 'remove' ? '-' : '~';
-      return `<span class="${cls}">${esc(prefix + ' ' + c.line)}</span>`;
-    }).join('\n');
+      return `<span class="${cls}" style="display:block;padding-left:1.4em;text-indent:-1.4em">${esc(prefix + ' ' + c.line)}</span>`;
+    }).join('');
+
+    const vn   = JSON.stringify(vdom.name); // safe JS string literal for onclick
+    const pbtn = (label, p, disabled) =>
+      `<button class="btn btn-xs" onclick="setVdomPage(${vn},${p},null)" ${disabled ? 'disabled' : ''}>${label}</button>`;
+
+    const paginationHtml = totalLines > ps ? `
+      <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-top:.4rem;font-size:.8rem">
+        ${pbtn('&laquo;', 1,           page === 1)}
+        ${pbtn('&lsaquo;', page - 1,  page === 1)}
+        <span style="color:var(--text-muted);padding:0 .2rem">Page ${page} of ${totalPages}</span>
+        ${pbtn('&rsaquo;', page + 1,  page === totalPages)}
+        ${pbtn('&raquo;', totalPages,  page === totalPages)}
+        <select class="form-select form-select-sm" style="width:70px;font-size:.8rem"
+                onchange="setVdomPage(${vn}, 1, parseInt(this.value, 10))">
+          ${[10, 25, 50].map(n => `<option value="${n}"${n === ps ? ' selected' : ''}>${n}</option>`).join('')}
+        </select>
+        <span style="color:var(--text-muted)">${totalLines} lines total</span>
+      </div>` : '';
+
     return `<details open style="margin-top:.6rem">
       <summary style="cursor:pointer;font-weight:500;font-size:.82rem;padding:.2rem 0;
                        color:var(--text-muted);letter-spacing:.03em;text-transform:uppercase">
         vdom: ${esc(vdom.name)}
       </summary>
       <pre class="diff-block" style="background:var(--surface-alt);border:1px solid var(--border);
-           border-radius:4px;padding:.75rem;overflow-x:auto;font-size:.8rem;margin:.4rem 0 0">${linesHtml}</pre>
+           border-radius:4px;padding:.75rem;white-space:pre-wrap;overflow-wrap:break-word;font-size:.8rem;margin:.4rem 0 0">${linesHtml}</pre>
+      ${paginationHtml}
     </details>`;
   }).join('');
 

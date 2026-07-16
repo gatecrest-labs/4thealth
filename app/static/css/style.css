@@ -2463,3 +2463,13 @@ a:hover { text-decoration: underline; }
   justify-content: flex-end;
   margin-bottom: .5rem;
 }
+
+/* ── DIFF tab two-column layout ─────────────────────────────────────────── */
+.pc-layout       { display:flex; gap:1.25rem; margin-top:1.25rem; align-items:flex-start; }
+.pc-layout-left  { flex:0 0 420px; min-width:280px; }
+.pc-layout-right { flex:1; min-width:0; overflow:hidden; }
+
+@media (max-width:900px) {
+  .pc-layout { flex-direction:column; }
+  .pc-layout-left { flex:none; width:100%; }
+}
