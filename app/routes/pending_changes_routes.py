@@ -9,16 +9,31 @@ API (JSON, all read-only):
 
   GET  /api/pending-changes/adoms/<adom>/devices
        returns: [{name, ip, platform, version, conf_status, db_status, pkg_status, serial}, ...]
-       pkg_status is fetched in parallel using root-vdom only (1 API call per device, not
-       per vdom) so large ADOMs with many VDOMs do not cause 504 timeouts.
+       Served from pending_status_cache (30-min background refresh); falls back to live
+       FMG fetch on cold start.
 
   POST /api/pending-changes/adoms/<adom>/device/<device>/preview
-       returns: {device, ip, conf_status, db_status, pkg_status, summary, vdoms, raw}
+       returns: {task_id: str}  — starts async FMG chain, poll GET /task/<task_id> for result
+
+  GET  /api/pending-changes/task/<task_id>
+       returns: {status: "running"|"done"|"error", step: str, result: dict|null, error: str|null}
+       Task entries are evicted after 10 minutes.
+
+Task state is stored as per-task JSON files under a shared temp directory so
+all gunicorn workers see the same state regardless of which worker handles the
+POST vs the polling GETs.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+import threading
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 from flask import Blueprint, render_template, session, jsonify
 
@@ -34,6 +49,57 @@ bp = Blueprint("pending_changes", __name__)
 registry.register(
     "pending_changes", "DIFF (BETA)", "pending_changes.pending_changes_page"
 )
+
+# ── Async preview task store (file-based, shared across all gunicorn workers) ─
+# Each task is a JSON file: <_TASK_DIR>/<task_id>.json
+# Files are written atomically via a tmp-then-rename pattern so readers always
+# see a complete JSON document.  created_at is a Unix wall-clock float so the
+# TTL check works in any worker process.
+
+_TASK_TTL_SECS = 600  # evict completed/failed entries after 10 minutes
+# UID-scoped so each OS user gets their own directory — avoids permission
+# collisions when CI (root/deploy) and the service account (4thealth) both
+# create the directory on the same host.
+_TASK_DIR: Path = Path(tempfile.gettempdir()) / f"4thealth_preview_tasks_{os.getuid()}"
+
+_WRITE_LOCK = threading.Lock()  # serialise writes within a single worker only
+
+
+def _ensure_task_dir() -> None:
+    _TASK_DIR.mkdir(exist_ok=True)
+
+
+def _task_path(task_id: str) -> Path:
+    return _TASK_DIR / f"{task_id}.json"
+
+
+def _write_task(task_id: str, data: dict) -> None:
+    _ensure_task_dir()
+    path = _task_path(task_id)
+    tmp = path.with_suffix(".tmp")
+    with _WRITE_LOCK:
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        tmp.replace(path)
+
+
+def _read_task(task_id: str) -> dict | None:
+    path = _task_path(task_id)
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def _evict_old_tasks() -> None:
+    _ensure_task_dir()
+    now = time.time()
+    for f in _TASK_DIR.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if now - data.get("created_at", 0) > _TASK_TTL_SECS:
+                f.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
@@ -83,6 +149,13 @@ def pending_changes_devices(adom: str):
     if err := check_adom_access(adom):
         return err
     try:
+        from app.pending_status_cache import get_cached_devices
+
+        cached = get_cached_devices(adom)
+        if cached is not None:
+            return jsonify(cached)
+
+        # Cache cold (first startup) — fall back to live fetch
         with make_client() as client:
             raw = client.get_devices_with_sync_status(adom)
 
@@ -109,8 +182,6 @@ def pending_changes_devices(adom: str):
                     version = f"v{major}.{mr}"
                 else:
                     version = "n/a"
-                # Use the embedded vdom list from the device record so the
-                # pkg_status check below covers all vdoms without extra API calls.
                 embedded_vdoms = d.get("vdom") or []
                 vdom_list = (
                     [
@@ -134,9 +205,6 @@ def pending_changes_devices(adom: str):
                     }
                 )
 
-            # Fetch pkg_status in parallel — one call per vdom, but short-circuits
-            # as soon as any vdom is "modified". The vdom list comes from the device
-            # record already returned above, so no extra API round-trip is needed.
             def _fetch_pkg(entry: dict) -> tuple[str, str]:
                 try:
                     return entry["name"], client.get_device_pkg_status(
@@ -172,19 +240,47 @@ def pending_changes_devices(adom: str):
 def pending_changes_preview(adom: str, device: str):
     if err := check_adom_access(adom):
         return err
-    try:
-        with make_client() as client:
-            # Fetch device IP/status for response metadata
-            raw_devices = client.get_devices_with_sync_status(adom)
-            device_meta = next(
-                (d for d in raw_devices if d.get("name", "").lower() == device.lower()),
-                {},
-            )
-            pkg_status = client.get_package_status(adom, device)
-            raw = client.get_install_preview(adom, device)
-        parsed = parse_preview_diff(raw)
-        return jsonify(
-            {
+
+    _evict_old_tasks()
+    task_id = str(uuid.uuid4())
+    _write_task(
+        task_id,
+        {
+            "status": "running",
+            "step": "Starting…",
+            "result": None,
+            "error": None,
+            "created_at": time.time(),
+        },
+    )
+
+    def _run(task_id=task_id, adom=adom, device=device):
+        def _set_step(msg: str) -> None:
+            data = _read_task(task_id)
+            if data is not None:
+                data["step"] = msg
+                _write_task(task_id, data)
+
+        try:
+            _set_step("Fetching device info…")
+            with make_client() as client:
+                raw_devices = client.get_devices_with_sync_status(adom)
+                device_meta = next(
+                    (
+                        d
+                        for d in raw_devices
+                        if d.get("name", "").lower() == device.lower()
+                    ),
+                    {},
+                )
+                _set_step("Checking package status…")
+                pkg_status = client.get_package_status(adom, device)
+                _set_step("Staging policy package…")
+                raw = client.get_install_preview(adom, device)
+
+            _set_step("Parsing diff…")
+            parsed = parse_preview_diff(raw)
+            result = {
                 "device": device,
                 "ip": device_meta.get("ip", device_meta.get("mgmt_ip", "")),
                 "conf_status": device_meta.get("conf_status", "unknown"),
@@ -194,18 +290,33 @@ def pending_changes_preview(adom: str, device: str):
                 "vdoms": parsed["vdoms"],
                 "raw": parsed["raw"],
             }
-        )
-    except FMGError as exc:
-        msg = str(exc)
-        if "timed out" in msg:
-            return jsonify(
-                {
-                    "error": f"Preview timed out for {device} — FMG could not reach the device in time."
-                }
-            ), 504
-        # Surface the raw FMG error in the UI (BETA tab) so operators can diagnose
-        # without needing server log access
-        upstream_api_error("pending_changes", exc)
-        return jsonify({"error": msg}), 502
-    except Exception as exc:
-        return internal_api_error("pending_changes", exc)
+            data = _read_task(task_id)
+            if data is not None:
+                data.update({"status": "done", "step": "Done", "result": result})
+                _write_task(task_id, data)
+        except Exception as exc:
+            data = _read_task(task_id)
+            if data is not None:
+                data.update({"status": "error", "step": "Failed", "error": str(exc)})
+                _write_task(task_id, data)
+
+    t = threading.Thread(target=_run, name=f"preview_{task_id[:8]}", daemon=True)
+    t.start()
+    return jsonify({"task_id": task_id})
+
+
+@bp.route("/api/pending-changes/task/<task_id>")
+@tab_required("pending_changes")
+def pending_changes_task_status(task_id: str):
+    _evict_old_tasks()
+    entry = _read_task(task_id)
+    if entry is None:
+        return jsonify({"error": "Task not found or expired"}), 404
+    return jsonify(
+        {
+            "status": entry["status"],
+            "step": entry["step"],
+            "result": entry["result"],
+            "error": entry["error"],
+        }
+    )
