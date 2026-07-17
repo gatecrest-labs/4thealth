@@ -192,30 +192,56 @@ async function loadPreview(adom, deviceName) {
   const signal = _previewAbort.signal;
 
   currentDiff = null;
-  showDiffSpinner(deviceName);
+  showDiffSpinner(deviceName, 'Starting…');
 
+  // Step 1: POST to start the async task, get task_id back immediately
+  let taskId = null;
   try {
     const resp = await fetch(
       `/api/pending-changes/adoms/${encodeURIComponent(adom)}/device/${encodeURIComponent(deviceName)}/preview`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-        signal,
-      }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}), signal }
     );
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
       throw new Error(err.error || `HTTP ${resp.status}`);
     }
-    currentDiff = await resp.json();
-    currentDiff.adom = adom;
-    currentDiff.timestamp = new Date().toISOString();
-    renderDiffPanel(currentDiff);
+    const data = await resp.json();
+    taskId = data.task_id;
   } catch (e) {
     if (e.name === 'AbortError') return;
     showDiffError(deviceName, e.message);
+    return;
   }
+
+  // Step 2: Poll until done or error, updating the spinner label each cycle
+  const POLL_INTERVAL_MS = 2000;
+  const poll = async () => {
+    if (signal.aborted) return;
+    try {
+      const resp = await fetch(`/api/pending-changes/task/${encodeURIComponent(taskId)}`, { signal });
+      if (signal.aborted) return;
+      if (!resp.ok) {
+        showDiffError(deviceName, `Poll failed: HTTP ${resp.status}`);
+        return;
+      }
+      const task = await resp.json();
+      if (task.status === 'running') {
+        showDiffSpinner(deviceName, task.step || 'Working…');
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } else if (task.status === 'done') {
+        currentDiff = task.result;
+        currentDiff.adom = adom;
+        currentDiff.timestamp = new Date().toISOString();
+        renderDiffPanel(currentDiff);
+      } else {
+        showDiffError(deviceName, task.error || 'Unknown error from server.');
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      showDiffError(deviceName, e.message);
+    }
+  };
+  setTimeout(poll, POLL_INTERVAL_MS);
 }
 
 /* ── Per-VDOM pagination ────────────────────────────────────────────────── */
@@ -236,13 +262,13 @@ function clearDiffPanel() {
     '<p style="color:var(--text-muted);font-style:italic">Select a device to view pending changes.</p>';
 }
 
-function showDiffSpinner(deviceName) {
+function showDiffSpinner(deviceName, step) {
   document.getElementById('pcDiffPanel').innerHTML = `
     <div style="padding:1.5rem;text-align:center">
       <div class="spinner" style="display:inline-block;width:28px;height:28px;border:3px solid var(--border);
            border-top-color:var(--primary,#3b82f6);border-radius:50%;animation:spin 0.8s linear infinite"></div>
       <p style="margin-top:.75rem;color:var(--text-muted);font-style:italic">
-        FortiManager is generating diff for <strong>${esc(deviceName)}</strong>, please wait…
+        <strong>${esc(deviceName)}</strong>: ${esc(step || 'Starting…')}
       </p>
     </div>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;

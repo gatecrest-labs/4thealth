@@ -11,6 +11,19 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ---
 
+## [2026-07-17] — DIFF tab performance (Option D)
+
+### Added
+- `app/pending_status_cache.py` — background APScheduler job (30-minute interval) that pre-fetches device list + `pkg_status` for every ADOM. The DIFF tab device table now loads from this cache (sub-50 ms) instead of blocking on N parallel FMG API calls (previously 5–15 s on large ADOMs). Falls back to a live FMG fetch on cold start before the first cache cycle completes.
+- Async task+poll pattern for per-device diff preview: `POST /api/pending-changes/adoms/<adom>/device/<device>/preview` now returns `{"task_id": "<uuid>"}` immediately instead of blocking. `GET /api/pending-changes/task/<task_id>` returns `{status, step, result, error}`. Task entries are evicted after 10 minutes.
+- Step-label spinner in the DIFF panel: the browser polls every 2 s and shows the current step label ("Fetching device info…", "Staging policy package…", "Parsing diff…") so operators can see forward progress during the 15–60 s FMG chain instead of a silent spinner.
+
+### Changed
+- `pending_changes_routes.py`: devices endpoint reads from `pending_status_cache`; preview endpoint spawns a daemon thread and returns a task ID; new poll endpoint added.
+- `pending_changes.js`: `loadPreview()` replaced with a two-step fetch (POST → task_id, then `setTimeout` poll loop); `showDiffSpinner()` now accepts and displays a step-label argument.
+
+---
+
 ## [2026-07-15] — DIFF (Beta) fix for FortiManager 7.6.x
 
 ### Fixed

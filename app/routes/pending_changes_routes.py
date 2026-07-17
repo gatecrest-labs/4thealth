@@ -9,15 +9,22 @@ API (JSON, all read-only):
 
   GET  /api/pending-changes/adoms/<adom>/devices
        returns: [{name, ip, platform, version, conf_status, db_status, pkg_status, serial}, ...]
-       pkg_status is fetched in parallel using root-vdom only (1 API call per device, not
-       per vdom) so large ADOMs with many VDOMs do not cause 504 timeouts.
+       Served from pending_status_cache (30-min background refresh); falls back to live
+       FMG fetch on cold start.
 
   POST /api/pending-changes/adoms/<adom>/device/<device>/preview
-       returns: {device, ip, conf_status, db_status, pkg_status, summary, vdoms, raw}
+       returns: {task_id: str}  — starts async FMG chain, poll GET /task/<task_id> for result
+
+  GET  /api/pending-changes/task/<task_id>
+       returns: {status: "running"|"done"|"error", step: str, result: dict|null, error: str|null}
+       Task entries are evicted after 10 minutes.
 """
 
 from __future__ import annotations
 
+import threading
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Blueprint, render_template, session, jsonify
@@ -34,6 +41,24 @@ bp = Blueprint("pending_changes", __name__)
 registry.register(
     "pending_changes", "DIFF (BETA)", "pending_changes.pending_changes_page"
 )
+
+# ── Async preview task store ──────────────────────────────────────────────────
+# Keyed by task_id (UUID str) → {status, step, result, error, created_at}
+_PREVIEW_TASKS: dict[str, dict] = {}
+_TASKS_LOCK = threading.Lock()
+_TASK_TTL_SECS = 600  # evict completed/failed entries after 10 minutes
+
+
+def _evict_old_tasks() -> None:
+    now = time.monotonic()
+    with _TASKS_LOCK:
+        expired = [
+            k
+            for k, v in _PREVIEW_TASKS.items()
+            if now - v["created_at"] > _TASK_TTL_SECS
+        ]
+        for k in expired:
+            del _PREVIEW_TASKS[k]
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
@@ -83,6 +108,13 @@ def pending_changes_devices(adom: str):
     if err := check_adom_access(adom):
         return err
     try:
+        from app.pending_status_cache import get_cached_devices
+
+        cached = get_cached_devices(adom)
+        if cached is not None:
+            return jsonify(cached)
+
+        # Cache cold (first startup) — fall back to live fetch
         with make_client() as client:
             raw = client.get_devices_with_sync_status(adom)
 
@@ -109,8 +141,6 @@ def pending_changes_devices(adom: str):
                     version = f"v{major}.{mr}"
                 else:
                     version = "n/a"
-                # Use the embedded vdom list from the device record so the
-                # pkg_status check below covers all vdoms without extra API calls.
                 embedded_vdoms = d.get("vdom") or []
                 vdom_list = (
                     [
@@ -134,9 +164,6 @@ def pending_changes_devices(adom: str):
                     }
                 )
 
-            # Fetch pkg_status in parallel — one call per vdom, but short-circuits
-            # as soon as any vdom is "modified". The vdom list comes from the device
-            # record already returned above, so no extra API round-trip is needed.
             def _fetch_pkg(entry: dict) -> tuple[str, str]:
                 try:
                     return entry["name"], client.get_device_pkg_status(
@@ -172,19 +199,44 @@ def pending_changes_devices(adom: str):
 def pending_changes_preview(adom: str, device: str):
     if err := check_adom_access(adom):
         return err
-    try:
-        with make_client() as client:
-            # Fetch device IP/status for response metadata
-            raw_devices = client.get_devices_with_sync_status(adom)
-            device_meta = next(
-                (d for d in raw_devices if d.get("name", "").lower() == device.lower()),
-                {},
-            )
-            pkg_status = client.get_package_status(adom, device)
-            raw = client.get_install_preview(adom, device)
-        parsed = parse_preview_diff(raw)
-        return jsonify(
-            {
+
+    _evict_old_tasks()
+    task_id = str(uuid.uuid4())
+    with _TASKS_LOCK:
+        _PREVIEW_TASKS[task_id] = {
+            "status": "running",
+            "step": "Starting…",
+            "result": None,
+            "error": None,
+            "created_at": time.monotonic(),
+        }
+
+    def _run(task_id=task_id, adom=adom, device=device):
+        def _set_step(msg: str) -> None:
+            with _TASKS_LOCK:
+                if task_id in _PREVIEW_TASKS:
+                    _PREVIEW_TASKS[task_id]["step"] = msg
+
+        try:
+            _set_step("Fetching device info…")
+            with make_client() as client:
+                raw_devices = client.get_devices_with_sync_status(adom)
+                device_meta = next(
+                    (
+                        d
+                        for d in raw_devices
+                        if d.get("name", "").lower() == device.lower()
+                    ),
+                    {},
+                )
+                _set_step("Checking package status…")
+                pkg_status = client.get_package_status(adom, device)
+                _set_step("Staging policy package…")
+                raw = client.get_install_preview(adom, device)
+
+            _set_step("Parsing diff…")
+            parsed = parse_preview_diff(raw)
+            result = {
                 "device": device,
                 "ip": device_meta.get("ip", device_meta.get("mgmt_ip", "")),
                 "conf_status": device_meta.get("conf_status", "unknown"),
@@ -194,18 +246,36 @@ def pending_changes_preview(adom: str, device: str):
                 "vdoms": parsed["vdoms"],
                 "raw": parsed["raw"],
             }
-        )
-    except FMGError as exc:
-        msg = str(exc)
-        if "timed out" in msg:
-            return jsonify(
-                {
-                    "error": f"Preview timed out for {device} — FMG could not reach the device in time."
-                }
-            ), 504
-        # Surface the raw FMG error in the UI (BETA tab) so operators can diagnose
-        # without needing server log access
-        upstream_api_error("pending_changes", exc)
-        return jsonify({"error": msg}), 502
-    except Exception as exc:
-        return internal_api_error("pending_changes", exc)
+            with _TASKS_LOCK:
+                if task_id in _PREVIEW_TASKS:
+                    _PREVIEW_TASKS[task_id].update(
+                        {"status": "done", "step": "Done", "result": result}
+                    )
+        except Exception as exc:
+            with _TASKS_LOCK:
+                if task_id in _PREVIEW_TASKS:
+                    _PREVIEW_TASKS[task_id].update(
+                        {"status": "error", "step": "Failed", "error": str(exc)}
+                    )
+
+    t = threading.Thread(target=_run, name=f"preview_{task_id[:8]}", daemon=True)
+    t.start()
+    return jsonify({"task_id": task_id})
+
+
+@bp.route("/api/pending-changes/task/<task_id>")
+@tab_required("pending_changes")
+def pending_changes_task_status(task_id: str):
+    _evict_old_tasks()
+    with _TASKS_LOCK:
+        entry = _PREVIEW_TASKS.get(task_id)
+    if entry is None:
+        return jsonify({"error": "Task not found or expired"}), 404
+    return jsonify(
+        {
+            "status": entry["status"],
+            "step": entry["step"],
+            "result": entry["result"],
+            "error": entry["error"],
+        }
+    )

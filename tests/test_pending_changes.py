@@ -389,3 +389,21 @@ def test_pending_changes_adoms_redirects_unauthenticated(client):
 def test_pending_changes_devices_redirects_unauthenticated(client):
     resp = client.get("/api/pending-changes/adoms/MyADOM/devices")
     assert resp.status_code in (302, 401)
+
+
+# ── Task store / async preview ────────────────────────────────────────────────
+
+def test_pending_changes_preview_returns_task_id_unauthenticated(client):
+    """POST preview rejects unauthenticated requests (not 404/405).
+    400 is also valid — CSRF check fires before auth redirect for POST."""
+    resp = client.post(
+        "/api/pending-changes/adoms/MyADOM/device/FW1/preview",
+        json={},
+    )
+    assert resp.status_code in (302, 400, 401)
+
+
+def test_pending_changes_task_poll_unauthenticated(client):
+    """GET /api/pending-changes/task/<id> redirects unauthenticated users."""
+    resp = client.get("/api/pending-changes/task/nonexistent-task-id")
+    assert resp.status_code in (302, 401)

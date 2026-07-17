@@ -120,6 +120,16 @@ def create_app() -> Flask:
 
         init_infra_health_scheduler(app)
 
+    if not app.config.get("TESTING") and not app.config.get(
+        "_PENDING_STATUS_CACHE_STARTED"
+    ):
+        app.config["_PENDING_STATUS_CACHE_STARTED"] = True
+        from app.pending_status_cache import (
+            init_scheduler as init_pending_status_scheduler,
+        )
+
+        init_pending_status_scheduler(app)
+
     @app.context_processor
     def inject_session_globals():
         role = session.get("role", "viewer")
