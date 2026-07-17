@@ -2466,10 +2466,17 @@ a:hover { text-decoration: underline; }
 
 /* ── DIFF tab two-column layout ─────────────────────────────────────────── */
 .pc-layout       { display:flex; gap:1.25rem; margin-top:1.25rem; align-items:flex-start; }
-.pc-layout-left  { flex:0 0 420px; min-width:280px; }
+.pc-layout-left  { flex:0 0 480px; min-width:320px; max-width:480px; overflow:hidden; }
 .pc-layout-right { flex:1; min-width:0; overflow:hidden; }
+
+/* Fixed table layout — pixel widths so nothing clips at 480px panel */
+#pcDeviceTable                                                   { table-layout:fixed; width:100%; }
+#pcDeviceTable th:nth-child(1), #pcDeviceTable td:nth-child(1)  { width:155px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#pcDeviceTable th:nth-child(2), #pcDeviceTable td:nth-child(2)  { width:105px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#pcDeviceTable th:nth-child(3), #pcDeviceTable td:nth-child(3)  { width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#pcDeviceTable th:nth-child(4), #pcDeviceTable td:nth-child(4)  { width:90px; }
 
 @media (max-width:900px) {
   .pc-layout { flex-direction:column; }
-  .pc-layout-left { flex:none; width:100%; }
+  .pc-layout-left { flex:none; width:100%; max-width:none; }
 }
