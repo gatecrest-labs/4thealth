@@ -18,14 +18,22 @@ API (JSON, all read-only):
   GET  /api/pending-changes/task/<task_id>
        returns: {status: "running"|"done"|"error", step: str, result: dict|null, error: str|null}
        Task entries are evicted after 10 minutes.
+
+Task state is stored as per-task JSON files under a shared temp directory so
+all gunicorn workers see the same state regardless of which worker handles the
+POST vs the polling GETs.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 from flask import Blueprint, render_template, session, jsonify
 
@@ -42,23 +50,56 @@ registry.register(
     "pending_changes", "DIFF (BETA)", "pending_changes.pending_changes_page"
 )
 
-# ── Async preview task store ──────────────────────────────────────────────────
-# Keyed by task_id (UUID str) → {status, step, result, error, created_at}
-_PREVIEW_TASKS: dict[str, dict] = {}
-_TASKS_LOCK = threading.Lock()
+# ── Async preview task store (file-based, shared across all gunicorn workers) ─
+# Each task is a JSON file: <_TASK_DIR>/<task_id>.json
+# Files are written atomically via a tmp-then-rename pattern so readers always
+# see a complete JSON document.  created_at is a Unix wall-clock float so the
+# TTL check works in any worker process.
+
 _TASK_TTL_SECS = 600  # evict completed/failed entries after 10 minutes
+# UID-scoped so each OS user gets their own directory — avoids permission
+# collisions when CI (root/deploy) and the service account (4thealth) both
+# create the directory on the same host.
+_TASK_DIR: Path = Path(tempfile.gettempdir()) / f"4thealth_preview_tasks_{os.getuid()}"
+
+_WRITE_LOCK = threading.Lock()  # serialise writes within a single worker only
+
+
+def _ensure_task_dir() -> None:
+    _TASK_DIR.mkdir(exist_ok=True)
+
+
+def _task_path(task_id: str) -> Path:
+    return _TASK_DIR / f"{task_id}.json"
+
+
+def _write_task(task_id: str, data: dict) -> None:
+    _ensure_task_dir()
+    path = _task_path(task_id)
+    tmp = path.with_suffix(".tmp")
+    with _WRITE_LOCK:
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        tmp.replace(path)
+
+
+def _read_task(task_id: str) -> dict | None:
+    path = _task_path(task_id)
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
 
 
 def _evict_old_tasks() -> None:
-    now = time.monotonic()
-    with _TASKS_LOCK:
-        expired = [
-            k
-            for k, v in _PREVIEW_TASKS.items()
-            if now - v["created_at"] > _TASK_TTL_SECS
-        ]
-        for k in expired:
-            del _PREVIEW_TASKS[k]
+    _ensure_task_dir()
+    now = time.time()
+    for f in _TASK_DIR.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if now - data.get("created_at", 0) > _TASK_TTL_SECS:
+                f.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
@@ -202,20 +243,23 @@ def pending_changes_preview(adom: str, device: str):
 
     _evict_old_tasks()
     task_id = str(uuid.uuid4())
-    with _TASKS_LOCK:
-        _PREVIEW_TASKS[task_id] = {
+    _write_task(
+        task_id,
+        {
             "status": "running",
             "step": "Starting…",
             "result": None,
             "error": None,
-            "created_at": time.monotonic(),
-        }
+            "created_at": time.time(),
+        },
+    )
 
     def _run(task_id=task_id, adom=adom, device=device):
         def _set_step(msg: str) -> None:
-            with _TASKS_LOCK:
-                if task_id in _PREVIEW_TASKS:
-                    _PREVIEW_TASKS[task_id]["step"] = msg
+            data = _read_task(task_id)
+            if data is not None:
+                data["step"] = msg
+                _write_task(task_id, data)
 
         try:
             _set_step("Fetching device info…")
@@ -246,17 +290,15 @@ def pending_changes_preview(adom: str, device: str):
                 "vdoms": parsed["vdoms"],
                 "raw": parsed["raw"],
             }
-            with _TASKS_LOCK:
-                if task_id in _PREVIEW_TASKS:
-                    _PREVIEW_TASKS[task_id].update(
-                        {"status": "done", "step": "Done", "result": result}
-                    )
+            data = _read_task(task_id)
+            if data is not None:
+                data.update({"status": "done", "step": "Done", "result": result})
+                _write_task(task_id, data)
         except Exception as exc:
-            with _TASKS_LOCK:
-                if task_id in _PREVIEW_TASKS:
-                    _PREVIEW_TASKS[task_id].update(
-                        {"status": "error", "step": "Failed", "error": str(exc)}
-                    )
+            data = _read_task(task_id)
+            if data is not None:
+                data.update({"status": "error", "step": "Failed", "error": str(exc)})
+                _write_task(task_id, data)
 
     t = threading.Thread(target=_run, name=f"preview_{task_id[:8]}", daemon=True)
     t.start()
@@ -267,8 +309,7 @@ def pending_changes_preview(adom: str, device: str):
 @tab_required("pending_changes")
 def pending_changes_task_status(task_id: str):
     _evict_old_tasks()
-    with _TASKS_LOCK:
-        entry = _PREVIEW_TASKS.get(task_id)
+    entry = _read_task(task_id)
     if entry is None:
         return jsonify({"error": "Task not found or expired"}), 404
     return jsonify(
