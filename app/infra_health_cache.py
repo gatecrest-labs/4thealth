@@ -28,6 +28,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     get_cmd,
     USM_AUTH_HMAC96_SHA,
     USM_AUTH_HMAC192_SHA256,
+    USM_AUTH_HMAC384_SHA512,
     USM_PRIV_CFB128_AES,
     USM_PRIV_CFB192_AES,
     USM_PRIV_CFB256_AES,
@@ -50,9 +51,10 @@ _SUPPORTED_TYPES = {"fortimanager", "fortianalyzer", "fortiauthenticator"}
 # percentage OID — mem is used-KB/total-KB and must be computed (see
 # "mem_total" handling in _poll_target below).
 #
-# FortiAnalyzer/FortiAuthenticator OIDs are still NOT confirmed against
-# real hardware — verify via snmpwalk before enabling SNMP_ENABLED=true
-# for those types in production. See CLAUDE.md.
+# FortiAnalyzer OIDs confirmed against real FAZ hardware (v7.4.10) —
+# same fmSystem group as FortiManager (1.3.6.1.4.1.12356.103.2.1.*),
+# same used-KB/total-KB pattern for memory.
+# FortiAuthenticator OIDs are still NOT confirmed against real hardware.
 OID_MAP = {
     "fortimanager": {
         "cpu": "1.3.6.1.4.1.12356.103.2.1.1.0",
@@ -60,8 +62,9 @@ OID_MAP = {
         "mem_total": "1.3.6.1.4.1.12356.103.2.1.3.0",
     },
     "fortianalyzer": {
-        "cpu": "1.3.6.1.4.1.12356.101.4.1.3.0",
-        "mem": "1.3.6.1.4.1.12356.101.4.1.4.0",
+        "cpu": "1.3.6.1.4.1.12356.103.2.1.1.0",
+        "mem_used": "1.3.6.1.4.1.12356.103.2.1.2.0",
+        "mem_total": "1.3.6.1.4.1.12356.103.2.1.3.0",
     },
     "fortiauthenticator": {
         "cpu": "1.3.6.1.4.1.12356.113.1.2.0",
@@ -72,6 +75,7 @@ OID_MAP = {
 _AUTH_PROTOCOLS = {
     "SHA": USM_AUTH_HMAC96_SHA,
     "SHA256": USM_AUTH_HMAC192_SHA256,
+    "SHA512": USM_AUTH_HMAC384_SHA512,
 }
 _PRIV_PROTOCOLS = {
     "AES": USM_PRIV_CFB128_AES,
