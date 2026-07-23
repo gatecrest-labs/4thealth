@@ -768,6 +768,9 @@ async function testSMTP() {
 
 /* ── Config-Diff: Jobs ───────────────────────────────────────────────────── */
 
+const _DAY_CODES = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+const _DAY_LABELS = {SUN:'Sun',MON:'Mon',TUE:'Tue',WED:'Wed',THU:'Thu',FRI:'Fri',SAT:'Sat'};
+
 let _cdiffJobs = [];
 
 async function loadJobs() {
@@ -780,19 +783,19 @@ function renderJobsTable() {
   const tbody = document.getElementById('jobsTableBody');
   if (!tbody) return;
   if (!_cdiffJobs.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="color:#6b7280;text-align:center">No scheduled jobs.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
     return;
   }
   tbody.innerHTML = _cdiffJobs.map(j => {
     const last = j.runs && j.runs[0];
     const ts   = last ? new Date(last.ran_at).toLocaleString() : '—';
-    const badge = !last ? '<span style="color:#6b7280">Never</span>'
+    const badge = !last ? '<span style="color:var(--text-muted)">Never</span>'
       : last.status === 'ok'
         ? '<span style="color:#166534;font-weight:600">OK</span>'
-        : `<span style="color:#b91c1c;font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
+        : `<span style="color:var(--danger);font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
     return `<tr>
       <td>${escH(j.adom)}</td>
-      <td>${escH(j.day_of_week)}</td>
+      <td>${(j.days_of_week||[]).map(d=>_DAY_LABELS[d]||d).join(', ')}</td>
       <td>${escH(j.time)}</td>
       <td>${escH(j.format.toUpperCase())}</td>
       <td>${escH(j.email)}</td>
@@ -800,7 +803,7 @@ function renderJobsTable() {
       <td>${badge}</td>
       <td>
         <button class="btn-sm" onclick="editJob('${j.id}')">Edit</button>
-        <button class="btn-sm" style="color:#b91c1c" onclick="deleteJob('${j.id}')">Delete</button>
+        <button class="btn-sm" style="color:var(--danger)" onclick="deleteJob('${j.id}')">Delete</button>
         <button class="btn-sm" id="runBtn-${j.id}" onclick="runJobNow('${j.id}')">Run Now</button>
       </td>
     </tr>`;
@@ -824,7 +827,11 @@ function showJobForm(job) {
   document.getElementById('jobFormTitle').textContent = job ? 'Edit Scheduled Export' : 'New Scheduled Export';
   document.getElementById('jobFormId').value      = job ? job.id : '';
   document.getElementById('jobFormAdom').value    = job ? job.adom : '';
-  document.getElementById('jobFormDay').value     = job ? job.day_of_week : 'MON';
+  const activeDays = job ? (job.days_of_week || ['MON']) : ['MON'];
+  _DAY_CODES.forEach(code => {
+    const chk = document.getElementById('dayChk-' + code);
+    if (chk) chk.checked = activeDays.includes(code);
+  });
   document.getElementById('jobFormTime').value    = job ? job.time : '06:00';
   document.getElementById('jobFormFormat').value  = job ? job.format : 'pdf';
   document.getElementById('jobFormEmail').value   = job ? job.email : '';
@@ -846,13 +853,22 @@ function editJob(id) {
 async function saveJob() {
   const msg    = document.getElementById('jobFormMsg');
   const id     = document.getElementById('jobFormId').value;
+  const selectedDays = _DAY_CODES.filter(code => {
+    const chk = document.getElementById('dayChk-' + code);
+    return chk && chk.checked;
+  });
+  if (selectedDays.length === 0) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Select at least one day.';
+    return;
+  }
   const payload = {
-    adom:        document.getElementById('jobFormAdom').value,
-    day_of_week: document.getElementById('jobFormDay').value,
-    time:        document.getElementById('jobFormTime').value,
-    format:      document.getElementById('jobFormFormat').value,
-    email:       document.getElementById('jobFormEmail').value.trim(),
-    enabled:     document.getElementById('jobFormEnabled').checked,
+    adom:         document.getElementById('jobFormAdom').value,
+    days_of_week: selectedDays,
+    time:         document.getElementById('jobFormTime').value,
+    format:       document.getElementById('jobFormFormat').value,
+    email:        document.getElementById('jobFormEmail').value.trim(),
+    enabled:      document.getElementById('jobFormEnabled').checked,
   };
   const url    = id ? `/admin/api/config-diff/jobs/${id}` : '/admin/api/config-diff/jobs';
   const method = id ? 'PUT' : 'POST';
@@ -864,7 +880,7 @@ async function saveJob() {
     loadJobs();
   } else {
     const err = await res.json().catch(() => ({}));
-    msg.style.color = '#b91c1c';
+    msg.style.color = 'var(--danger)';
     msg.textContent = err.error || 'Save failed.';
   }
 }

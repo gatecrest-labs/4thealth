@@ -27,8 +27,14 @@ _VALID_DAYS = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
 
 
 def _validate_job_fields(data: dict) -> None:
-    if data.get("day_of_week") not in _VALID_DAYS:
-        raise ValueError(f"day_of_week must be one of {sorted(_VALID_DAYS)}")
+    days = data.get("days_of_week")
+    if not isinstance(days, list) or not days:
+        raise ValueError("days_of_week must be a non-empty list")
+    invalid = [d for d in days if d not in _VALID_DAYS]
+    if invalid:
+        raise ValueError(
+            f"days_of_week contains invalid codes: {invalid}. Must be from {sorted(_VALID_DAYS)}"
+        )
     time_str = data.get("time", "")
     parts = time_str.split(":")
     if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
@@ -68,7 +74,7 @@ def create_job(data: dict) -> dict:
     job: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "adom": data["adom"],
-        "day_of_week": data["day_of_week"],
+        "days_of_week": data["days_of_week"],
         "time": data["time"],
         "format": data.get("format", "pdf"),
         "email": data["email"],
@@ -94,7 +100,7 @@ def update_job(job_id: str, data: dict) -> dict:
                 jobs[i] = {
                     **j,
                     "adom": data["adom"],
-                    "day_of_week": data["day_of_week"],
+                    "days_of_week": data["days_of_week"],
                     "time": data["time"],
                     "format": data.get("format", "pdf"),
                     "email": data["email"],
@@ -406,11 +412,10 @@ def _register(job: dict) -> None:
         "SAT": "sat",
     }
     h, m = job["time"].split(":")
+    day_str = ",".join(day_map[d] for d in job["days_of_week"])
     _scheduler.add_job(
         _execute_job,
-        CronTrigger(
-            day_of_week=day_map[job["day_of_week"]], hour=int(h), minute=int(m)
-        ),
+        CronTrigger(day_of_week=day_str, hour=int(h), minute=int(m)),
         args=[job["id"]],
         id=_apscheduler_id(job["id"]),
         replace_existing=True,

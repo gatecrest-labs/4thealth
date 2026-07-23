@@ -387,7 +387,7 @@ Table rows show a single compact badge (highest-priority state). The diff panel 
 
 ### Config-Diff Scheduled Exports
 
-`app/config_diff_scheduler.py` — APScheduler-based weekly export engine. Persists jobs and run history in `config_diff_jobs.json` (project root, gitignored). Registered in `app/__init__.py` alongside other background schedulers. Reuses `bulk_preview_adom()` from `app/routes/pending_changes_routes.py` for the actual FMG diff fetching.
+`app/config_diff_scheduler.py` — APScheduler-based export engine supporting scheduled jobs on one or more days of the week. Persists jobs and run history in `config_diff_jobs.json` (project root, gitignored); jobs store `days_of_week` (array of day codes like `["MON","THU"]`) that APScheduler converts to a comma-joined lowercase cron string. Registered in `app/__init__.py` alongside other background schedulers. Reuses `bulk_preview_adom()` from `app/routes/pending_changes_routes.py` for the actual FMG diff fetching.
 
 `app/smtp_client.py` — stdlib `smtplib` wrapper. Config in `smtp_config.json` (project root, gitignored). `send_email()` raises on failure; `test_connection()` always returns a dict.
 
