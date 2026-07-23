@@ -1,4 +1,5 @@
 """SMTP email client — wraps stdlib smtplib for 4THealth scheduled exports."""
+
 from __future__ import annotations
 
 import smtplib
@@ -28,6 +29,7 @@ _DEFAULTS: dict = {
 
 def load_smtp_config() -> dict:
     import json
+
     with _lock:
         if not _CONFIG_PATH.exists():
             return dict(_DEFAULTS)
@@ -44,8 +46,9 @@ def save_smtp_config(cfg: dict) -> None:
         atomic_write_json(_CONFIG_PATH, {**_DEFAULTS, **cfg})
 
 
-def _build_message(cfg: dict, to: str, subject: str, body_html: str,
-                   attachments: list[dict]) -> MIMEMultipart:
+def _build_message(
+    cfg: dict, to: str, subject: str, body_html: str, attachments: list[dict]
+) -> MIMEMultipart:
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = cfg.get("from_address") or cfg.get("host", "4thealth")
@@ -55,8 +58,7 @@ def _build_message(cfg: dict, to: str, subject: str, body_html: str,
         part = MIMEBase("application", "octet-stream")
         part.set_payload(att["data"])
         encoders.encode_base64(part)
-        part.add_header("Content-Disposition", "attachment",
-                        filename=att["filename"])
+        part.add_header("Content-Disposition", "attachment", filename=att["filename"])
         part.add_header("Content-Type", att["mimetype"])
         msg.attach(part)
     return msg
@@ -79,8 +81,9 @@ def _connect(cfg: dict) -> smtplib.SMTP:
     return conn
 
 
-def send_email(to: str, subject: str, body_html: str,
-               attachments: list[dict] | None = None) -> None:
+def send_email(
+    to: str, subject: str, body_html: str, attachments: list[dict] | None = None
+) -> None:
     cfg = load_smtp_config()
     if not cfg.get("enabled"):
         raise RuntimeError("SMTP not enabled — configure SMTP in Admin → Config-Diff")
@@ -99,8 +102,11 @@ def send_email(to: str, subject: str, body_html: str,
 
 def test_connection(to_address: str) -> dict:
     try:
-        send_email(to_address, "4THealth SMTP Test",
-                   "<p>SMTP connection test from 4THealth — if you received this, SMTP is working.</p>")
+        send_email(
+            to_address,
+            "4THealth SMTP Test",
+            "<p>SMTP connection test from 4THealth — if you received this, SMTP is working.</p>",
+        )
         return {"ok": True}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}

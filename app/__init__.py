@@ -138,6 +138,7 @@ def create_app() -> Flask:
             from app.config_diff_scheduler import (
                 init_scheduler as init_config_diff_scheduler,
             )
+
             with app.app_context():
                 init_config_diff_scheduler(app)
         except Exception as exc:

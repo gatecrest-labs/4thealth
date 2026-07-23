@@ -314,6 +314,7 @@ def api_tokens_revoke(token_id: str):
 
 # ── Config-Diff: SMTP ─────────────────────────────────────────────────────────
 
+
 @bp.route("/api/smtp")
 @_admin_required
 def admin_smtp_get():
@@ -346,6 +347,7 @@ def admin_smtp_test():
 
 
 # ── Config-Diff: Jobs ─────────────────────────────────────────────────────────
+
 
 @bp.route("/api/config-diff/jobs")
 @_admin_required

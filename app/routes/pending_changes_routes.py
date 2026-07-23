@@ -104,6 +104,7 @@ def _evict_old_tasks() -> None:
 
 # ── Bulk preview helper (used by scheduler + browser export) ─────────────────
 
+
 def bulk_preview_adom(adom: str) -> list[dict]:
     """Fetch install-preview diffs for every device in *adom* in parallel.
 
@@ -127,8 +128,7 @@ def bulk_preview_adom(adom: str) -> list[dict]:
         if not name or name in seen:
             continue
         seen.add(name)
-        devices.append({"name": name,
-                         "ip": d.get("ip", d.get("mgmt_ip", ""))})
+        devices.append({"name": name, "ip": d.get("ip", d.get("mgmt_ip", ""))})
 
     def _preview_one(dev: dict) -> dict:
         try:
@@ -136,15 +136,34 @@ def bulk_preview_adom(adom: str) -> list[dict]:
                 raw = client.get_install_preview(adom, dev["name"])
             parsed = parse_preview_diff(raw)
             if not any(v.get("changes") for v in parsed.get("vdoms", [])):
-                return {"device": dev["name"], "ip": dev["ip"],
-                        "status": "no_changes", "summary": {}, "vdoms": [], "raw": "", "error": None}
-            return {"device": dev["name"], "ip": dev["ip"], "status": "ok",
-                    "summary": parsed["summary"], "vdoms": parsed["vdoms"],
-                    "raw": parsed["raw"], "error": None}
+                return {
+                    "device": dev["name"],
+                    "ip": dev["ip"],
+                    "status": "no_changes",
+                    "summary": {},
+                    "vdoms": [],
+                    "raw": "",
+                    "error": None,
+                }
+            return {
+                "device": dev["name"],
+                "ip": dev["ip"],
+                "status": "ok",
+                "summary": parsed["summary"],
+                "vdoms": parsed["vdoms"],
+                "raw": parsed["raw"],
+                "error": None,
+            }
         except Exception as exc:
-            return {"device": dev["name"], "ip": dev["ip"],
-                    "status": "error", "summary": {}, "vdoms": [], "raw": "",
-                    "error": str(exc)}
+            return {
+                "device": dev["name"],
+                "ip": dev["ip"],
+                "status": "error",
+                "summary": {},
+                "vdoms": [],
+                "raw": "",
+                "error": str(exc),
+            }
 
     results = []
     with ThreadPoolExecutor(max_workers=10) as pool:

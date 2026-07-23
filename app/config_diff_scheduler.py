@@ -3,6 +3,7 @@
 Jobs and run history are persisted in config_diff_jobs.json (project root).
 Each enabled job is registered as an APScheduler CronTrigger at startup.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -19,8 +20,8 @@ from app.app_logger import app_log
 
 _JOBS_PATH = Path(__file__).parent.parent / "config_diff_jobs.json"
 _lock = threading.Lock()
-_scheduler = None          # BackgroundScheduler instance, set by init_scheduler
-_running_jobs: set[str] = set()   # job IDs currently executing (for status polling)
+_scheduler = None  # BackgroundScheduler instance, set by init_scheduler
+_running_jobs: set[str] = set()  # job IDs currently executing (for status polling)
 
 _VALID_DAYS = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
 
@@ -38,6 +39,7 @@ def _validate_job_fields(data: dict) -> None:
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 
+
 def _load() -> list[dict]:
     if not _JOBS_PATH.exists():
         return []
@@ -54,6 +56,7 @@ def _save(jobs: list[dict]) -> None:
 
 
 # ── Public CRUD ───────────────────────────────────────────────────────────────
+
 
 def get_all_jobs() -> list[dict]:
     with _lock:
@@ -88,13 +91,15 @@ def update_job(job_id: str, data: dict) -> dict:
         jobs = _load()
         for i, j in enumerate(jobs):
             if j["id"] == job_id:
-                jobs[i] = {**j,
-                            "adom": data["adom"],
-                            "day_of_week": data["day_of_week"],
-                            "time": data["time"],
-                            "format": data.get("format", "pdf"),
-                            "email": data["email"],
-                            "enabled": bool(data.get("enabled", True))}
+                jobs[i] = {
+                    **j,
+                    "adom": data["adom"],
+                    "day_of_week": data["day_of_week"],
+                    "time": data["time"],
+                    "format": data.get("format", "pdf"),
+                    "email": data["email"],
+                    "enabled": bool(data.get("enabled", True)),
+                }
                 _save(jobs)
                 updated = jobs[i]
                 break
@@ -118,24 +123,36 @@ def delete_job(job_id: str) -> None:
 
 def run_job_now(job_id: str) -> None:
     """Fire the job in a daemon thread; returns immediately."""
-    t = threading.Thread(target=_execute_job, args=(job_id,),
-                         name=f"config_diff_{job_id[:8]}", daemon=True)
+    t = threading.Thread(
+        target=_execute_job,
+        args=(job_id,),
+        name=f"config_diff_{job_id[:8]}",
+        daemon=True,
+    )
     t.start()
 
 
 # ── Run history ───────────────────────────────────────────────────────────────
 
+
 def _prune_runs(job_id: str, retention_days: int | None = None) -> None:
     from app.smtp_client import load_smtp_config
-    days = retention_days if retention_days is not None else load_smtp_config().get("run_history_days", 30)
+
+    days = (
+        retention_days
+        if retention_days is not None
+        else load_smtp_config().get("run_history_days", 30)
+    )
     cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=days)
     with _lock:
         jobs = _load()
         for j in jobs:
             if j["id"] == job_id:
                 j["runs"] = [
-                    r for r in j.get("runs", [])
-                    if datetime.datetime.fromisoformat(r["ran_at"].rstrip("Z")) >= cutoff
+                    r
+                    for r in j.get("runs", [])
+                    if datetime.datetime.fromisoformat(r["ran_at"].rstrip("Z"))
+                    >= cutoff
                 ]
         _save(jobs)
 
@@ -150,6 +167,7 @@ def _append_run(job_id: str, record: dict) -> None:
 
 
 # ── Job execution ─────────────────────────────────────────────────────────────
+
 
 def _try_acquire_job_lock(job_id: str):
     """Return an open file object with an exclusive lock, or None if already locked."""
@@ -169,8 +187,11 @@ def _try_acquire_job_lock(job_id: str):
 def _execute_job(job_id: str) -> None:
     lock_fh = _try_acquire_job_lock(job_id)
     if lock_fh is None:
-        app_log("INFO", "config_diff_scheduler",
-                f"Job {job_id} already running in another worker — skipping")
+        app_log(
+            "INFO",
+            "config_diff_scheduler",
+            f"Job {job_id} already running in another worker — skipping",
+        )
         return
     _running_jobs.add(job_id)
     try:
@@ -185,10 +206,14 @@ def _execute_job(job_id: str) -> None:
         fmt = job.get("format", "pdf")
         email = job["email"]
 
-        app_log("INFO", "config_diff_scheduler",
-                f"Running scheduled Config-Delta export: adom={adom} format={fmt} to={email}")
+        app_log(
+            "INFO",
+            "config_diff_scheduler",
+            f"Running scheduled Config-Delta export: adom={adom} format={fmt} to={email}",
+        )
 
         from app.routes.pending_changes_routes import bulk_preview_adom
+
         results = bulk_preview_adom(adom)
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
@@ -204,12 +229,16 @@ def _execute_job(job_id: str) -> None:
         attachment = _build_attachment(adom, fmt, results)
 
         from app.smtp_client import send_email
+
         send_email(email, subject, body_html, [attachment])
 
         _append_run(job_id, record)
         _prune_runs(job_id)
-        app_log("INFO", "config_diff_scheduler",
-                f"Config-Delta export sent: adom={adom} devices={len(results)} changes={ok_count} to={email}")
+        app_log(
+            "INFO",
+            "config_diff_scheduler",
+            f"Config-Delta export sent: adom={adom} devices={len(results)} changes={ok_count} to={email}",
+        )
 
     except Exception as exc:
         record = {
@@ -218,8 +247,11 @@ def _execute_job(job_id: str) -> None:
             "error": str(exc),
         }
         _append_run(job_id, record)
-        app_log("ERROR", "config_diff_scheduler",
-                f"Config-Delta scheduled export failed for job {job_id}: {exc}")
+        app_log(
+            "ERROR",
+            "config_diff_scheduler",
+            f"Config-Delta scheduled export failed for job {job_id}: {exc}",
+        )
     finally:
         _running_jobs.discard(job_id)
         try:
@@ -234,9 +266,9 @@ def _build_summary_html(adom: str, results: list[dict]) -> str:
     none_ = [r for r in results if r["status"] == "no_changes"]
     err = [r for r in results if r["status"] == "error"]
     rows = "".join(
-        f'<tr><td>{r["device"]}</td><td>{r.get("ip","")}</td>'
-        f'<td style="color:{"#166534" if r["status"]=="ok" else "#b91c1c" if r["status"]=="error" else "#6b7280"}">'
-        f'{r["status"]}</td></tr>'
+        f"<tr><td>{r['device']}</td><td>{r.get('ip', '')}</td>"
+        f'<td style="color:{"#166534" if r["status"] == "ok" else "#b91c1c" if r["status"] == "error" else "#6b7280"}">'
+        f"{r['status']}</td></tr>"
         for r in results
     )
     return (
@@ -255,12 +287,22 @@ def _build_summary_html(adom: str, results: list[dict]) -> str:
 def _build_attachment(adom: str, fmt: str, results: list[dict]) -> dict:
     import csv
     import io
+
     date = datetime.date.today().isoformat()
     if fmt == "json":
-        data = json.dumps({"adom": adom, "exported_at": datetime.datetime.utcnow().isoformat() + "Z",
-                            "results": results}, indent=2).encode()
-        return {"filename": f"config-delta-{adom}-{date}.json",
-                "data": data, "mimetype": "application/json"}
+        data = json.dumps(
+            {
+                "adom": adom,
+                "exported_at": datetime.datetime.utcnow().isoformat() + "Z",
+                "results": results,
+            },
+            indent=2,
+        ).encode()
+        return {
+            "filename": f"config-delta-{adom}-{date}.json",
+            "data": data,
+            "mimetype": "application/json",
+        }
     if fmt == "csv":
         buf = io.StringIO()
         w = csv.writer(buf)
@@ -269,46 +311,81 @@ def _build_attachment(adom: str, fmt: str, results: list[dict]) -> dict:
             if r["status"] == "ok":
                 for v in r.get("vdoms", []):
                     for c in v.get("changes", []):
-                        w.writerow([r["device"], r.get("ip",""), r["status"], v["name"], c["type"], c["line"]])
+                        w.writerow(
+                            [
+                                r["device"],
+                                r.get("ip", ""),
+                                r["status"],
+                                v["name"],
+                                c["type"],
+                                c["line"],
+                            ]
+                        )
             else:
-                w.writerow([r["device"], r.get("ip",""), r["status"], "", "", r.get("error","")])
-        return {"filename": f"config-delta-{adom}-{date}.csv",
-                "data": buf.getvalue().encode(), "mimetype": "text/csv"}
+                w.writerow(
+                    [
+                        r["device"],
+                        r.get("ip", ""),
+                        r["status"],
+                        "",
+                        "",
+                        r.get("error", ""),
+                    ]
+                )
+        return {
+            "filename": f"config-delta-{adom}-{date}.csv",
+            "data": buf.getvalue().encode(),
+            "mimetype": "text/csv",
+        }
     # default: pdf (HTML attachment)
     body = _build_pdf_html(adom, results)
-    return {"filename": f"config-delta-{adom}-{date}.pdf.html",
-            "data": body.encode(), "mimetype": "text/html"}
+    return {
+        "filename": f"config-delta-{adom}-{date}.pdf.html",
+        "data": body.encode(),
+        "mimetype": "text/html",
+    }
 
 
 def _build_pdf_html(adom: str, results: list[dict]) -> str:
     def esc(s):
-        return str(s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+        return (
+            str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
+
     sections = []
     for i, r in enumerate(results):
         pb = "page-break-before:always;" if i > 0 else ""
         if r["status"] == "no_changes":
             body = '<p style="color:#6b7280;font-style:italic">No pending changes.</p>'
         elif r["status"] == "error":
-            body = f'<p style="color:#b91c1c">Error: {esc(r.get("error",""))}</p>'
+            body = f'<p style="color:#b91c1c">Error: {esc(r.get("error", ""))}</p>'
         else:
             vdom_blocks = ""
             for v in r.get("vdoms", []):
                 lines = "".join(
-                    f'<span style="color:{"#166534" if c["type"]=="add" else "#b91c1c" if c["type"]=="remove" else "#92400e"};display:block">'
-                    f'{esc(("+" if c["type"]=="add" else "-" if c["type"]=="remove" else "~") + " " + c["line"])}</span>'
+                    f'<span style="color:{"#166534" if c["type"] == "add" else "#b91c1c" if c["type"] == "remove" else "#92400e"};display:block">'
+                    f"{esc(('+' if c['type'] == 'add' else '-' if c['type'] == 'remove' else '~') + ' ' + c['line'])}</span>"
                     for c in v.get("changes", [])
                 )
                 vdom_blocks += f'<strong>vdom: {esc(v["name"])}</strong><pre style="background:#f8f9fa;padding:8px;font-size:9px;white-space:pre-wrap">{lines}</pre>'
-            body = vdom_blocks or '<p style="color:#6b7280;font-style:italic">No changes.</p>'
-        sections.append(f'<div style="{pb}padding-top:1cm"><h2>{esc(r["device"])}</h2>'
-                        f'<div style="color:#6b7280;font-size:10px">{esc(r.get("ip",""))}</div>{body}</div>')
-    return (f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Config-Delta — {esc(adom)}</title>'
-            f'<style>body{{font-family:Arial,sans-serif;font-size:11px;margin:1.5cm}}'
-            f'h2{{font-size:14px}}@media print{{@page{{margin:1.2cm}}}}</style></head>'
-            f'<body>{"".join(sections)}</body></html>')
+            body = (
+                vdom_blocks
+                or '<p style="color:#6b7280;font-style:italic">No changes.</p>'
+            )
+        sections.append(
+            f'<div style="{pb}padding-top:1cm"><h2>{esc(r["device"])}</h2>'
+            f'<div style="color:#6b7280;font-size:10px">{esc(r.get("ip", ""))}</div>{body}</div>'
+        )
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Config-Delta — {esc(adom)}</title>'
+        f"<style>body{{font-family:Arial,sans-serif;font-size:11px;margin:1.5cm}}"
+        f"h2{{font-size:14px}}@media print{{@page{{margin:1.2cm}}}}</style></head>"
+        f"<body>{''.join(sections)}</body></html>"
+    )
 
 
 # ── APScheduler integration ───────────────────────────────────────────────────
+
 
 def _apscheduler_id(job_id: str) -> str:
     return f"config_diff_{job_id}"
@@ -318,12 +395,22 @@ def _register(job: dict) -> None:
     if _scheduler is None:
         return
     from apscheduler.triggers.cron import CronTrigger
-    day_map = {"SUN": "sun", "MON": "mon", "TUE": "tue", "WED": "wed",
-               "THU": "thu", "FRI": "fri", "SAT": "sat"}
+
+    day_map = {
+        "SUN": "sun",
+        "MON": "mon",
+        "TUE": "tue",
+        "WED": "wed",
+        "THU": "thu",
+        "FRI": "fri",
+        "SAT": "sat",
+    }
     h, m = job["time"].split(":")
     _scheduler.add_job(
         _execute_job,
-        CronTrigger(day_of_week=day_map[job["day_of_week"]], hour=int(h), minute=int(m)),
+        CronTrigger(
+            day_of_week=day_map[job["day_of_week"]], hour=int(h), minute=int(m)
+        ),
         args=[job["id"]],
         id=_apscheduler_id(job["id"]),
         replace_existing=True,
@@ -346,6 +433,7 @@ def is_job_running(job_id: str) -> bool:
 def init_scheduler(app) -> None:
     global _scheduler
     from apscheduler.schedulers.background import BackgroundScheduler
+
     _scheduler = BackgroundScheduler(daemon=True)
     jobs = _load()
     for job in jobs:
@@ -353,8 +441,14 @@ def init_scheduler(app) -> None:
             try:
                 _register(job)
             except Exception as exc:
-                app_log("ERROR", "config_diff_scheduler",
-                        f"Failed to register job {job.get('id', '?')} ({job.get('adom', '?')}): {exc}")
+                app_log(
+                    "ERROR",
+                    "config_diff_scheduler",
+                    f"Failed to register job {job.get('id', '?')} ({job.get('adom', '?')}): {exc}",
+                )
     _scheduler.start()
-    app_log("INFO", "config_diff_scheduler",
-            f"Config-Diff scheduler started with {sum(1 for j in jobs if j.get('enabled'))} active jobs")
+    app_log(
+        "INFO",
+        "config_diff_scheduler",
+        f"Config-Diff scheduler started with {sum(1 for j in jobs if j.get('enabled'))} active jobs",
+    )
