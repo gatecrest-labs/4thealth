@@ -1,4 +1,4 @@
-"""DIFF (BETA) tab — shows FortiManager install-pending diffs per device.
+"""Config-Delta tab — shows FortiManager install-pending diffs per device.
 
 Page:
   GET  /pending-changes
@@ -47,7 +47,7 @@ from app.security import internal_api_error, upstream_api_error
 bp = Blueprint("pending_changes", __name__)
 
 registry.register(
-    "pending_changes", "DIFF (BETA)", "pending_changes.pending_changes_page"
+    "pending_changes", "Config-Delta", "pending_changes.pending_changes_page"
 )
 
 # ── Async preview task store (file-based, shared across all gunicorn workers) ─

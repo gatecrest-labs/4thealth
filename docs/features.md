@@ -91,7 +91,7 @@ The check registry in `app/device_review.py` is the single place to add checks:
 
 ---
 
-## DIFF (Beta)
+## Config-Delta
 
 Shows exactly which FortiOS CLI configuration lines will change when the next install is pushed to a device. Useful for change-record preparation and pre-change validation.
 

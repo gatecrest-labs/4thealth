@@ -352,7 +352,7 @@ Interactive Leaflet map displaying all managed devices in selected ADOMs. Device
 
 New CSS classes added to `style.css`: `.map-health-ledger`, `.ledger-item`, `.map-popup-footer`, `.map-popup-details-link`.
 
-### DIFF tab (Beta)
+### Config-Delta tab
 
 `GET /pending-changes` → `pending_changes.html` + `pending_changes.js`
 

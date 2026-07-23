@@ -11,6 +11,20 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ---
 
+## [2026-07-23] — Config-Delta rename and bulk ADOM export
+
+### Changed
+- DIFF (BETA) tab renamed to **Config-Delta** across the nav bar, page title, heading, and export filenames. Internal tab key (`pending_changes`), URL (`/pending-changes`), and all API paths are unchanged — no permission migration required.
+
+### Added
+- **Export All Devices** control on the Config-Delta tab: a format selector (CSV / JSON / PDF) paired with an **Export All** button. Clicking the button sequentially fetches the pending diff for every device in the selected ADOM, shows a live progress indicator (`Fetching N of M — <device>…`), and downloads a single combined file when complete.
+  - Devices with no pending changes are included in the export with a `no_changes` status rather than being silently omitted.
+  - Devices that error during preview are included with their error message; the run continues to the next device.
+  - A **× Cancel** link aborts the run mid-flight with no partial download.
+  - The existing per-device export queue is unaffected and works alongside the new bulk export.
+
+---
+
 ## [2026-07-17] — DIFF tab performance (Option D)
 
 ### Added
