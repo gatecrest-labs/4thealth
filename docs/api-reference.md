@@ -51,7 +51,7 @@ All endpoints require an authenticated session (HTTP 401 otherwise).
 | GET | `/api/zone/policies` | List all segmentation policies |
 | GET | `/api/zone/validate` | Validate the zone policy database schema |
 
-## DIFF (Beta)
+## Config-Delta
 
 | Method | Path | Description |
 |---|---|---|

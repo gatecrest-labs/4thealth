@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}DIFF (BETA) — 4THealth{% endblock %}
+{% block title %}Config-Delta — 4THealth{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h2>DIFF (BETA)</h2>
+    <h2>Config-Delta</h2>
     <span class="last-updated" id="pcStatus"></span>
   </div>
 </div>
@@ -18,6 +18,29 @@
     </select>
     <span id="pcAdomLoading" class="text-muted"
           style="display:none;font-style:italic;font-size:.88rem;margin-left:.5rem">Loading…</span>
+
+    <!-- Export All Devices -->
+    <div style="display:flex;align-items:center;gap:.35rem;margin-left:.75rem">
+      <select id="pcExportAllFmt" class="form-select form-select-sm" style="width:80px"
+              disabled>
+        <option value="csv">CSV</option>
+        <option value="json">JSON</option>
+        <option value="pdf">PDF</option>
+      </select>
+      <button id="pcExportAllBtn" class="btn btn-sm btn-secondary"
+              disabled title="Export pending diffs for all devices in this ADOM"
+              onclick="exportAllDevices(document.getElementById('pcExportAllFmt').value)">
+        Export All
+      </button>
+    </div>
+  </div>
+
+  <!-- Bulk export progress (hidden until a bulk run is active) -->
+  <div id="pcBulkProgress" style="display:none;margin-top:.4rem;font-size:.88rem;color:var(--text-muted)">
+    <span id="pcBulkStatus"></span>
+    <a href="#" id="pcBulkCancel"
+       onclick="cancelBulkExport();return false"
+       style="margin-left:.75rem;color:var(--text-muted);text-decoration:none">× Cancel</a>
   </div>
 </div>
 
