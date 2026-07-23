@@ -253,7 +253,8 @@ def _build_summary_html(adom: str, results: list[dict]) -> str:
 
 
 def _build_attachment(adom: str, fmt: str, results: list[dict]) -> dict:
-    import csv, io
+    import csv
+    import io
     date = datetime.date.today().isoformat()
     if fmt == "json":
         data = json.dumps({"adom": adom, "exported_at": datetime.datetime.utcnow().isoformat() + "Z",

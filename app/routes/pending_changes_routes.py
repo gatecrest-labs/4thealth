@@ -113,7 +113,7 @@ def bulk_preview_adom(adom: str) -> list[dict]:
        "summary", "vdoms", "raw", "error"}
     """
     from app.fmg_helpers import make_client
-    from app.fmg_client import FMGError, parse_preview_diff
+    from app.fmg_client import parse_preview_diff
 
     with make_client() as client:
         raw_devices = client.get_devices_with_sync_status(adom)
