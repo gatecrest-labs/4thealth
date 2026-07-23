@@ -1244,6 +1244,52 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
 }
 
+/* ── Config-Diff job form panel ──────────────────────────────────────── */
+.job-form-panel {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  max-width: 560px;
+  margin-bottom: 16px;
+}
+
+.day-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.day-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: .8rem;
+  color: var(--text);
+  user-select: none;
+  transition: background .1s, border-color .1s;
+}
+
+.day-picker-item:hover {
+  border-color: var(--accent);
+}
+
+.day-picker-item:has(input:checked) {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.day-picker-item input[type=checkbox] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* ── Tab badge ───────────────────────────────────────────────────────── */
 .tab-badge {
   display: inline-block;

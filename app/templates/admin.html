@@ -199,7 +199,7 @@
   <button class="btn-primary" onclick="showJobForm()" style="margin-bottom:12px">+ Add Job</button>
 
   <!-- Add/Edit inline form -->
-  <div id="jobForm" style="display:none;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:16px;max-width:560px;margin-bottom:16px">
+  <div id="jobForm" class="job-form-panel" style="display:none">
     <h4 style="margin:0 0 12px" id="jobFormTitle">New Scheduled Export</h4>
     <input type="hidden" id="jobFormId">
     <div class="form-row">
@@ -207,16 +207,16 @@
       <select id="jobFormAdom" style="min-width:200px"></select>
     </div>
     <div class="form-row">
-      <label>Day of Week</label>
-      <select id="jobFormDay">
-        <option value="SUN">Sunday</option>
-        <option value="MON">Monday</option>
-        <option value="TUE">Tuesday</option>
-        <option value="WED">Wednesday</option>
-        <option value="THU">Thursday</option>
-        <option value="FRI">Friday</option>
-        <option value="SAT">Saturday</option>
-      </select>
+      <label>Day(s)</label>
+      <div class="day-picker">
+        <label class="day-picker-item"><input type="checkbox" id="dayChk-SUN" value="SUN"> Sun</label>
+        <label class="day-picker-item"><input type="checkbox" id="dayChk-MON" value="MON"> Mon</label>
+        <label class="day-picker-item"><input type="checkbox" id="dayChk-TUE" value="TUE"> Tue</label>
+        <label class="day-picker-item"><input type="checkbox" id="dayChk-WED" value="WED"> Wed</label>
+        <label class="day-picker-item"><input type="checkbox" id="dayChk-THU" value="THU"> Thu</label>
+        <label class="day-picker-item"><input type="checkbox" id="dayChk-FRI" value="FRI"> Fri</label>
+        <label class="day-picker-item"><input type="checkbox" id="dayChk-SAT" value="SAT"> Sat</label>
+      </div>
     </div>
     <div class="form-row">
       <label>Time (24h)</label>
@@ -250,7 +250,7 @@
     <table class="admin-table" id="jobsTable">
       <thead>
         <tr>
-          <th>ADOM</th><th>Day</th><th>Time</th><th>Format</th>
+          <th>ADOM</th><th>Days</th><th>Time</th><th>Format</th>
           <th>Email</th><th>Last Run</th><th>Status</th><th>Actions</th>
         </tr>
       </thead>

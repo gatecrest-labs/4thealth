@@ -374,6 +374,8 @@ def admin_cdiff_jobs_update(job_id: str):
         job = _sched.update_job(job_id, data)
     except KeyError as exc:
         return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify(job)
 
 

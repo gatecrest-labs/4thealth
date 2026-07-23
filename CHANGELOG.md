@@ -14,6 +14,9 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 - **Scheduled Config-Delta exports** — admin users can create weekly scheduled jobs (ADOM, day, time, format, email recipient) that run server-side and email the full diff report as an attachment with an HTML summary in the body.
 - **Admin → Config-Diff sub-tab** — new admin panel for managing SMTP settings (host, port, TLS, optional auth) with a test-send button, and a scheduled-jobs table with add/edit/delete/run-now controls and per-job run history (30-day retention by default).
 
+### Changed
+- **Config-Diff scheduled jobs** — day-of-week selector replaced with a multi-checkbox day picker; jobs now store `days_of_week` (array) instead of `day_of_week` (string), allowing any combination of 1–7 days per job (e.g. Mon + Thu only). Job form panel dark mode rendering fixed by replacing hard-coded inline hex colours with CSS custom properties.
+
 ---
 
 ## [2026-07-23] — Config-Delta rename and bulk ADOM export

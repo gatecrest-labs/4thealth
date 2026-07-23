@@ -1,7 +1,7 @@
 import json
 import pytest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def test_get_all_jobs_empty(jobs_path):
 def test_create_job_assigns_id(jobs_path):
     from app import config_diff_scheduler as sched
     job = sched.create_job({
-        "adom": "TEST", "day_of_week": "MON", "time": "06:00",
+        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
         "format": "pdf", "email": "x@x.com", "enabled": True
     })
     assert "id" in job
@@ -28,7 +28,7 @@ def test_create_job_assigns_id(jobs_path):
 
 def test_update_job(jobs_path):
     from app import config_diff_scheduler as sched
-    job = sched.create_job({"adom": "TEST", "day_of_week": "MON", "time": "06:00",
+    job = sched.create_job({"adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
                              "format": "pdf", "email": "x@x.com", "enabled": True})
     updated = sched.update_job(job["id"], {**job, "email": "new@x.com"})
     assert updated["email"] == "new@x.com"
@@ -37,7 +37,7 @@ def test_update_job(jobs_path):
 
 def test_delete_job(jobs_path):
     from app import config_diff_scheduler as sched
-    job = sched.create_job({"adom": "TEST", "day_of_week": "MON", "time": "06:00",
+    job = sched.create_job({"adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
                              "format": "pdf", "email": "x@x.com", "enabled": True})
     sched.delete_job(job["id"])
     assert sched.get_all_jobs() == []
@@ -48,9 +48,8 @@ def test_prune_old_runs(jobs_path):
     import datetime
     old_ts = (datetime.datetime.utcnow() - datetime.timedelta(days=40)).isoformat() + "Z"
     recent_ts = datetime.datetime.utcnow().isoformat() + "Z"
-    job = sched.create_job({"adom": "TEST", "day_of_week": "MON", "time": "06:00",
+    job = sched.create_job({"adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
                              "format": "pdf", "email": "x@x.com", "enabled": True})
-    # Manually inject run history with one old and one recent entry
     jobs = json.loads(jobs_path.read_text())
     jobs[0]["runs"] = [
         {"ran_at": old_ts, "status": "ok", "devices_total": 1, "devices_with_changes": 0},
@@ -61,3 +60,58 @@ def test_prune_old_runs(jobs_path):
     remaining = sched.get_all_jobs()[0]["runs"]
     assert len(remaining) == 1
     assert remaining[0]["ran_at"] == recent_ts
+
+
+def test_create_job_multi_day(jobs_path):
+    from app import config_diff_scheduler as sched
+    job = sched.create_job({
+        "adom": "TEST", "days_of_week": ["MON", "THU"], "time": "06:00",
+        "format": "pdf", "email": "x@x.com", "enabled": True
+    })
+    assert job["days_of_week"] == ["MON", "THU"]
+    stored = sched.get_all_jobs()[0]
+    assert stored["days_of_week"] == ["MON", "THU"]
+
+
+def test_validate_empty_days(jobs_path):
+    from app import config_diff_scheduler as sched
+    with pytest.raises(ValueError, match="days_of_week"):
+        sched.create_job({
+            "adom": "TEST", "days_of_week": [], "time": "06:00",
+            "format": "pdf", "email": "x@x.com", "enabled": True
+        })
+
+
+def test_validate_invalid_day_code(jobs_path):
+    from app import config_diff_scheduler as sched
+    with pytest.raises(ValueError, match="days_of_week"):
+        sched.create_job({
+            "adom": "TEST", "days_of_week": ["MONDAY"], "time": "06:00",
+            "format": "pdf", "email": "x@x.com", "enabled": True
+        })
+
+
+def test_validate_single_day_still_works(jobs_path):
+    from app import config_diff_scheduler as sched
+    job = sched.create_job({
+        "adom": "TEST", "days_of_week": ["FRI"], "time": "08:00",
+        "format": "csv", "email": "x@x.com", "enabled": True
+    })
+    assert job["days_of_week"] == ["FRI"]
+
+
+def test_register_multi_day_cron_string(jobs_path):
+    from app import config_diff_scheduler as sched
+    from unittest.mock import MagicMock, patch
+
+    mock_scheduler = MagicMock()
+    sched._scheduler = mock_scheduler
+    try:
+        with patch("apscheduler.triggers.cron.CronTrigger") as mock_trigger:
+            sched.create_job({
+                "adom": "TEST", "days_of_week": ["MON", "THU"], "time": "06:00",
+                "format": "pdf", "email": "x@x.com", "enabled": True
+            })
+            mock_trigger.assert_called_once_with(day_of_week="mon,thu", hour=6, minute=0)
+    finally:
+        sched._scheduler = None
