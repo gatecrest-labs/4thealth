@@ -351,3 +351,42 @@ curl -sk https://4thealth.yourdomain.com/login | grep -i 4thealth
 openssl s_client -connect 4thealth.yourdomain.com:443 </dev/null 2>/dev/null \
   | openssl x509 -noout -subject -dates
 ```
+
+---
+
+## Updating an Existing Installation
+
+```bash
+cd /opt/4thealth
+sudo -u 4thealth git pull origin main
+```
+
+**Run `uv sync` only if `pyproject.toml` changed** (check `git diff HEAD~1 pyproject.toml`):
+
+```bash
+sudo -u 4thealth /usr/local/bin/uv sync --extra prod --project /opt/4thealth
+```
+
+**Copy any new example config files** (first time a new gitignored config is introduced):
+
+```bash
+# Only needed once per new file — skip if the file already exists
+[ -f smtp_config.json ]        || cp smtp_config.example.json smtp_config.json
+[ -f config_diff_jobs.json ]   || cp config_diff_jobs.example.json config_diff_jobs.json
+```
+
+**Restart the service** (always required to load new Python modules and scheduler changes):
+
+```bash
+sudo systemctl restart 4thealth
+sudo systemctl status 4thealth
+```
+
+### What requires `uv sync`?
+
+| Change | Needs `uv sync`? | Needs restart? |
+|--------|-----------------|----------------|
+| Python file changes | No | Yes |
+| New/changed `pyproject.toml` dependency | Yes | Yes |
+| Template or JS/CSS changes | No | No (served directly) |
+| New gitignored config file (`.example.json`) | No | No (copy manually, configure via UI) |

@@ -9,6 +9,11 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ## [Unreleased]
 
+### Added
+- **Config-Delta navigation guard** — a `beforeunload` browser confirmation dialog now fires if the user tries to navigate away or close the tab while a bulk export is in progress.
+- **Scheduled Config-Delta exports** — admin users can create weekly scheduled jobs (ADOM, day, time, format, email recipient) that run server-side and email the full diff report as an attachment with an HTML summary in the body.
+- **Admin → Config-Diff sub-tab** — new admin panel for managing SMTP settings (host, port, TLS, optional auth) with a test-send button, and a scheduled-jobs table with add/edit/delete/run-now controls and per-job run history (30-day retention by default).
+
 ---
 
 ## [2026-07-23] — Config-Delta rename and bulk ADOM export

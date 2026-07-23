@@ -12,6 +12,7 @@
       if (btn.dataset.panel === 'logs') loadLogs();
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
+      if (btn.dataset.panel === 'config-diff') { loadSMTP(); loadJobs(); }
     });
   });
 
@@ -715,3 +716,192 @@
   // ── Boot ───────────────────────────────────────────────────────────────────
   loadGroups();
 })();
+
+/* ── Config-Diff: SMTP ───────────────────────────────────────────────────── */
+
+async function loadSMTP() {
+  const res = await fetch('/admin/api/smtp');
+  if (!res.ok) return;
+  const cfg = await res.json();
+  document.getElementById('smtpHost').value          = cfg.host || '';
+  document.getElementById('smtpPort').value          = cfg.port || 25;
+  document.getElementById('smtpTls').value           = cfg.tls_mode || 'none';
+  document.getElementById('smtpUsername').value      = cfg.username || '';
+  document.getElementById('smtpPassword').value      = cfg.password || '';
+  document.getElementById('smtpFrom').value          = cfg.from_address || '';
+  document.getElementById('smtpRetentionDays').value = cfg.run_history_days || 30;
+  document.getElementById('smtpEnabled').checked     = !!cfg.enabled;
+}
+
+async function saveSMTP() {
+  const msg = document.getElementById('smtpMsg');
+  const payload = {
+    host:              document.getElementById('smtpHost').value.trim(),
+    port:              parseInt(document.getElementById('smtpPort').value) || 25,
+    tls_mode:          document.getElementById('smtpTls').value,
+    username:          document.getElementById('smtpUsername').value.trim(),
+    password:          document.getElementById('smtpPassword').value,
+    from_address:      document.getElementById('smtpFrom').value.trim(),
+    run_history_days:  parseInt(document.getElementById('smtpRetentionDays').value) || 30,
+    enabled:           document.getElementById('smtpEnabled').checked,
+  };
+  const res = await fetch('/admin/api/smtp', { method: 'PUT',
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCSRF()},
+    body: JSON.stringify(payload) });
+  msg.style.color = res.ok ? '#166534' : '#b91c1c';
+  msg.textContent = res.ok ? 'Saved.' : 'Save failed.';
+  setTimeout(() => msg.textContent = '', 3000);
+}
+
+async function testSMTP() {
+  const msg = document.getElementById('smtpMsg');
+  const to  = document.getElementById('smtpTestTo').value.trim();
+  if (!to) { msg.style.color='#b91c1c'; msg.textContent='Enter a test recipient first.'; return; }
+  msg.style.color = '#6b7280'; msg.textContent = 'Sending…';
+  const res  = await fetch('/admin/api/smtp/test', { method: 'POST',
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCSRF()},
+    body: JSON.stringify({to}) });
+  const data = await res.json();
+  msg.style.color = data.ok ? '#166534' : '#b91c1c';
+  msg.textContent = data.ok ? 'Test email sent!' : `Error: ${data.error}`;
+}
+
+/* ── Config-Diff: Jobs ───────────────────────────────────────────────────── */
+
+let _cdiffJobs = [];
+
+async function loadJobs() {
+  const res = await fetch('/admin/api/config-diff/jobs');
+  _cdiffJobs = res.ok ? await res.json() : [];
+  renderJobsTable();
+}
+
+function renderJobsTable() {
+  const tbody = document.getElementById('jobsTableBody');
+  if (!tbody) return;
+  if (!_cdiffJobs.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="color:#6b7280;text-align:center">No scheduled jobs.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _cdiffJobs.map(j => {
+    const last = j.runs && j.runs[0];
+    const ts   = last ? new Date(last.ran_at).toLocaleString() : '—';
+    const badge = !last ? '<span style="color:#6b7280">Never</span>'
+      : last.status === 'ok'
+        ? '<span style="color:#166534;font-weight:600">OK</span>'
+        : `<span style="color:#b91c1c;font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
+    return `<tr>
+      <td>${escH(j.adom)}</td>
+      <td>${escH(j.day_of_week)}</td>
+      <td>${escH(j.time)}</td>
+      <td>${escH(j.format.toUpperCase())}</td>
+      <td>${escH(j.email)}</td>
+      <td style="font-size:11px">${ts}</td>
+      <td>${badge}</td>
+      <td>
+        <button class="btn-sm" onclick="editJob('${j.id}')">Edit</button>
+        <button class="btn-sm" style="color:#b91c1c" onclick="deleteJob('${j.id}')">Delete</button>
+        <button class="btn-sm" id="runBtn-${j.id}" onclick="runJobNow('${j.id}')">Run Now</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function escH(s) {
+  return String(s||'').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadJobAdoms() {
+  const sel = document.getElementById('jobFormAdom');
+  if (!sel) return;
+  const res = await fetch('/admin/api/adoms');
+  const data = res.ok ? await res.json() : [];
+  sel.innerHTML = (data.adoms || []).map(a => `<option value="${escH(a)}">${escH(a)}</option>`).join('');
+}
+
+function showJobForm(job) {
+  document.getElementById('jobFormTitle').textContent = job ? 'Edit Scheduled Export' : 'New Scheduled Export';
+  document.getElementById('jobFormId').value      = job ? job.id : '';
+  document.getElementById('jobFormAdom').value    = job ? job.adom : '';
+  document.getElementById('jobFormDay').value     = job ? job.day_of_week : 'MON';
+  document.getElementById('jobFormTime').value    = job ? job.time : '06:00';
+  document.getElementById('jobFormFormat').value  = job ? job.format : 'pdf';
+  document.getElementById('jobFormEmail').value   = job ? job.email : '';
+  document.getElementById('jobFormEnabled').checked = job ? !!job.enabled : true;
+  document.getElementById('jobFormMsg').textContent = '';
+  document.getElementById('jobForm').style.display = 'block';
+  loadJobAdoms();
+}
+
+function cancelJobForm() {
+  document.getElementById('jobForm').style.display = 'none';
+}
+
+function editJob(id) {
+  const job = _cdiffJobs.find(j => j.id === id);
+  if (job) showJobForm(job);
+}
+
+async function saveJob() {
+  const msg    = document.getElementById('jobFormMsg');
+  const id     = document.getElementById('jobFormId').value;
+  const payload = {
+    adom:        document.getElementById('jobFormAdom').value,
+    day_of_week: document.getElementById('jobFormDay').value,
+    time:        document.getElementById('jobFormTime').value,
+    format:      document.getElementById('jobFormFormat').value,
+    email:       document.getElementById('jobFormEmail').value.trim(),
+    enabled:     document.getElementById('jobFormEnabled').checked,
+  };
+  const url    = id ? `/admin/api/config-diff/jobs/${id}` : '/admin/api/config-diff/jobs';
+  const method = id ? 'PUT' : 'POST';
+  const res    = await fetch(url, { method,
+    headers: {'Content-Type':'application/json','X-CSRF-Token': getCSRF()},
+    body: JSON.stringify(payload) });
+  if (res.ok) {
+    cancelJobForm();
+    loadJobs();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    msg.style.color = '#b91c1c';
+    msg.textContent = err.error || 'Save failed.';
+  }
+}
+
+async function deleteJob(id) {
+  if (!confirm('Delete this scheduled export?')) return;
+  await fetch(`/admin/api/config-diff/jobs/${id}`, { method: 'DELETE',
+    headers: {'X-CSRF-Token': getCSRF()} });
+  loadJobs();
+}
+
+async function runJobNow(id) {
+  const btn = document.getElementById(`runBtn-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  const runRes = await fetch(`/admin/api/config-diff/jobs/${id}/run`, { method: 'POST',
+    headers: {'X-CSRF-Token': getCSRF()} });
+  if (!runRes.ok) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    return;
+  }
+  // Poll status every 3s until done
+  const poll = setInterval(async () => {
+    try {
+      const res  = await fetch(`/admin/api/config-diff/jobs/${id}/status`);
+      const data = await res.json();
+      if (!data.running) {
+        clearInterval(poll);
+        if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+        loadJobs();
+      }
+    } catch (_) {
+      clearInterval(poll);
+      if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    }
+  }, 3000);
+}
+
+function getCSRF() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
