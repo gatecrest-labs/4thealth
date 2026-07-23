@@ -52,6 +52,8 @@ from app.app_logger import (
 )
 from app.app_settings import get_all as get_all_settings, set_setting
 from app.api_tokens import create_token, list_tokens, revoke_token
+from app import smtp_client as _smtp
+from app import config_diff_scheduler as _sched
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -308,3 +310,97 @@ def api_tokens_revoke(token_id: str):
         return jsonify({"error": "Token not found"}), 404
     app_log("INFO", "admin", "API token revoked", by=session["user"], token_id=token_id)
     return jsonify({"revoked": token_id})
+
+
+# ── Config-Diff: SMTP ─────────────────────────────────────────────────────────
+
+@bp.route("/api/smtp")
+@_admin_required
+def admin_smtp_get():
+    cfg = _smtp.load_smtp_config()
+    cfg["password"] = "••••••" if cfg.get("password") else ""
+    return jsonify(cfg)
+
+
+@bp.route("/api/smtp", methods=["PUT"])
+@_admin_required
+def admin_smtp_put():
+    data = request.get_json(force=True) or {}
+    existing = _smtp.load_smtp_config()
+    # Preserve saved password if the masked placeholder was submitted back
+    if data.get("password") == "••••••":
+        data["password"] = existing.get("password", "")
+    _smtp.save_smtp_config(data)
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/smtp/test", methods=["POST"])
+@_admin_required
+def admin_smtp_test():
+    data = request.get_json(force=True) or {}
+    to = (data.get("to") or "").strip()
+    if not to:
+        return jsonify({"ok": False, "error": "No recipient address provided"}), 400
+    result = _smtp.test_connection(to)
+    return jsonify(result)
+
+
+# ── Config-Diff: Jobs ─────────────────────────────────────────────────────────
+
+@bp.route("/api/config-diff/jobs")
+@_admin_required
+def admin_cdiff_jobs_list():
+    return jsonify(_sched.get_all_jobs())
+
+
+@bp.route("/api/config-diff/jobs", methods=["POST"])
+@_admin_required
+def admin_cdiff_jobs_create():
+    data = request.get_json(force=True) or {}
+    try:
+        job = _sched.create_job(data)
+    except (KeyError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(job), 201
+
+
+@bp.route("/api/config-diff/jobs/<job_id>", methods=["PUT"])
+@_admin_required
+def admin_cdiff_jobs_update(job_id: str):
+    data = request.get_json(force=True) or {}
+    try:
+        job = _sched.update_job(job_id, data)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(job)
+
+
+@bp.route("/api/config-diff/jobs/<job_id>", methods=["DELETE"])
+@_admin_required
+def admin_cdiff_jobs_delete(job_id: str):
+    try:
+        _sched.delete_job(job_id)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/config-diff/jobs/<job_id>/run", methods=["POST"])
+@_admin_required
+def admin_cdiff_jobs_run(job_id: str):
+    jobs = _sched.get_all_jobs()
+    if not any(j["id"] == job_id for j in jobs):
+        return jsonify({"error": "Job not found"}), 404
+    _sched.run_job_now(job_id)
+    return jsonify({"ok": True, "message": "Job started"}), 202
+
+
+@bp.route("/api/config-diff/jobs/<job_id>/status")
+@_admin_required
+def admin_cdiff_jobs_status(job_id: str):
+    jobs = _sched.get_all_jobs()
+    job = next((j for j in jobs if j["id"] == job_id), None)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    last_run = job["runs"][0] if job.get("runs") else None
+    return jsonify({"running": _sched.is_job_running(job_id), "last_run": last_run})

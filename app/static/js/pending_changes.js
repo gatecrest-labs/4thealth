@@ -30,6 +30,7 @@ let _previewAbort  = null;
 let vdomPageState  = new Map(); // vdom.name → { page, pageSize }
 let bulkRunning   = false;   // true while a bulk export run is in progress
 let bulkCancelled = false;   // set by cancelBulkExport() to abort the loop
+let _beforeUnloadHandler = null;
 
 /* ── Status badges ───────────────────────────────────────────────────────────── */
 
@@ -459,6 +460,8 @@ async function exportAllDevices(format) {
   if (bulkRunning || !allDevices.length || !currentAdom) return;
   bulkRunning   = true;
   bulkCancelled = false;
+  _beforeUnloadHandler = e => { e.preventDefault(); e.returnValue = ''; };
+  window.addEventListener('beforeunload', _beforeUnloadHandler);
 
   const queueFooter  = document.getElementById('pcQueueFooter');
   const progressEl   = document.getElementById('pcBulkProgress');
@@ -535,6 +538,7 @@ async function exportAllDevices(format) {
     bulkRunning              = false;
     progressEl.style.display = 'none';
     statusEl.textContent     = '';
+    if (_beforeUnloadHandler) { window.removeEventListener('beforeunload', _beforeUnloadHandler); _beforeUnloadHandler = null; }
     updateExportAllState();
     if (queueVisible || exportQueue.length) renderQueue();
   }
@@ -650,8 +654,13 @@ function exportAllPdf(results) {
   h1{font-size:16px;margin-bottom:6px}
   .meta{background:#f3f4f6;border-left:4px solid #3b82f6;padding:8px 12px;border-radius:3px;margin-bottom:14px;font-size:10px}
   code{font-family:monospace;font-size:10px}
-  @media print{@page{margin:1.2cm}}
-</style></head><body>
+  .print-btn{display:block;margin:0 0 16px;padding:8px 20px;background:#3b82f6;color:#fff;border:none;border-radius:5px;font-size:13px;cursor:pointer}
+  .print-btn:hover{background:#2563eb}
+  @media print{@page{margin:1.2cm}.print-btn{display:none!important}}
+</style>
+<script>window.onload=function(){window.print()}<\/script>
+</head><body>
+<button class="print-btn" onclick="window.print()">&#128438; Print / Save as PDF</button>
 <h1>${escH(title)}</h1>
 <div class="meta">
   Generated: ${escH(ts)}<br>User: ${escH(user)}<br>ADOM: ${escH(adom)}<br>
@@ -661,7 +670,7 @@ ${deviceSections}
 </body></html>`;
 
   const win = window.open('', '_blank');
-  if (win) { win.document.write(html); win.document.close(); win.print(); }
+  if (win) { win.document.write(html); win.document.close(); }
 }
 
 /* ── Exports ────────────────────────────────────────────────────────────────── */
@@ -758,8 +767,13 @@ function exportPdf() {
   h1{font-size:16px;margin-bottom:6px}
   .meta{background:#f3f4f6;border-left:4px solid #3b82f6;padding:8px 12px;border-radius:3px;margin-bottom:14px;font-size:10px}
   code{font-family:monospace;font-size:10px}
-  @media print{@page{margin:1.2cm}}
-</style></head><body>
+  .print-btn{display:block;margin:0 0 16px;padding:8px 20px;background:#3b82f6;color:#fff;border:none;border-radius:5px;font-size:13px;cursor:pointer}
+  .print-btn:hover{background:#2563eb}
+  @media print{@page{margin:1.2cm}.print-btn{display:none!important}}
+</style>
+<script>window.onload=function(){window.print()}<\/script>
+</head><body>
+<button class="print-btn" onclick="window.print()">&#128438; Print / Save as PDF</button>
 <h1>${escHtml(title)}</h1>
 <div class="meta">
   Generated: ${escHtml(ts)}<br>User: ${escHtml(user)}<br>
@@ -769,7 +783,7 @@ ${deviceSections}
 </body></html>`;
 
   const win = window.open('', '_blank');
-  if (win) { win.document.write(html); win.document.close(); win.print(); }
+  if (win) { win.document.write(html); win.document.close(); }
 }
 
 /* ── Error helpers ───────────────────────────────────────────────────────────── */

@@ -115,3 +115,24 @@ These files are gitignored and must be created from the bundled `*.example.*` te
 | `app_settings.json` | `app_settings.example.json` | Feature flags (e.g. `external_api_enabled`) |
 | `api_tokens.json` | `api_tokens.example.json` | External API bearer token hashes |
 | `map_regions.json` | Built-in defaults | Map pin colour regions; created on first admin save |
+| `smtp_config.json` | `smtp_config.example.json` | SMTP configuration for scheduled exports |
+| `config_diff_jobs.json` | `config_diff_jobs.example.json` | Scheduled Config-Delta export jobs |
+
+---
+
+## SMTP / Scheduled Exports
+
+SMTP settings are stored in `smtp_config.json` (gitignored; copy from `smtp_config.example.json`). All fields are configurable via **Admin → Config-Diff**.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `host` | `""` | SMTP server hostname or IP |
+| `port` | `25` | SMTP port |
+| `tls_mode` | `"none"` | `"none"`, `"starttls"`, or `"ssl"` |
+| `username` | `""` | Optional — leave blank for unauthenticated relay |
+| `password` | `""` | Optional — leave blank for unauthenticated relay |
+| `from_address` | `""` | Optional sender address |
+| `run_history_days` | `30` | Days of per-job run history to retain |
+| `enabled` | `false` | Must be `true` for any scheduled export to send email |
+
+Scheduled jobs are stored in `config_diff_jobs.json` (gitignored; copy from `config_diff_jobs.example.json`). Jobs are registered with APScheduler at startup and survive server restarts.

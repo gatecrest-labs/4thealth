@@ -130,6 +130,19 @@ def create_app() -> Flask:
 
         init_pending_status_scheduler(app)
 
+    if not app.config.get("TESTING") and not app.config.get(
+        "_CONFIG_DIFF_SCHEDULER_STARTED"
+    ):
+        app.config["_CONFIG_DIFF_SCHEDULER_STARTED"] = True
+        try:
+            from app.config_diff_scheduler import (
+                init_scheduler as init_config_diff_scheduler,
+            )
+            with app.app_context():
+                init_config_diff_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Config-Diff scheduler failed to start: %s", exc)
+
     @app.context_processor
     def inject_session_globals():
         role = session.get("role", "viewer")

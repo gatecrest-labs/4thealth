@@ -59,6 +59,25 @@ All endpoints require an authenticated session (HTTP 401 otherwise).
 | GET | `/api/pending-changes/adoms/<adom>/devices` | Device list with `conf_status`, `db_status`, and `pkg_status` |
 | POST | `/api/pending-changes/adoms/<adom>/device/<device>/preview` | Trigger FortiManager install-preview and return parsed CLI diff |
 
+### Admin — SMTP Config
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/admin/api/smtp` | Get SMTP configuration (password masked) |
+| PUT | `/admin/api/smtp` | Save SMTP configuration |
+| POST | `/admin/api/smtp/test` | Send a test email; body: `{"to": "..."}` |
+
+### Admin — Scheduled Config-Diff Jobs
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/admin/api/config-diff/jobs` | List all jobs with run history |
+| POST | `/admin/api/config-diff/jobs` | Create a job |
+| PUT | `/admin/api/config-diff/jobs/<id>` | Update a job |
+| DELETE | `/admin/api/config-diff/jobs/<id>` | Delete a job |
+| POST | `/admin/api/config-diff/jobs/<id>/run` | Trigger immediate run (returns 202) |
+| GET | `/admin/api/config-diff/jobs/<id>/status` | Poll run status: `{"running": bool, "last_run": {...}}` |
+
 ## Map
 
 | Method | Path | Description |

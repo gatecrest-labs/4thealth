@@ -13,6 +13,7 @@
   <button class="admin-tab active" data-panel="groups">Groups &amp; Permissions</button>
   <button class="admin-tab" data-panel="map-regions">Map Region Colors</button>
   <button class="admin-tab" data-panel="external-api">External API</button>
+  <button class="admin-tab" data-panel="config-diff">Config-Diff</button>
   <button class="admin-tab" data-panel="logs">Application Logs</button>
 </div>
 
@@ -135,6 +136,130 @@
       </tbody>
     </table>
   </div>
+</div>
+
+<!-- ══════════════════════  CONFIG-DIFF PANEL  ══════════════════════ -->
+<div class="admin-panel" id="panel-config-diff">
+
+  <!-- SMTP Configuration -->
+  <div class="admin-panel-header">
+    <h3>SMTP Configuration</h3>
+    <p class="admin-panel-desc">Global email settings used by all scheduled Config-Delta exports.</p>
+  </div>
+  <div style="max-width:520px">
+    <div class="form-row">
+      <label>Host</label>
+      <input type="text" id="smtpHost" placeholder="mail.internal.example.com">
+    </div>
+    <div class="form-row">
+      <label>Port</label>
+      <input type="number" id="smtpPort" value="25" style="width:100px">
+    </div>
+    <div class="form-row">
+      <label>TLS Mode</label>
+      <select id="smtpTls">
+        <option value="none">None (plain)</option>
+        <option value="starttls">STARTTLS (port 587)</option>
+        <option value="ssl">SSL/TLS (port 465)</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Username <span style="font-weight:normal;color:#6b7280">(optional)</span></label>
+      <input type="text" id="smtpUsername" placeholder="Leave blank for unauthenticated relay">
+    </div>
+    <div class="form-row">
+      <label>Password <span style="font-weight:normal;color:#6b7280">(optional)</span></label>
+      <input type="password" id="smtpPassword" placeholder="Leave blank for unauthenticated relay">
+    </div>
+    <div class="form-row">
+      <label>From Address <span style="font-weight:normal;color:#6b7280">(optional)</span></label>
+      <input type="text" id="smtpFrom" placeholder="4thealth@example.com">
+    </div>
+    <div class="form-row">
+      <label>Run History Retention</label>
+      <input type="number" id="smtpRetentionDays" value="30" style="width:80px"> days
+    </div>
+    <div class="form-row">
+      <label>Enabled</label>
+      <input type="checkbox" id="smtpEnabled">
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <button class="btn-primary" onclick="saveSMTP()">Save</button>
+      <button class="btn-secondary" onclick="testSMTP()">Test</button>
+      <input type="text" id="smtpTestTo" placeholder="Send test to..." style="width:220px">
+      <span id="smtpMsg" style="font-size:12px"></span>
+    </div>
+  </div>
+
+  <!-- Scheduled Jobs -->
+  <div class="admin-panel-header" style="margin-top:2rem">
+    <h3>Scheduled Exports</h3>
+    <p class="admin-panel-desc">Each job fetches Config-Delta diffs for an entire ADOM and emails the results.</p>
+  </div>
+  <button class="btn-primary" onclick="showJobForm()" style="margin-bottom:12px">+ Add Job</button>
+
+  <!-- Add/Edit inline form -->
+  <div id="jobForm" style="display:none;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:16px;max-width:560px;margin-bottom:16px">
+    <h4 style="margin:0 0 12px" id="jobFormTitle">New Scheduled Export</h4>
+    <input type="hidden" id="jobFormId">
+    <div class="form-row">
+      <label>ADOM</label>
+      <select id="jobFormAdom" style="min-width:200px"></select>
+    </div>
+    <div class="form-row">
+      <label>Day of Week</label>
+      <select id="jobFormDay">
+        <option value="SUN">Sunday</option>
+        <option value="MON">Monday</option>
+        <option value="TUE">Tuesday</option>
+        <option value="WED">Wednesday</option>
+        <option value="THU">Thursday</option>
+        <option value="FRI">Friday</option>
+        <option value="SAT">Saturday</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Time (24h)</label>
+      <input type="time" id="jobFormTime" value="06:00">
+    </div>
+    <div class="form-row">
+      <label>Format</label>
+      <select id="jobFormFormat">
+        <option value="pdf" selected>PDF</option>
+        <option value="csv">CSV</option>
+        <option value="json">JSON</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Email To</label>
+      <input type="email" id="jobFormEmail" placeholder="recipient@example.com" style="min-width:240px">
+    </div>
+    <div class="form-row">
+      <label>Enabled</label>
+      <input type="checkbox" id="jobFormEnabled" checked>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="btn-primary" onclick="saveJob()">Save</button>
+      <button class="btn-secondary" onclick="cancelJobForm()">Cancel</button>
+      <span id="jobFormMsg" style="font-size:12px;align-self:center"></span>
+    </div>
+  </div>
+
+  <!-- Jobs table -->
+  <div style="overflow-x:auto">
+    <table class="admin-table" id="jobsTable">
+      <thead>
+        <tr>
+          <th>ADOM</th><th>Day</th><th>Time</th><th>Format</th>
+          <th>Email</th><th>Last Run</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="jobsTableBody">
+        <tr><td colspan="8" style="color:#6b7280;text-align:center">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
 </div>
 
 <!-- ═══════════════════════  LOGS PANEL  ═══════════════════════ -->

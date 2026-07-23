@@ -143,6 +143,14 @@ Each export includes a metadata header with ADOM, device list, timestamp, and us
 
 Device status lookups (`pkg_status`) are parallelised with a thread pool (10 workers) to avoid 504 timeouts on large ADOMs.
 
+### Bulk Export — Navigation Guard
+
+While an "Export All" bulk export is running, the browser will prompt for confirmation before navigating away or closing the tab, preventing accidental cancellation of a long-running export.
+
+### Scheduled Exports (Admin)
+
+Admins can configure weekly scheduled Config-Delta exports in **Admin → Config-Diff**. Each job specifies an ADOM, day of week, time, export format (PDF/CSV/JSON), and an email recipient. Jobs run server-side via APScheduler and email the full diff report as an attachment with a summary in the email body. Run history (last 30 days by default) is visible per job.
+
 ---
 
 ## Rule Validation

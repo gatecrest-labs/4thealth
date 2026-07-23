@@ -385,6 +385,18 @@ Table rows show a single compact badge (highest-priority state). The diff panel 
 - `GET /api/pending-changes/adoms/<adom>/devices` — device list with status fields
 - `POST /api/pending-changes/adoms/<adom>/device/<device>/preview` — trigger + return parsed diff
 
+### Config-Diff Scheduled Exports
+
+`app/config_diff_scheduler.py` — APScheduler-based weekly export engine. Persists jobs and run history in `config_diff_jobs.json` (project root, gitignored). Registered in `app/__init__.py` alongside other background schedulers. Reuses `bulk_preview_adom()` from `app/routes/pending_changes_routes.py` for the actual FMG diff fetching.
+
+`app/smtp_client.py` — stdlib `smtplib` wrapper. Config in `smtp_config.json` (project root, gitignored). `send_email()` raises on failure; `test_connection()` always returns a dict.
+
+**Admin UI:** Admin → Config-Diff sub-tab. SMTP form + jobs table. JS in `app/static/js/admin.js`.
+
+**Persistence pattern:** Same as `app_settings.json` / `api_tokens.json` — atomic JSON writes via `app/atomic_io.py`, threading.Lock for concurrent access.
+
+**Run history pruning:** On each successful job execution, records older than `run_history_days` (default 30) are removed from `runs[]` in `config_diff_jobs.json`.
+
 ### External API
 
 `app/routes/external_api_routes.py` — blueprint at `/external/api/`

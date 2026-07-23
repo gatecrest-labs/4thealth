@@ -102,6 +102,58 @@ def _evict_old_tasks() -> None:
             pass
 
 
+# ── Bulk preview helper (used by scheduler + browser export) ─────────────────
+
+def bulk_preview_adom(adom: str) -> list[dict]:
+    """Fetch install-preview diffs for every device in *adom* in parallel.
+
+    Returns a list of result dicts — one per device — in the same shape the
+    browser bulk-export uses:
+      {"device", "ip", "status": "ok"|"no_changes"|"error",
+       "summary", "vdoms", "raw", "error"}
+    """
+    from app.fmg_helpers import make_client
+    from app.fmg_client import FMGError, parse_preview_diff
+
+    with make_client() as client:
+        raw_devices = client.get_devices_with_sync_status(adom)
+
+    seen: set[str] = set()
+    devices = []
+    for d in raw_devices:
+        if not isinstance(d, dict):
+            continue
+        name = d.get("name", "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        devices.append({"name": name,
+                         "ip": d.get("ip", d.get("mgmt_ip", ""))})
+
+    def _preview_one(dev: dict) -> dict:
+        try:
+            with make_client() as client:
+                raw = client.get_install_preview(adom, dev["name"])
+            parsed = parse_preview_diff(raw)
+            if not any(v.get("changes") for v in parsed.get("vdoms", [])):
+                return {"device": dev["name"], "ip": dev["ip"],
+                        "status": "no_changes", "summary": {}, "vdoms": [], "raw": "", "error": None}
+            return {"device": dev["name"], "ip": dev["ip"], "status": "ok",
+                    "summary": parsed["summary"], "vdoms": parsed["vdoms"],
+                    "raw": parsed["raw"], "error": None}
+        except Exception as exc:
+            return {"device": dev["name"], "ip": dev["ip"],
+                    "status": "error", "summary": {}, "vdoms": [], "raw": "",
+                    "error": str(exc)}
+
+    results = []
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_preview_one, d): d for d in devices}
+        for fut in as_completed(futures):
+            results.append(fut.result())
+    return results
+
+
 # ── Page ──────────────────────────────────────────────────────────────────────
 
 
