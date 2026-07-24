@@ -115,3 +115,62 @@ def test_register_multi_day_cron_string(jobs_path):
             mock_trigger.assert_called_once_with(day_of_week="mon,thu", hour=6, minute=0)
     finally:
         sched._scheduler = None
+
+
+def test_build_pdf_html_contains_header_fields(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    results = [
+        {"device": "fw-01", "ip": "10.0.0.1", "status": "ok", "vdoms": []},
+        {"device": "fw-02", "ip": "10.0.0.2", "status": "no_changes"},
+    ]
+    generated_at = "2026-07-24T10:30:00Z"
+    html = sched._build_pdf_html("Corp", results, generated_at)
+
+    assert "Corp" in html
+    assert "2026-07-24" in html
+    assert "10:30:00" in html
+    assert "Devices scanned" in html
+    assert "4THealth Config-Delta Scheduler" in html
+
+
+def test_build_pdf_html_omits_pkg_pending_row_when_zero(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    results = [{"device": "fw-01", "ip": "10.0.0.1", "status": "ok", "vdoms": []}]
+    html = sched._build_pdf_html("Corp", results, "2026-07-24T00:00:00Z")
+
+    assert "pkg_pending" not in html.lower()
+
+
+def test_build_attachment_html_contains_header(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    results = [{"device": "fw-01", "ip": "10.0.0.1", "status": "no_changes"}]
+    att = sched._build_attachment("Corp", "pdf", results, "2026-07-24T00:00:00Z")
+
+    html = att["data"].decode()
+    assert "Corp" in html
+    assert "4THealth" in html
+
+
+def test_build_attachment_json_has_exported_at(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    results = [{"device": "fw-01", "ip": "10.0.0.1", "status": "no_changes"}]
+    att = sched._build_attachment("Corp", "json", results, "2026-07-24T00:00:00Z")
+    data = json.loads(att["data"])
+
+    assert data["exported_at"] == "2026-07-24T00:00:00Z"
+    assert data["adom"] == "Corp"
+
+
+def test_build_attachment_csv_has_metadata_header(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    results = [{"device": "fw-01", "ip": "10.0.0.1", "status": "no_changes"}]
+    att = sched._build_attachment("Corp", "csv", results, "2026-07-24T00:00:00Z")
+    text = att["data"].decode()
+
+    assert "Corp" in text
+    assert "2026-07-24" in text

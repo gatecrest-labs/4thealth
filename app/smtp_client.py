@@ -46,13 +46,17 @@ def save_smtp_config(cfg: dict) -> None:
         atomic_write_json(_CONFIG_PATH, {**_DEFAULTS, **cfg})
 
 
+def _parse_recipients(to: str) -> list[str]:
+    return [addr.strip() for addr in to.split(",") if addr.strip()]
+
+
 def _build_message(
     cfg: dict, to: str, subject: str, body_html: str, attachments: list[dict]
 ) -> MIMEMultipart:
     msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     msg["From"] = cfg.get("from_address") or cfg.get("host", "4thealth")
-    msg["To"] = to
+    msg["To"] = ", ".join(_parse_recipients(to))
     msg.attach(MIMEText(body_html, "html"))
     for att in attachments:
         part = MIMEBase("application", "octet-stream")
@@ -92,7 +96,7 @@ def send_email(
     msg = _build_message(cfg, to, subject, body_html, attachments or [])
     conn = _connect(cfg)
     try:
-        conn.sendmail(msg["From"], [to], msg.as_string())
+        conn.sendmail(msg["From"], _parse_recipients(to), msg.as_string())
     finally:
         try:
             conn.quit()
