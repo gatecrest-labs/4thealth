@@ -797,7 +797,7 @@ function renderJobsTable() {
       <td>${escH(j.adom)}</td>
       <td>${(j.days_of_week||[]).map(d=>_DAY_LABELS[d]||d).join(', ')}</td>
       <td>${escH(j.time)}</td>
-      <td>${escH(j.format.toUpperCase())}</td>
+      <td>${escH(j.format === 'pdf' ? 'HTML' : j.format.toUpperCase())}</td>
       <td>${escH(j.email)}</td>
       <td style="font-size:11px">${ts}</td>
       <td>${badge}</td>

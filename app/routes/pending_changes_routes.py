@@ -105,7 +105,7 @@ def _evict_old_tasks() -> None:
 # ── Bulk preview helper (used by scheduler + browser export) ─────────────────
 
 
-def bulk_preview_adom(adom: str) -> list[dict]:
+def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
     """Fetch install-preview diffs for every device in *adom* in parallel.
 
     Returns a list of result dicts — one per device — in the same shape the
@@ -134,24 +134,35 @@ def bulk_preview_adom(adom: str) -> list[dict]:
         try:
             with make_client() as client:
                 raw = client.get_install_preview(adom, dev["name"])
+                vdoms = client.get_device_vdoms(adom, dev["name"])
+                vdom_names = (
+                    [
+                        v.get("name", "root")
+                        for v in vdoms
+                        if isinstance(v, dict) and v.get("name")
+                    ]
+                    if vdoms
+                    else ["root"]
+                )
+                pkg_status = client.get_device_pkg_status(adom, dev["name"], vdom_names)
             parsed = parse_preview_diff(raw)
-            if not any(v.get("changes") for v in parsed.get("vdoms", [])):
-                return {
-                    "device": dev["name"],
-                    "ip": dev["ip"],
-                    "status": "no_changes",
-                    "summary": {},
-                    "vdoms": [],
-                    "raw": "",
-                    "error": None,
-                }
+            has_changes = any(v.get("changes") for v in parsed.get("vdoms", []))
+            if has_changes:
+                status = "ok"
+            elif pkg_status == "modified":
+                # FMG package is marked modified but install-preview produced no
+                # CLI diff — changes may be metadata-only or already on the device.
+                status = "pkg_pending_no_diff"
+            else:
+                status = "no_changes"
             return {
                 "device": dev["name"],
                 "ip": dev["ip"],
-                "status": "ok",
-                "summary": parsed["summary"],
-                "vdoms": parsed["vdoms"],
-                "raw": parsed["raw"],
+                "status": status,
+                "pkg_status": pkg_status,
+                "summary": parsed["summary"] if has_changes else {},
+                "vdoms": parsed["vdoms"] if has_changes else [],
+                "raw": parsed["raw"] if has_changes else "",
                 "error": None,
             }
         except Exception as exc:
@@ -159,6 +170,7 @@ def bulk_preview_adom(adom: str) -> list[dict]:
                 "device": dev["name"],
                 "ip": dev["ip"],
                 "status": "error",
+                "pkg_status": "",
                 "summary": {},
                 "vdoms": [],
                 "raw": "",
@@ -166,7 +178,7 @@ def bulk_preview_adom(adom: str) -> list[dict]:
             }
 
     results = []
-    with ThreadPoolExecutor(max_workers=10) as pool:
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(_preview_one, d): d for d in devices}
         for fut in as_completed(futures):
             results.append(fut.result())

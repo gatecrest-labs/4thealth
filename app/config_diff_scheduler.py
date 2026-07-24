@@ -220,7 +220,11 @@ def _execute_job(job_id: str) -> None:
 
         from app.routes.pending_changes_routes import bulk_preview_adom
 
-        results = bulk_preview_adom(adom)
+        # Sequential (max_workers=1): FMG's install-preview staging locks are
+        # ADOM-scoped — any concurrency causes one device's cancel/install to
+        # wipe another's staging lock, producing empty diffs in the email.
+        # The interactive tab clicks devices one at a time; this matches that.
+        results = bulk_preview_adom(adom, max_workers=1)
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
         record: dict[str, Any] = {
@@ -267,21 +271,42 @@ def _execute_job(job_id: str) -> None:
             pass
 
 
+def _status_color(status: str) -> str:
+    return {
+        "ok": "#166534",
+        "error": "#b91c1c",
+        "pkg_pending_no_diff": "#92400e",
+    }.get(status, "#6b7280")
+
+
 def _build_summary_html(adom: str, results: list[dict]) -> str:
     ok = [r for r in results if r["status"] == "ok"]
     none_ = [r for r in results if r["status"] == "no_changes"]
+    pkg_pending = [r for r in results if r["status"] == "pkg_pending_no_diff"]
     err = [r for r in results if r["status"] == "error"]
+    _status_label = {
+        "ok": "has_changes",
+        "no_changes": "no_changes",
+        "pkg_pending_no_diff": "pkg_pending_no_diff",
+        "error": "error",
+    }
     rows = "".join(
         f"<tr><td>{r['device']}</td><td>{r.get('ip', '')}</td>"
-        f'<td style="color:{"#166534" if r["status"] == "ok" else "#b91c1c" if r["status"] == "error" else "#6b7280"}">'
-        f"{r['status']}</td></tr>"
+        f'<td style="color:{_status_color(r["status"])}">'
+        f"{_status_label.get(r['status'], r['status'])}</td></tr>"
         for r in results
+    )
+    pkg_pending_note = (
+        f" | <strong>{len(pkg_pending)}</strong> pkg pending (no diff)"
+        if pkg_pending
+        else ""
     )
     return (
         f"<h2>Config-Delta Export — {adom}</h2>"
         f"<p><strong>{len(results)}</strong> devices scanned | "
         f"<strong>{len(ok)}</strong> with changes | "
-        f"<strong>{len(none_)}</strong> in sync | "
+        f"<strong>{len(none_)}</strong> in sync"
+        f"{pkg_pending_note} | "
         f"<strong>{len(err)}</strong> errors</p>"
         f"<table border='1' cellpadding='4' cellspacing='0'>"
         f"<thead><tr><th>Device</th><th>IP</th><th>Status</th></tr></thead>"
@@ -343,10 +368,10 @@ def _build_attachment(adom: str, fmt: str, results: list[dict]) -> dict:
             "data": buf.getvalue().encode(),
             "mimetype": "text/csv",
         }
-    # default: pdf (HTML attachment)
+    # default: html attachment
     body = _build_pdf_html(adom, results)
     return {
-        "filename": f"config-delta-{adom}-{date}.pdf.html",
+        "filename": f"config-delta-{adom}-{date}.html",
         "data": body.encode(),
         "mimetype": "text/html",
     }
@@ -363,6 +388,8 @@ def _build_pdf_html(adom: str, results: list[dict]) -> str:
         pb = "page-break-before:always;" if i > 0 else ""
         if r["status"] == "no_changes":
             body = '<p style="color:#6b7280;font-style:italic">No pending changes.</p>'
+        elif r["status"] == "pkg_pending_no_diff":
+            body = '<p style="color:#92400e;font-style:italic">Package marked as pending in FMG but install-preview produced no CLI diff (changes may be metadata-only).</p>'
         elif r["status"] == "error":
             body = f'<p style="color:#b91c1c">Error: {esc(r.get("error", ""))}</p>'
         else:
