@@ -473,6 +473,11 @@ class FMGClient:
                                     lines[0] if isinstance(lines[0], dict) else {},
                                 )
                                 detail = failed.get("detail", "")
+                            # FMG reports num_err > 0 with "Copy to device done" on
+                            # certain firmware combinations when the preview was
+                            # successfully applied to the device — not a real failure.
+                            if detail.strip().lower() == "copy to device done":
+                                return
                             raise FMGError(
                                 f"{label} task {taskid} for {device} failed"
                                 f"{f': {detail}' if detail else ''}"

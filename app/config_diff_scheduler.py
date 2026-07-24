@@ -32,9 +32,7 @@ def _validate_job_fields(data: dict) -> None:
         raise ValueError("days_of_week must be a non-empty list")
     invalid = [d for d in days if d not in _VALID_DAYS]
     if invalid:
-        raise ValueError(
-            f"days_of_week contains invalid codes: {invalid}. Must be from {sorted(_VALID_DAYS)}"
-        )
+        raise ValueError(f"days_of_week contains invalid codes: {invalid}. Must be from {sorted(_VALID_DAYS)}")
     time_str = data.get("time", "")
     parts = time_str.split(":")
     if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
@@ -403,13 +401,8 @@ def _register(job: dict) -> None:
     from apscheduler.triggers.cron import CronTrigger
 
     day_map = {
-        "SUN": "sun",
-        "MON": "mon",
-        "TUE": "tue",
-        "WED": "wed",
-        "THU": "thu",
-        "FRI": "fri",
-        "SAT": "sat",
+        "SUN": "sun", "MON": "mon", "TUE": "tue", "WED": "wed",
+        "THU": "thu", "FRI": "fri", "SAT": "sat",
     }
     h, m = job["time"].split(":")
     day_str = ",".join(day_map[d] for d in job["days_of_week"])
