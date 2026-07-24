@@ -45,3 +45,49 @@ def test_send_email_raises_when_disabled(tmp_path, monkeypatch):
                                    "run_history_days": 30, "enabled": False})
     with pytest.raises(RuntimeError, match="SMTP not enabled"):
         smtp_client.send_email("x@x.com", "Test", "<p>hi</p>")
+
+
+def test_parse_recipients_single():
+    from app.smtp_client import _parse_recipients
+    assert _parse_recipients("a@x.com") == ["a@x.com"]
+
+
+def test_parse_recipients_comma_separated():
+    from app.smtp_client import _parse_recipients
+    assert _parse_recipients("a@x.com, b@x.com") == ["a@x.com", "b@x.com"]
+
+
+def test_parse_recipients_strips_whitespace():
+    from app.smtp_client import _parse_recipients
+    assert _parse_recipients("  a@x.com ,  b@x.com  ") == ["a@x.com", "b@x.com"]
+
+
+def test_parse_recipients_filters_empty():
+    from app.smtp_client import _parse_recipients
+    assert _parse_recipients("a@x.com,") == ["a@x.com"]
+
+
+def test_send_email_calls_sendmail_with_list(monkeypatch):
+    """sendmail() must receive a list of addresses, not a bare string."""
+    from app import smtp_client
+
+    cfg = {
+        "host": "smtp.test",
+        "port": 25,
+        "tls_mode": "none",
+        "username": "",
+        "password": "",
+        "from_address": "noreply@test.com",
+        "enabled": True,
+    }
+    monkeypatch.setattr(smtp_client, "load_smtp_config", lambda: cfg)
+
+    mock_conn = MagicMock()
+    with patch("smtplib.SMTP", return_value=mock_conn):
+        smtp_client.send_email("a@x.com, b@x.com", "subj", "<p>hi</p>")
+
+    call_args = mock_conn.sendmail.call_args
+    recipients = call_args[0][1]  # positional arg 1
+    assert isinstance(recipients, list)
+    assert "a@x.com" in recipients
+    assert "b@x.com" in recipients
