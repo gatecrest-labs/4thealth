@@ -220,10 +220,11 @@ def _execute_job(job_id: str) -> None:
 
         from app.routes.pending_changes_routes import bulk_preview_adom
 
-        # Lower concurrency than the interactive tab — FMG's install-preview
-        # staging locks are ADOM-scoped; high concurrency causes cancel/install
-        # from one device to wipe another's staging lock, producing empty diffs.
-        results = bulk_preview_adom(adom, max_workers=3)
+        # Sequential (max_workers=1): FMG's install-preview staging locks are
+        # ADOM-scoped — any concurrency causes one device's cancel/install to
+        # wipe another's staging lock, producing empty diffs in the email.
+        # The interactive tab clicks devices one at a time; this matches that.
+        results = bulk_preview_adom(adom, max_workers=1)
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
         record: dict[str, Any] = {
