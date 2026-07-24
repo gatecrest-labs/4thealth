@@ -284,10 +284,16 @@ def _build_summary_html(adom: str, results: list[dict]) -> str:
     none_ = [r for r in results if r["status"] == "no_changes"]
     pkg_pending = [r for r in results if r["status"] == "pkg_pending_no_diff"]
     err = [r for r in results if r["status"] == "error"]
+    _status_label = {
+        "ok": "has_changes",
+        "no_changes": "no_changes",
+        "pkg_pending_no_diff": "pkg_pending_no_diff",
+        "error": "error",
+    }
     rows = "".join(
         f"<tr><td>{r['device']}</td><td>{r.get('ip', '')}</td>"
         f'<td style="color:{_status_color(r["status"])}">'
-        f"{r['status']}</td></tr>"
+        f"{_status_label.get(r['status'], r['status'])}</td></tr>"
         for r in results
     )
     pkg_pending_note = (
