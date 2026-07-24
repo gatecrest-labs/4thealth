@@ -220,7 +220,10 @@ def _execute_job(job_id: str) -> None:
 
         from app.routes.pending_changes_routes import bulk_preview_adom
 
-        results = bulk_preview_adom(adom)
+        # Lower concurrency than the interactive tab — FMG's install-preview
+        # staging locks are ADOM-scoped; high concurrency causes cancel/install
+        # from one device to wipe another's staging lock, producing empty diffs.
+        results = bulk_preview_adom(adom, max_workers=3)
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
         record: dict[str, Any] = {

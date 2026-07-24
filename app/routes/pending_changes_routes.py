@@ -105,7 +105,7 @@ def _evict_old_tasks() -> None:
 # ── Bulk preview helper (used by scheduler + browser export) ─────────────────
 
 
-def bulk_preview_adom(adom: str) -> list[dict]:
+def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
     """Fetch install-preview diffs for every device in *adom* in parallel.
 
     Returns a list of result dicts — one per device — in the same shape the
@@ -178,7 +178,7 @@ def bulk_preview_adom(adom: str) -> list[dict]:
             }
 
     results = []
-    with ThreadPoolExecutor(max_workers=10) as pool:
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(_preview_one, d): d for d in devices}
         for fut in as_completed(futures):
             results.append(fut.result())
