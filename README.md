@@ -4,6 +4,8 @@ A read-only web dashboard for monitoring FortiManager, FortiAnalyzer, FortiAuthe
 and managed FortiGate firewalls. All FortiGate data flows **through FortiManager's
 JSON-RPC API** — no direct device connections are made.
 
+> **Note**: This is an independent open-source project and is not affiliated with, endorsed by, or supported by Fortinet, Inc. FortiManager is a trademark of Fortinet, Inc.
+
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![FortiManager](https://img.shields.io/badge/FortiManager-7.4.x%20%7C%207.6.x-red)
