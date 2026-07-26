@@ -17,6 +17,9 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 ### Changed
 - **Config-Diff scheduled jobs** — day-of-week selector replaced with a multi-checkbox day picker; jobs now store `days_of_week` (array) instead of `day_of_week` (string), allowing any combination of 1–7 days per job (e.g. Mon + Thu only). Job form panel dark mode rendering fixed by replacing hard-coded inline hex colours with CSS custom properties.
 
+### Fixed
+- **Zone policy `"allow only"` verdicts** — `evaluate()` in `app/zone_db.py` ignored the service restriction on `"allow only"` policies: a requested service that didn't match the policy's `services` list fell through to the default `ALLOWED` return, behaving identically to `"allow all"`. Non-matching services for a governed zone pair now correctly resolve to `BLOCKED` (affects `/api/zone/query` and `/external/api/zone/query`). `"allow all"`, `"block all"`, and `"block only"` behavior is unchanged.
+
 ---
 
 ## [2026-07-23] — Config-Delta rename and bulk ADOM export
