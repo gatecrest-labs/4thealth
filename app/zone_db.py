@@ -250,6 +250,8 @@ def evaluate(
         if p["access_type"] == "block all":
             return "BLOCKED", [p]
 
+    allow_only_policies = [p for p in policies if p["access_type"] == "allow only"]
+
     if services:
         alias_sets = [_service_aliases(t) for t in services]
         for p in policies:
@@ -277,6 +279,9 @@ def evaluate(
     for p in policies:
         if p["access_type"] == "allow all":
             return "ALLOWED", [p]
+
+    if services and allow_only_policies:
+        return "BLOCKED", allow_only_policies
 
     return "ALLOWED", policies
 
