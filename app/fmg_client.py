@@ -1318,22 +1318,29 @@ class FMGClient:
         except Exception:
             return {}
 
-    def get_device_log_faz(self, adom: str, device_name: str) -> dict:
-        """Return log.fortianalyzer/setting config from the device via FMG proxy."""
-        try:
-            r = self._proxy(
-                adom,
-                device_name,
-                "/api/v2/cmdb/log.fortianalyzer/setting?vdom=root",
-            )
-            payload = r.get("payload", {})
-            if isinstance(payload, list) and payload:
-                return payload[0] if isinstance(payload[0], dict) else {}
-            if isinstance(payload, dict):
-                return payload
-            return {}
-        except Exception:
-            return {}
+    def get_device_log_faz(self, adom: str, device_name: str) -> list[dict]:
+        """Return all enabled log.fortianalyzer/setting slots (1, 2, 3) from the device."""
+        slots = []
+        endpoints = [
+            "/api/v2/cmdb/log.fortianalyzer/setting?vdom=root",
+            "/api/v2/cmdb/log.fortianalyzer2/setting?vdom=root",
+            "/api/v2/cmdb/log.fortianalyzer3/setting?vdom=root",
+        ]
+        for endpoint in endpoints:
+            try:
+                r = self._proxy(adom, device_name, endpoint)
+                payload = r.get("payload", {})
+                if isinstance(payload, list) and payload:
+                    entry = payload[0] if isinstance(payload[0], dict) else {}
+                elif isinstance(payload, dict):
+                    entry = payload
+                else:
+                    entry = {}
+                if entry:
+                    slots.append(entry)
+            except Exception:
+                pass
+        return slots
 
     def get_device_dns(self, adom: str, device_name: str) -> dict:
         """Return system/dns config from the device via FMG proxy."""
