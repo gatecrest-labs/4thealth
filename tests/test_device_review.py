@@ -190,10 +190,16 @@ def test_syslog_config_missing_no_params():
 
 
 FAZ_DEVICE_DATA_ENABLED = {
-    "log_faz": {"status": "enable", "server": "10.3.3.10"}
+    "log_faz": [{"status": "enable", "server": "10.3.3.10"}]
 }
 FAZ_DEVICE_DATA_DISABLED = {
-    "log_faz": {"status": "disable", "server": ""}
+    "log_faz": [{"status": "disable", "server": ""}]
+}
+FAZ_DEVICE_DATA_MULTI_SLOT = {
+    "log_faz": [
+        {"status": "enable", "server": "10.3.3.10"},
+        {"status": "enable", "server": "10.3.3.20"},
+    ]
 }
 
 
@@ -228,6 +234,23 @@ def test_faz_fail_disabled():
     rows = _run_log_faz("FW-01", FAZ_DEVICE_DATA_DISABLED, {"expected_servers": "10.3.3.10"})
     assert rows[0]["result"] == "FAIL"
     assert rows[0]["ip"] == ""
+
+
+def test_faz_pass_second_slot():
+    rows = _run_log_faz("FW-01", FAZ_DEVICE_DATA_MULTI_SLOT, {"expected_servers": "10.3.3.20"})
+    assert rows[0]["result"] == "PASS"
+    assert "10.3.3.20" in rows[0]["detail"]
+
+
+def test_faz_pass_both_slots_matched():
+    rows = _run_log_faz(
+        "FW-01",
+        FAZ_DEVICE_DATA_MULTI_SLOT,
+        {"expected_servers": "10.3.3.10, 10.3.3.20"},
+    )
+    assert rows[0]["result"] == "PASS"
+    assert "10.3.3.10 ✓" in rows[0]["detail"]
+    assert "10.3.3.20 ✓" in rows[0]["detail"]
 
 
 # ── _run_dns ──────────────────────────────────────────────────────────────────

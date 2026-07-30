@@ -163,7 +163,7 @@ def _fetch_device_data(
         try:
             data["log_faz"] = client.get_device_log_faz(adom, device)
         except Exception:
-            data["log_faz"] = {}
+            data["log_faz"] = []
     if "dns" in data_keys:
         try:
             data["dns"] = client.get_device_dns(adom, device)

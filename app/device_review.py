@@ -776,9 +776,12 @@ _CHECK_LOG_FAZ = "FortiAnalyzer Logging (CIS)"
 
 
 def _run_log_faz(device_name: str, device_data: dict, params: dict) -> list[dict]:
-    """CIS: verify FortiAnalyzer logging is enabled and server matches expected host (IP or FQDN)."""
-    cfg = device_data.get("log_faz", {})
-    if not cfg:
+    """CIS: verify FortiAnalyzer logging is enabled and server matches expected host (IP or FQDN).
+
+    Checks all FAZ slots (log.fortianalyzer, log.fortianalyzer2, log.fortianalyzer3).
+    """
+    slots: list[dict] = device_data.get("log_faz") or []
+    if not slots:
         return [
             _cis_row(
                 device_name,
@@ -788,11 +791,18 @@ def _run_log_faz(device_name: str, device_data: dict, params: dict) -> list[dict
             )
         ]
 
-    status = str(cfg.get("status", "disable")).lower()
-    server = str(cfg.get("server", "")).strip()
-    expected = _parse_host_list(params.get("expected_servers", []))
+    # Collect all enabled servers across all slots
+    enabled_servers: list[str] = []
+    any_enabled = False
+    for slot in slots:
+        status = str(slot.get("status", "disable")).lower()
+        server = str(slot.get("server", "")).strip()
+        if status == "enable":
+            any_enabled = True
+            if server:
+                enabled_servers.append(server)
 
-    if status != "enable":
+    if not any_enabled:
         return [
             {
                 **_cis_row(
@@ -805,22 +815,32 @@ def _run_log_faz(device_name: str, device_data: dict, params: dict) -> list[dict
             }
         ]
 
+    expected = _parse_host_list(params.get("expected_servers", []))
+    configured_display = ", ".join(enabled_servers) if enabled_servers else "(none)"
+
     if not expected:
         detail = (
-            f"FortiAnalyzer logging enabled. Configured server: {server or '(none)'}"
+            f"FortiAnalyzer logging enabled. Configured server(s): {configured_display}"
         )
         return [
             {
                 **_cis_row(device_name, _CHECK_LOG_FAZ, "CONFIG_MISSING", detail),
-                "ip": server,
+                "ip": configured_display,
             }
         ]
 
     parts = []
     any_match = False
     for exp in expected:
-        ok, ann = _match_host(exp, server)
-        if ok:
+        matched = False
+        ann = ""
+        for srv in enabled_servers:
+            ok, a = _match_host(exp, srv)
+            if ok:
+                matched = True
+                ann = a
+                break
+        if matched:
             any_match = True
             entry = f"{exp} ✓" + (f" ({ann})" if ann else "")
         else:
@@ -832,7 +852,7 @@ def _run_log_faz(device_name: str, device_data: dict, params: dict) -> list[dict
     return [
         {
             **_cis_row(device_name, _CHECK_LOG_FAZ, result, detail),
-            "ip": server,
+            "ip": configured_display,
         }
     ]
 
