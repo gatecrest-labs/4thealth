@@ -819,7 +819,9 @@ def _run_log_faz(device_name: str, device_data: dict, params: dict) -> list[dict
     configured_display = ", ".join(enabled_servers) if enabled_servers else "(none)"
 
     if not expected:
-        detail = f"FortiAnalyzer logging enabled. Configured server(s): {configured_display}"
+        detail = (
+            f"FortiAnalyzer logging enabled. Configured server(s): {configured_display}"
+        )
         return [
             {
                 **_cis_row(device_name, _CHECK_LOG_FAZ, "CONFIG_MISSING", detail),
