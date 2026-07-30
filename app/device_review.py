@@ -35,6 +35,9 @@ params_schema — list of input descriptors that the UI should render before a
 """
 
 from __future__ import annotations
+import functools
+import ipaddress
+import socket
 from typing import Any
 
 
@@ -95,13 +98,58 @@ def _allowed_protos(iface: dict) -> list[str]:
 # ── CIS param helpers ─────────────────────────────────────────────────────────
 
 
-def _parse_ip_list(raw: Any) -> list[str]:
-    """Normalise a param value into a list of stripped, non-empty IP strings."""
+def _parse_host_list(raw: Any) -> list[str]:
+    """Normalise a param value into a list of stripped, non-empty host strings.
+
+    Accepts IPs and FQDNs. Splits on commas or whitespace.
+    """
     if isinstance(raw, list):
         return [s.strip() for s in raw if str(s).strip()]
     if isinstance(raw, str):
         return [s.strip() for s in raw.replace(",", " ").split() if s.strip()]
     return []
+
+
+@functools.lru_cache(maxsize=256)
+def _resolve_host(host: str) -> frozenset[str]:
+    """Return routable IP addresses that host resolves to.
+
+    Filters loopback, link-local, and unspecified addresses to prevent
+    DNS sinkholes from causing false-positive matches.
+    Returns empty frozenset on any DNS error.
+    """
+    try:
+        results = socket.getaddrinfo(host, None)
+        addrs = set()
+        for r in results:
+            ip_str = r[4][0]
+            try:
+                addr = ipaddress.ip_address(ip_str)
+                if not (addr.is_loopback or addr.is_link_local or addr.is_unspecified):
+                    addrs.add(ip_str)
+            except ValueError:
+                pass  # skip unparseable addresses
+        return frozenset(addrs)
+    except Exception:
+        return frozenset()
+
+
+def _match_host(expected: str, configured: str) -> tuple[bool, str]:
+    """Compare expected host against configured host.
+
+    Tries direct string match first. On mismatch, resolves both via DNS
+    and checks for IP intersection. Returns (matched, annotation) where
+    annotation is '' on direct match or 'via DNS: expected → ip' on DNS match.
+    """
+    if expected == configured:
+        return True, ""
+    exp_ips = _resolve_host(expected)
+    cfg_ips = _resolve_host(configured)
+    common = exp_ips & cfg_ips
+    if common:
+        resolved_ip = next(iter(common))
+        return True, f"via DNS: {expected} → {resolved_ip}"
+    return False, ""
 
 
 def _to_str(raw: Any) -> str:
@@ -163,16 +211,16 @@ def _run_interface_protocols(
 
 
 def _run_ntp_config(device_name: str, device_data: dict, params: dict) -> list[dict]:
-    """CIS: verify NTP is enabled and configured servers match expected IPs."""
+    """CIS: verify NTP is enabled and configured servers match expected hosts (IP or FQDN)."""
     ntp = device_data.get("ntp", {})
-    expected = _parse_ip_list(params.get("expected_servers", []))
+    expected = _parse_host_list(params.get("expected_servers", []))
 
-    def _row(result: str, detail: str) -> dict:
+    def _row(result: str, detail: str, ip: str = "") -> dict:
         return {
             "device": device_name,
             "interface": "system",
             "vdom": "",
-            "ip": "",
+            "ip": ip,
             "type": "system",
             "status": "",
             "check": "NTP Configuration (CIS)",
@@ -190,7 +238,6 @@ def _run_ntp_config(device_name: str, device_data: dict, params: dict) -> list[d
     if not sync_enabled:
         return [_row("FAIL", "NTP sync is disabled (ntpsync=disable)")]
 
-    # Extract configured server addresses
     raw_servers = ntp.get("ntpserver", [])
     if isinstance(raw_servers, dict):
         raw_servers = list(raw_servers.values())
@@ -199,43 +246,51 @@ def _run_ntp_config(device_name: str, device_data: dict, params: dict) -> list[d
         for s in raw_servers
         if isinstance(s, dict) and s.get("server")
     ]
+    ip_str = ", ".join(configured)
 
     if not expected:
         detail = "NTP sync enabled. Configured: " + (
             ", ".join(configured) if configured else "(none)"
         )
-        return [_row("CONFIG_MISSING", detail)]
+        return [_row("CONFIG_MISSING", detail, ip_str)]
 
-    missing = [ip for ip in expected if ip not in configured]
-    extra = [ip for ip in configured if ip not in expected]
+    parts = []
+    any_fail = False
+    for exp in expected:
+        matched = False
+        annotation = ""
+        for conf in configured:
+            ok, ann = _match_host(exp, conf)
+            if ok:
+                matched = True
+                annotation = ann
+                break
+        if matched:
+            entry = f"{exp} ✓" + (f" ({annotation})" if annotation else "")
+        else:
+            entry = f"{exp} ✗ (not found)"
+            any_fail = True
+        parts.append(entry)
 
-    if missing:
-        detail = (
-            f"Missing expected server(s): {', '.join(missing)}. "
-            f"Configured: {', '.join(configured) or '(none)'}"
-        )
-        return [_row("FAIL", detail)]
-
-    detail = "Configured: " + ", ".join(configured)
-    if extra:
-        detail += f". Additional (unlisted) servers: {', '.join(extra)}"
-    return [_row("PASS", detail)]
+    detail = ", ".join(parts)
+    result = "FAIL" if any_fail else "PASS"
+    return [_row(result, detail, ip_str)]
 
 
 # ── Check: Syslog Configuration (CIS) ────────────────────────────────────────
 
 
 def _run_syslog_config(device_name: str, device_data: dict, params: dict) -> list[dict]:
-    """CIS: verify syslog is enabled and sending to expected server IPs."""
+    """CIS: verify syslog is enabled and sending to expected hosts (IP or FQDN)."""
     servers = device_data.get("syslog", [])
-    expected = _parse_ip_list(params.get("expected_servers", []))
+    expected = _parse_host_list(params.get("expected_servers", []))
 
-    def _row(result: str, detail: str) -> dict:
+    def _row(result: str, detail: str, ip: str = "") -> dict:
         return {
             "device": device_name,
             "interface": "system",
             "vdom": "",
-            "ip": "",
+            "ip": ip,
             "type": "system",
             "status": "",
             "check": "Syslog Configuration (CIS)",
@@ -251,6 +306,7 @@ def _run_syslog_config(device_name: str, device_data: dict, params: dict) -> lis
         for s in servers
         if isinstance(s, dict) and s.get("server")
     ]
+    ip_str = ", ".join(configured)
 
     if not configured:
         if not expected:
@@ -260,23 +316,29 @@ def _run_syslog_config(device_name: str, device_data: dict, params: dict) -> lis
         return [_row("FAIL", "No remote syslog servers enabled on device")]
 
     if not expected:
-        detail = "Syslog enabled. Configured: " + ", ".join(configured)
-        return [_row("CONFIG_MISSING", detail)]
+        return [_row("CONFIG_MISSING", "Syslog enabled. Configured: " + ip_str, ip_str)]
 
-    missing = [ip for ip in expected if ip not in configured]
-    extra = [ip for ip in configured if ip not in expected]
+    parts = []
+    any_fail = False
+    for exp in expected:
+        matched = False
+        annotation = ""
+        for conf in configured:
+            ok, ann = _match_host(exp, conf)
+            if ok:
+                matched = True
+                annotation = ann
+                break
+        if matched:
+            entry = f"{exp} ✓" + (f" ({annotation})" if annotation else "")
+        else:
+            entry = f"{exp} ✗ (not found)"
+            any_fail = True
+        parts.append(entry)
 
-    if missing:
-        detail = (
-            f"Missing expected server(s): {', '.join(missing)}. "
-            f"Configured: {', '.join(configured)}"
-        )
-        return [_row("FAIL", detail)]
-
-    detail = "Configured: " + ", ".join(configured)
-    if extra:
-        detail += f". Additional (unlisted) servers: {', '.join(extra)}"
-    return [_row("PASS", detail)]
+    detail = ", ".join(parts)
+    result = "FAIL" if any_fail else "PASS"
+    return [_row(result, detail, ip_str)]
 
 
 # ── CIS row factory helper ────────────────────────────────────────────────────
@@ -714,6 +776,7 @@ _CHECK_LOG_FAZ = "FortiAnalyzer Logging (CIS)"
 
 
 def _run_log_faz(device_name: str, device_data: dict, params: dict) -> list[dict]:
+    """CIS: verify FortiAnalyzer logging is enabled and server matches expected host (IP or FQDN)."""
     cfg = device_data.get("log_faz", {})
     if not cfg:
         return [
@@ -727,37 +790,50 @@ def _run_log_faz(device_name: str, device_data: dict, params: dict) -> list[dict
 
     status = str(cfg.get("status", "disable")).lower()
     server = str(cfg.get("server", "")).strip()
-    expected = _parse_ip_list(params.get("expected_servers", []))
+    expected = _parse_host_list(params.get("expected_servers", []))
 
     if status != "enable":
         return [
-            _cis_row(
-                device_name, _CHECK_LOG_FAZ, "FAIL", "FortiAnalyzer logging is disabled"
-            )
+            {
+                **_cis_row(
+                    device_name,
+                    _CHECK_LOG_FAZ,
+                    "FAIL",
+                    "FortiAnalyzer logging is disabled",
+                ),
+                "ip": "",
+            }
         ]
 
     if not expected:
         detail = (
             f"FortiAnalyzer logging enabled. Configured server: {server or '(none)'}"
         )
-        return [_cis_row(device_name, _CHECK_LOG_FAZ, "CONFIG_MISSING", detail)]
-
-    if server not in expected:
         return [
-            _cis_row(
-                device_name,
-                _CHECK_LOG_FAZ,
-                "FAIL",
-                f"FAZ server '{server}' does not match expected: {', '.join(expected)}",
-            )
+            {
+                **_cis_row(device_name, _CHECK_LOG_FAZ, "CONFIG_MISSING", detail),
+                "ip": server,
+            }
         ]
+
+    parts = []
+    any_match = False
+    for exp in expected:
+        ok, ann = _match_host(exp, server)
+        if ok:
+            any_match = True
+            entry = f"{exp} ✓" + (f" ({ann})" if ann else "")
+        else:
+            entry = f"{exp} ✗ (not found)"
+        parts.append(entry)
+
+    detail = ", ".join(parts)
+    result = "PASS" if any_match else "FAIL"
     return [
-        _cis_row(
-            device_name,
-            _CHECK_LOG_FAZ,
-            "PASS",
-            f"FortiAnalyzer logging enabled and server '{server}' matches expected",
-        )
+        {
+            **_cis_row(device_name, _CHECK_LOG_FAZ, result, detail),
+            "ip": server,
+        }
     ]
 
 
@@ -767,6 +843,7 @@ _CHECK_DNS = "DNS Servers (CIS)"
 
 
 def _run_dns(device_name: str, device_data: dict, params: dict) -> list[dict]:
+    """CIS: verify expected DNS servers (IP or FQDN) are configured on the device."""
     cfg = device_data.get("dns", {})
     if not cfg:
         return [
@@ -778,31 +855,43 @@ def _run_dns(device_name: str, device_data: dict, params: dict) -> list[dict]:
     primary = str(cfg.get("primary", "")).strip()
     secondary = str(cfg.get("secondary", "")).strip()
     configured = [s for s in [primary, secondary] if s and s != "0.0.0.0"]
-    expected = _parse_ip_list(params.get("expected_servers", []))
+    ip_str = ", ".join(configured)
+    expected = _parse_host_list(params.get("expected_servers", []))
 
     if not expected:
-        detail = "DNS configured: " + (
-            ", ".join(configured) if configured else "(none)"
-        )
-        return [_cis_row(device_name, _CHECK_DNS, "CONFIG_MISSING", detail)]
-
-    missing = [ip for ip in expected if ip not in configured]
-    if missing:
+        detail = "DNS configured: " + (ip_str if ip_str else "(none)")
         return [
-            _cis_row(
-                device_name,
-                _CHECK_DNS,
-                "FAIL",
-                f"Missing DNS server(s): {', '.join(missing)}. Configured: {', '.join(configured) or '(none)'}",
-            )
+            {
+                **_cis_row(device_name, _CHECK_DNS, "CONFIG_MISSING", detail),
+                "ip": ip_str,
+            }
         ]
+
+    parts = []
+    any_fail = False
+    for exp in expected:
+        matched = False
+        annotation = ""
+        for conf in configured:
+            ok, ann = _match_host(exp, conf)
+            if ok:
+                matched = True
+                annotation = ann
+                break
+        if matched:
+            entry = f"{exp} ✓" + (f" ({annotation})" if annotation else "")
+        else:
+            entry = f"{exp} ✗ (not found)"
+            any_fail = True
+        parts.append(entry)
+
+    detail = ", ".join(parts)
+    result = "FAIL" if any_fail else "PASS"
     return [
-        _cis_row(
-            device_name,
-            _CHECK_DNS,
-            "PASS",
-            f"All expected DNS servers present. Configured: {', '.join(configured)}",
-        )
+        {
+            **_cis_row(device_name, _CHECK_DNS, result, detail),
+            "ip": ip_str,
+        }
     ]
 
 
@@ -1191,7 +1280,7 @@ CHECKS: list[dict[str, Any]] = [
                 "key": "expected_servers",
                 "label": "Expected NTP Servers",
                 "type": "ip_list",
-                "placeholder": "e.g. 10.1.1.1, 10.1.1.2",
+                "placeholder": "e.g. 10.1.1.1, ntp.corp.com",
                 "required": False,
             }
         ],
@@ -1207,7 +1296,7 @@ CHECKS: list[dict[str, Any]] = [
                 "key": "expected_servers",
                 "label": "Expected Syslog Servers",
                 "type": "ip_list",
-                "placeholder": "e.g. 10.2.2.1, 10.2.2.2",
+                "placeholder": "e.g. 10.2.2.1, syslog.corp.com",
                 "required": False,
             }
         ],
@@ -1311,9 +1400,9 @@ CHECKS: list[dict[str, Any]] = [
         "params_schema": [
             {
                 "key": "expected_servers",
-                "label": "Expected FortiAnalyzer IPs",
+                "label": "Expected FortiAnalyzer Servers",
                 "type": "ip_list",
-                "placeholder": "e.g. 10.2.2.10",
+                "placeholder": "e.g. 10.2.2.10, faz.corp.com",
                 "required": False,
             }
         ],
@@ -1330,7 +1419,7 @@ CHECKS: list[dict[str, Any]] = [
                 "key": "expected_servers",
                 "label": "Expected DNS Servers",
                 "type": "ip_list",
-                "placeholder": "e.g. 10.3.3.1, 10.3.3.2",
+                "placeholder": "e.g. 10.3.3.1, dns.corp.com",
                 "required": False,
             }
         ],
