@@ -12,13 +12,16 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 ### Added
 - **Config-Delta navigation guard** — a `beforeunload` browser confirmation dialog now fires if the user tries to navigate away or close the tab while a bulk export is in progress.
 - **Scheduled Config-Delta exports** — admin users can create weekly scheduled jobs (ADOM, day, time, format, email recipient) that run server-side and email the full diff report as an attachment with an HTML summary in the body.
-- **Admin → Config-Diff sub-tab** — new admin panel for managing SMTP settings (host, port, TLS, optional auth) with a test-send button, and a scheduled-jobs table with add/edit/delete/run-now controls and per-job run history (30-day retention by default).
+- **Admin → Scheduled sub-tab** — new admin panel (renamed from Config-Diff) for managing SMTP settings (host, port, TLS, optional auth) with a test-send button, Config-Delta scheduled-jobs table, and Device Review scheduled-jobs table. Each table has add/edit/delete/run-now controls and per-job run history (30-day retention by default).
+- **Device Review Scheduled Jobs** — admins can create recurring CIS hardening audit jobs: choose an ADOM, select any subset of the 18 checks, supply per-check parameters (e.g. expected NTP/syslog IPs, min firmware version), set a day-of-week + time schedule, and email results as PDF, CSV, or JSON. Jobs are persisted in `device_review_jobs.json` and registered as APScheduler CronTriggers at startup.
 
 ### Changed
+- **Admin tab renamed** — "Config-Diff" sub-tab renamed to "Scheduled" to reflect its role as the home for all recurring audit and report jobs.
 - **Config-Diff scheduled jobs** — day-of-week selector replaced with a multi-checkbox day picker; jobs now store `days_of_week` (array) instead of `day_of_week` (string), allowing any combination of 1–7 days per job (e.g. Mon + Thu only). Job form panel dark mode rendering fixed by replacing hard-coded inline hex colours with CSS custom properties.
 
 ### Fixed
 - **Zone policy `"allow only"` verdicts** — `evaluate()` in `app/zone_db.py` ignored the service restriction on `"allow only"` policies: a requested service that didn't match the policy's `services` list fell through to the default `ALLOWED` return, behaving identically to `"allow all"`. Non-matching services for a governed zone pair now correctly resolve to `BLOCKED` (affects `/api/zone/query` and `/external/api/zone/query`). `"allow all"`, `"block all"`, and `"block only"` behavior is unchanged.
+- **Device Review scheduled email reports** — protocol names (PING, HTTPS, SSH, HTTP, Telnet, etc.) were missing from the Detail column for Interface Protocols findings. The HTML, CSV, and PDF attachment builders now fall back to the `protocols` list when `detail` is empty, showing e.g. `ping, https (insecure), ssh`.
 
 ---
 

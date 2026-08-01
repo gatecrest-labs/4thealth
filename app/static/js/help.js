@@ -399,11 +399,92 @@ const SECTIONS = [
 `
   },
   {
+    id:    'scheduled',
+    label: 'Scheduled Jobs',
+    html: `
+<h3>Scheduled Jobs</h3>
+<p>The <strong>Scheduled</strong> sub-tab in the Admin panel lets admins create recurring automated reports. Two job types are available: <strong>Config-Delta</strong> (pending configuration diffs) and <strong>Device Review</strong> (CIS hardening audit). Both use the same SMTP settings configured at the top of the panel.</p>
+
+<h3>SMTP Settings</h3>
+<p>Before creating any scheduled job, configure the outbound mail server:</p>
+<ul>
+  <li><strong>Host</strong> — SMTP server hostname or IP.</li>
+  <li><strong>Port</strong> — typically 587 (STARTTLS) or 465 (SSL).</li>
+  <li><strong>TLS</strong> — enable for STARTTLS; use port 465 for implicit SSL.</li>
+  <li><strong>Username / Password</strong> — leave blank for unauthenticated relays.</li>
+  <li><strong>From address</strong> — the sender address that appears in delivered emails.</li>
+</ul>
+<p>Click <strong>Test Email</strong> to send a test message and verify the settings before saving.</p>
+
+<h3>Config-Delta Scheduled Jobs</h3>
+<p>Generates and emails pending configuration diffs (changes committed in FortiManager but not yet pushed to devices) for an entire ADOM on a recurring schedule.</p>
+<ul>
+  <li><strong>ADOM</strong> — the FortiManager ADOM to sweep.</li>
+  <li><strong>Days</strong> — one or more days of the week (e.g. Mon + Thu).</li>
+  <li><strong>Time</strong> — HH:MM (24-hour) when the job fires.</li>
+  <li><strong>Format</strong> — PDF (HTML), CSV, or JSON attachment.</li>
+  <li><strong>Email</strong> — comma-separated recipient list.</li>
+  <li><strong>Enabled</strong> — uncheck to pause the job without deleting it.</li>
+</ul>
+<p>Click <strong>Run Now</strong> on any job row to fire it immediately outside the schedule.</p>
+
+<h3>Device Review Scheduled Jobs</h3>
+<p>Runs CIS hardening checks against every device in an ADOM on a recurring schedule and emails the results.</p>
+<ul>
+  <li><strong>Name</strong> — a label for this job (e.g. "Weekly CIS Audit — Enterprise").</li>
+  <li><strong>ADOM</strong> — the FortiManager ADOM to audit.</li>
+  <li><strong>Days / Time</strong> — same as Config-Delta above.</li>
+  <li><strong>Checks</strong> — choose any subset of the 18 available checks. Leave all ticked to run the full audit.</li>
+  <li><strong>Check Parameters</strong> — appears below the checklist for any parameterised check you have ticked. Supply expected values (e.g. NTP server IPs, minimum firmware version) before saving. Checks with no parameter supplied run as <code>CONFIG_MISSING</code> — the device value is shown without comparison.</li>
+  <li><strong>Format</strong> — PDF (HTML), CSV, or JSON attachment.</li>
+  <li><strong>Email</strong> — comma-separated recipient list.</li>
+  <li><strong>Enabled</strong> — uncheck to pause without deleting.</li>
+</ul>
+
+<h3>Email Report Format</h3>
+<p>Each Device Review email contains two parts:</p>
+<ul>
+  <li><strong>Email body</strong> — a summary table showing pass / fail / warn counts per check across all devices.</li>
+  <li><strong>Attachment</strong> — the full findings detail in your chosen format:
+    <ul>
+      <li><strong>PDF (HTML)</strong> — styled HTML table with Device, Check, Result, Interface, VDOM, IP, and Detail columns. Result values are colour-coded (red = FAIL/INSECURE, amber = WARN/CONFIG_MISSING, green = PASS, blue = INFO).</li>
+      <li><strong>CSV</strong> — same columns as the HTML report, with a metadata header block at the top (ADOM, timestamp).</li>
+      <li><strong>JSON</strong> — complete row objects including the full <code>protocols</code> list for Interface Protocols findings.</li>
+    </ul>
+  </li>
+</ul>
+
+<h3>Run History</h3>
+<p>Each job row shows a <strong>Last Run</strong> status (ok / error) and timestamp. Click the status chip to expand the last 5 run records inline. Run history is retained for 30 days by default (configurable via <code>run_history_days</code> in SMTP settings).</p>
+
+<h3>Parameterised Checks — Quick Reference</h3>
+<table style="border-collapse:collapse;font-size:12px;width:100%">
+  <thead><tr style="background:var(--bg-secondary)">
+    <th style="padding:3px 6px;text-align:left">Check</th>
+    <th style="padding:3px 6px;text-align:left">Parameter</th>
+    <th style="padding:3px 6px;text-align:left">Example</th>
+  </tr></thead>
+  <tbody>
+    <tr><td style="padding:3px 6px">NTP Configuration</td><td style="padding:3px 6px">Expected server IPs</td><td style="padding:3px 6px"><code>10.1.1.1, 10.1.1.2</code></td></tr>
+    <tr><td style="padding:3px 6px">Syslog Configuration</td><td style="padding:3px 6px">Expected server IPs</td><td style="padding:3px 6px"><code>10.2.2.1</code></td></tr>
+    <tr><td style="padding:3px 6px">Admin Idle Timeout</td><td style="padding:3px 6px">Max minutes</td><td style="padding:3px 6px"><code>10</code></td></tr>
+    <tr><td style="padding:3px 6px">Admin Lockout Threshold</td><td style="padding:3px 6px">Max attempts</td><td style="padding:3px 6px"><code>5</code></td></tr>
+    <tr><td style="padding:3px 6px">Password Minimum Length</td><td style="padding:3px 6px">Min characters</td><td style="padding:3px 6px"><code>12</code></td></tr>
+    <tr><td style="padding:3px 6px">Log Severity Level</td><td style="padding:3px 6px">Max severity</td><td style="padding:3px 6px"><code>information</code></td></tr>
+    <tr><td style="padding:3px 6px">FortiAnalyzer Logging</td><td style="padding:3px 6px">Expected FAZ IP</td><td style="padding:3px 6px"><code>10.3.3.1</code></td></tr>
+    <tr><td style="padding:3px 6px">DNS Servers</td><td style="padding:3px 6px">Expected server IPs</td><td style="padding:3px 6px"><code>8.8.8.8, 8.8.4.4</code></td></tr>
+    <tr><td style="padding:3px 6px">Minimum TLS Version</td><td style="padding:3px 6px">Min TLS version</td><td style="padding:3px 6px"><code>tlsv1-2</code></td></tr>
+    <tr><td style="padding:3px 6px">Firmware Version Compliance</td><td style="padding:3px 6px">Minimum version</td><td style="padding:3px 6px"><code>7.4.3</code></td></tr>
+  </tbody>
+</table>
+`
+  },
+  {
     id:    'admin',
     label: 'Admin',
     html: `
 <h3>Administration Panel</h3>
-<p>Accessible to <strong>admin</strong> accounts only via the <strong>&#9881; Admin</strong> link in the navigation bar. Contains three sub-tabs: <strong>Groups &amp; Permissions</strong>, <strong>Map Region Colors</strong>, and <strong>Application Logs</strong>.</p>
+<p>Accessible to <strong>admin</strong> accounts only via the <strong>&#9881; Admin</strong> link in the navigation bar. Contains four sub-tabs: <strong>Groups &amp; Permissions</strong>, <strong>Scheduled</strong>, <strong>Map Region Colors</strong>, and <strong>Application Logs</strong>.</p>
 
 <h3>Groups &amp; Permissions</h3>
 <p>Groups control two things for non-admin users: which <strong>navigation tabs</strong> they can see and which <strong>ADOMs</strong> they can access.</p>
