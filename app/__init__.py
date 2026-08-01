@@ -21,9 +21,11 @@ _BLUEPRINT_MODULES = [
 ]
 
 
-def create_app() -> Flask:
+def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_object(Config)
+    if test_config:
+        app.config.update(test_config)
 
     @app.before_request
     def _security_filters():
@@ -143,6 +145,18 @@ def create_app() -> Flask:
                 init_config_diff_scheduler(app)
         except Exception as exc:
             app.logger.warning("Config-Diff scheduler failed to start: %s", exc)
+
+    if not app.config.get("TESTING") and not app.config.get("_DR_SCHEDULER_STARTED"):
+        app.config["_DR_SCHEDULER_STARTED"] = True
+        try:
+            from app.device_review_scheduler import (
+                init_scheduler as init_dr_scheduler,
+            )
+
+            with app.app_context():
+                init_dr_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Device Review scheduler failed to start: %s", exc)
 
     @app.context_processor
     def inject_session_globals():
