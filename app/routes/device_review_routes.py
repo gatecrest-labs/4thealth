@@ -35,6 +35,7 @@ from app.fmg_client import FMGError
 from app.device_review import run_checks, CHECKS_META, _CHECKS_BY_KEY
 from app import registry
 from app.security import internal_api_error, upstream_api_error
+from app.app_logger import app_log
 
 bp = Blueprint("device_review", __name__)
 
@@ -235,6 +236,66 @@ def device_review_run_one():
 
     rows = run_checks(device, device_data, check_keys, check_params)
     return jsonify({"device": device, "rows": rows})
+
+
+# ── Scheduler entry point (session-free) ─────────────────────────────────────
+
+
+def bulk_device_review_adom(
+    adom: str,
+    checks: list[str] | None,
+    check_params: dict,
+    max_workers: int = 4,
+) -> list[dict]:
+    """Run device review checks against all devices in an ADOM.
+
+    Designed for the scheduler — no Flask request context required.
+    Returns list of {device, ip, rows, error}.
+    """
+    import concurrent.futures
+
+    valid_keys = {c["key"] for c in CHECKS_META}
+    if checks:
+        checks = [k for k in checks if k in valid_keys]
+    needed = _needed_data_keys(checks if checks else None)
+
+    try:
+        with make_client() as client:
+            all_devices = client.get_devices(adom)
+    except Exception as exc:
+        app_log(
+            "ERROR",
+            "device_review_routes",
+            f"bulk_device_review_adom: get_devices failed for {adom}: {exc}",
+        )
+        return []
+
+    def _run_one(dev: dict) -> dict:
+        name = dev.get("name", "")
+        ip = dev.get("ip", dev.get("mgmt_ip", ""))
+        try:
+            with make_client() as c:
+                device_data = _fetch_device_data(c, adom, name, needed, dev)
+            rows = run_checks(
+                name, device_data, checks if checks else None, check_params
+            )
+            return {"device": name, "ip": ip, "rows": rows, "error": None}
+        except Exception as exc:
+            app_log(
+                "ERROR",
+                "device_review_routes",
+                f"bulk_device_review_adom: check failed for {name}: {exc}",
+            )
+            return {"device": name, "ip": ip, "rows": [], "error": str(exc)}
+
+    valid_devices = [d for d in all_devices if isinstance(d, dict) and d.get("name")]
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_run_one, d): d for d in valid_devices}
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+
+    return results
 
 
 # ── API: bulk run checks ──────────────────────────────────────────────────────

@@ -54,6 +54,8 @@ from app.app_settings import get_all as get_all_settings, set_setting
 from app.api_tokens import create_token, list_tokens, revoke_token
 from app import smtp_client as _smtp
 from app import config_diff_scheduler as _sched
+from app import device_review_scheduler as _dr_sched
+from app.device_review import CHECKS_META as _DR_CHECKS_META
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -65,7 +67,9 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 @_admin_required
 def admin_page():
     app_log("DEBUG", "admin", "Admin page accessed", username=session["user"])
-    return render_template("admin.html", user=session["user"])
+    return render_template(
+        "admin.html", user=session["user"], checks_meta=_DR_CHECKS_META
+    )
 
 
 # ── Groups API ────────────────────────────────────────────────────────────────
@@ -408,3 +412,67 @@ def admin_cdiff_jobs_status(job_id: str):
         return jsonify({"error": "Job not found"}), 404
     last_run = job["runs"][0] if job.get("runs") else None
     return jsonify({"running": _sched.is_job_running(job_id), "last_run": last_run})
+
+
+# ── Device Review: Scheduled Jobs ─────────────────────────────────────────────
+
+
+@bp.route("/api/device-review/jobs")
+@_admin_required
+def admin_dr_jobs_list():
+    return jsonify(_dr_sched.get_all_jobs())
+
+
+@bp.route("/api/device-review/jobs", methods=["POST"])
+@_admin_required
+def admin_dr_jobs_create():
+    data = request.get_json(force=True) or {}
+    try:
+        job = _dr_sched.create_job(data)
+    except (KeyError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(job), 201
+
+
+@bp.route("/api/device-review/jobs/<job_id>", methods=["PUT"])
+@_admin_required
+def admin_dr_jobs_update(job_id: str):
+    data = request.get_json(force=True) or {}
+    try:
+        job = _dr_sched.update_job(job_id, data)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(job)
+
+
+@bp.route("/api/device-review/jobs/<job_id>", methods=["DELETE"])
+@_admin_required
+def admin_dr_jobs_delete(job_id: str):
+    try:
+        _dr_sched.delete_job(job_id)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/device-review/jobs/<job_id>/run", methods=["POST"])
+@_admin_required
+def admin_dr_jobs_run(job_id: str):
+    jobs = _dr_sched.get_all_jobs()
+    if not any(j["id"] == job_id for j in jobs):
+        return jsonify({"error": "Job not found"}), 404
+    _dr_sched.run_job_now(job_id)
+    return jsonify({"ok": True, "message": "Job started"}), 202
+
+
+@bp.route("/api/device-review/jobs/<job_id>/status")
+@_admin_required
+def admin_dr_jobs_status(job_id: str):
+    jobs = _dr_sched.get_all_jobs()
+    job = next((j for j in jobs if j["id"] == job_id), None)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    last_run = job["runs"][0] if job.get("runs") else None
+    return jsonify({"running": _dr_sched.is_job_running(job_id), "last_run": last_run})

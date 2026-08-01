@@ -12,7 +12,7 @@
       if (btn.dataset.panel === 'logs') loadLogs();
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
-      if (btn.dataset.panel === 'config-diff') { loadSMTP(); loadJobs(); }
+      if (btn.dataset.panel === 'scheduled') { loadSMTP(); loadJobs(); loadDRJobs(); }
     });
   });
 
@@ -920,4 +920,240 @@ async function runJobNow(id) {
 
 function getCSRF() {
   return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+/* ── Device Review: Scheduled Jobs ─────────────────────────────────────────── */
+
+let _drJobs = [];
+
+async function loadDRJobs() {
+  const res = await fetch('/admin/api/device-review/jobs');
+  _drJobs = res.ok ? await res.json() : [];
+  renderDRJobsTable();
+}
+
+function renderDRJobsTable() {
+  const tbody = document.getElementById('drJobsTableBody');
+  if (!tbody) return;
+  if (!_drJobs.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
+    return;
+  }
+  const totalChecks = (DR_CHECK_DEFS || []).length;
+  tbody.innerHTML = _drJobs.map(j => {
+    const last  = j.runs && j.runs[0];
+    const ts    = last ? new Date(last.ran_at).toLocaleString() : '—';
+    const badge = !last
+      ? '<span style="color:var(--text-muted)">Never</span>'
+      : last.status === 'ok'
+        ? `<span style="color:#166534;font-weight:600" title="Findings: ${last.total_findings||0} | Fails: ${last.fail_count||0}">OK</span>`
+        : `<span style="color:var(--danger);font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
+    const checksCount = j.checks && j.checks.length ? `${j.checks.length} / ${totalChecks}` : `All (${totalChecks})`;
+    return `<tr>
+      <td>${escH(j.name||'')}</td>
+      <td>${escH(j.adom)}</td>
+      <td>${(j.days_of_week||[]).map(d=>_DAY_LABELS[d]||d).join(', ')}</td>
+      <td>${escH(j.time)}</td>
+      <td>${escH(checksCount)}</td>
+      <td>${escH(j.format === 'pdf' ? 'HTML' : (j.format||'').toUpperCase())}</td>
+      <td>${escH(j.email)}</td>
+      <td style="font-size:11px">${ts}</td>
+      <td>${badge}</td>
+      <td>
+        <button class="btn-sm" onclick="editDRJob('${j.id}')">Edit</button>
+        <button class="btn-sm" style="color:var(--danger)" onclick="deleteDRJob('${j.id}')">Delete</button>
+        <button class="btn-sm" id="drRunBtn-${j.id}" onclick="runDRJobNow('${j.id}')">Run Now</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadDRJobAdoms(selectedAdom) {
+  const sel = document.getElementById('drJobFormAdom');
+  if (!sel) return;
+  const res  = await fetch('/admin/api/adoms');
+  const data = res.ok ? await res.json() : {};
+  sel.innerHTML = (data.adoms || []).map(a => `<option value="${escH(a)}">${escH(a)}</option>`).join('');
+  if (selectedAdom !== undefined) sel.value = selectedAdom;
+}
+
+function showDRJobForm(job) {
+  document.getElementById('drJobFormTitle').textContent = job ? 'Edit Device Review Job' : 'New Device Review Job';
+  document.getElementById('drJobFormId').value      = job ? job.id : '';
+  document.getElementById('drJobFormName').value    = job ? (job.name||'') : '';
+  document.getElementById('drJobFormAdom').value    = job ? job.adom : '';
+  const activeDays = job ? (job.days_of_week || ['MON']) : ['MON'];
+  _DAY_CODES.forEach(code => {
+    const chk = document.getElementById('drDayChk-' + code);
+    if (chk) chk.checked = activeDays.includes(code);
+  });
+  document.getElementById('drJobFormTime').value    = job ? job.time : '06:00';
+  document.getElementById('drJobFormFormat').value  = job ? job.format : 'pdf';
+  document.getElementById('drJobFormEmail').value   = job ? job.email : '';
+  document.getElementById('drJobFormEnabled').checked = job ? !!job.enabled : true;
+
+  // Restore check selections
+  const savedChecks = job && job.checks && job.checks.length ? new Set(job.checks) : null;
+  document.querySelectorAll('input[name="drJobCheck"]').forEach(cb => {
+    cb.checked = savedChecks ? savedChecks.has(cb.value) : true;
+  });
+
+  document.getElementById('drJobFormMsg').textContent = '';
+  document.getElementById('drJobForm').style.display = 'block';
+  updateDRParamsPanel();
+
+  // Restore param values — must run after updateDRParamsPanel() creates the inputs
+  if (job && job.check_params) {
+    Object.entries(job.check_params).forEach(([checkKey, paramValues]) => {
+      Object.entries(paramValues).forEach(([paramKey, val]) => {
+        const inp = document.getElementById(`drAdminParam_${checkKey}_${paramKey}`);
+        if (inp) inp.value = val;
+      });
+    });
+  }
+
+  loadDRJobAdoms(job ? job.adom : undefined);
+}
+
+function cancelDRJobForm() {
+  document.getElementById('drJobForm').style.display = 'none';
+}
+
+function editDRJob(id) {
+  const job = _drJobs.find(j => j.id === id);
+  if (job) showDRJobForm(job);
+}
+
+function updateDRParamsPanel() {
+  const checkedKeys = new Set(
+    [...document.querySelectorAll('input[name="drJobCheck"]:checked')].map(cb => cb.value)
+  );
+  const panel  = document.getElementById('drParamsPanel');
+  const fields = document.getElementById('drParamsFields');
+  if (!panel || !fields) return;
+
+  const active = (DR_CHECK_DEFS || []).filter(
+    c => checkedKeys.has(c.key) && c.params_schema && c.params_schema.length > 0
+  );
+
+  if (!active.length) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  // Preserve typed values before rebuild
+  const savedValues = {};
+  fields.querySelectorAll('.dr-admin-param-input').forEach(inp => {
+    savedValues[`${inp.dataset.checkKey}_${inp.dataset.paramKey}`] = inp.value;
+  });
+
+  fields.innerHTML = '';
+  active.forEach(check => {
+    check.params_schema.forEach(param => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem;flex-wrap:wrap';
+
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'min-width:180px;font-size:.88rem;font-weight:600;color:var(--text)';
+      lbl.textContent = `${check.name} — ${param.label}:`;
+
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.id   = `drAdminParam_${check.key}_${param.key}`;
+      inp.dataset.checkKey  = check.key;
+      inp.dataset.paramKey  = param.key;
+      inp.placeholder = param.placeholder || '';
+      inp.className   = 'form-control dr-admin-param-input';
+      inp.style.cssText = 'max-width:360px;font-size:.88rem';
+
+      const savedKey = `${check.key}_${param.key}`;
+      if (savedValues[savedKey] !== undefined) inp.value = savedValues[savedKey];
+
+      row.appendChild(lbl);
+      row.appendChild(inp);
+      fields.appendChild(row);
+    });
+  });
+}
+
+function _collectDRCheckParams() {
+  const params = {};
+  document.querySelectorAll('.dr-admin-param-input').forEach(inp => {
+    const ck  = inp.dataset.checkKey;
+    const pk  = inp.dataset.paramKey;
+    const val = (inp.value || '').trim();
+    if (!val) return;
+    if (!params[ck]) params[ck] = {};
+    params[ck][pk] = val;
+  });
+  return params;
+}
+
+async function saveDRJob() {
+  const msg  = document.getElementById('drJobFormMsg');
+  const id   = document.getElementById('drJobFormId').value;
+  const selectedDays = _DAY_CODES.filter(code => {
+    const chk = document.getElementById('drDayChk-' + code);
+    return chk && chk.checked;
+  });
+  if (!selectedDays.length) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = 'Select at least one day.';
+    return;
+  }
+  const selectedChecks = [...document.querySelectorAll('input[name="drJobCheck"]:checked')].map(cb => cb.value);
+  const payload = {
+    name:         document.getElementById('drJobFormName').value.trim(),
+    adom:         document.getElementById('drJobFormAdom').value,
+    days_of_week: selectedDays,
+    time:         document.getElementById('drJobFormTime').value,
+    checks:       selectedChecks,
+    check_params: _collectDRCheckParams(),
+    format:       document.getElementById('drJobFormFormat').value,
+    email:        document.getElementById('drJobFormEmail').value.trim(),
+    enabled:      document.getElementById('drJobFormEnabled').checked,
+  };
+  const url    = id ? `/admin/api/device-review/jobs/${id}` : '/admin/api/device-review/jobs';
+  const method = id ? 'PUT' : 'POST';
+  const res    = await fetch(url, { method,
+    headers: {'Content-Type':'application/json','X-CSRF-Token': getCSRF()},
+    body: JSON.stringify(payload) });
+  if (res.ok) {
+    cancelDRJobForm();
+    loadDRJobs();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    msg.style.color = 'var(--danger)';
+    msg.textContent = err.error || 'Save failed.';
+  }
+}
+
+async function deleteDRJob(id) {
+  if (!confirm('Delete this Device Review job?')) return;
+  await fetch(`/admin/api/device-review/jobs/${id}`, { method: 'DELETE',
+    headers: {'X-CSRF-Token': getCSRF()} });
+  loadDRJobs();
+}
+
+async function runDRJobNow(id) {
+  const btn = document.getElementById(`drRunBtn-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  const runRes = await fetch(`/admin/api/device-review/jobs/${id}/run`, { method: 'POST',
+    headers: {'X-CSRF-Token': getCSRF()} });
+  if (!runRes.ok) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    return;
+  }
+  const poll = setInterval(async () => {
+    try {
+      const res  = await fetch(`/admin/api/device-review/jobs/${id}/status`);
+      const data = await res.json();
+      if (!data.running) {
+        clearInterval(poll);
+        if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+        loadDRJobs();
+      }
+    } catch (_) {
+      clearInterval(poll);
+      if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    }
+  }, 3000);
 }

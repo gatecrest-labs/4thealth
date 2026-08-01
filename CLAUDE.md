@@ -385,17 +385,61 @@ Table rows show a single compact badge (highest-priority state). The diff panel 
 - `GET /api/pending-changes/adoms/<adom>/devices` — device list with status fields
 - `POST /api/pending-changes/adoms/<adom>/device/<device>/preview` — trigger + return parsed diff
 
-### Config-Diff Scheduled Exports
+### Scheduled Exports
 
-`app/config_diff_scheduler.py` — APScheduler-based export engine supporting scheduled jobs on one or more days of the week. Persists jobs and run history in `config_diff_jobs.json` (project root, gitignored); jobs store `days_of_week` (array of day codes like `["MON","THU"]`) that APScheduler converts to a comma-joined lowercase cron string. Registered in `app/__init__.py` alongside other background schedulers. Reuses `bulk_preview_adom()` from `app/routes/pending_changes_routes.py` for the actual FMG diff fetching.
+Two scheduler modules support recurring exports: Config-Delta diffs (`app/config_diff_scheduler.py`) and Device Review CIS audit results (`app/device_review_scheduler.py`). Both are APScheduler-based, persist jobs in gitignored JSON files, and are registered in `app/__init__.py` alongside other background schedulers.
+
+#### Config-Delta Scheduled Jobs
+
+`app/config_diff_scheduler.py` — APScheduler-based export engine supporting scheduled jobs on one or more days of the week. Persists jobs and run history in `config_diff_jobs.json` (project root, gitignored); jobs store `days_of_week` (array of day codes like `["MON","THU"]`) that APScheduler converts to a comma-joined lowercase cron string. Reuses `bulk_preview_adom()` from `app/routes/pending_changes_routes.py` for the actual FMG diff fetching.
 
 `app/smtp_client.py` — stdlib `smtplib` wrapper. Config in `smtp_config.json` (project root, gitignored). `send_email()` raises on failure; `test_connection()` always returns a dict.
 
-**Admin UI:** Admin → Config-Diff sub-tab. SMTP form + jobs table. JS in `app/static/js/admin.js`.
+**Admin UI:** Admin → Scheduled sub-tab. SMTP form + jobs table. JS in `app/static/js/admin.js`.
 
 **Persistence pattern:** Same as `app_settings.json` / `api_tokens.json` — atomic JSON writes via `app/atomic_io.py`, threading.Lock for concurrent access.
 
 **Run history pruning:** On each successful job execution, records older than `run_history_days` (default 30) are removed from `runs[]` in `config_diff_jobs.json`.
+
+#### Device Review Scheduled Jobs
+
+`app/device_review_scheduler.py` — APScheduler-based scheduler mirroring `config_diff_scheduler.py`.
+
+Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs.example.json` to create).
+
+**Job schema:**
+```json
+{
+  "id": "uuid",
+  "name": "Weekly CIS Audit",
+  "adom": "Enterprise Services",
+  "days_of_week": ["MON", "FRI"],
+  "time": "02:00",
+  "checks": ["ntp_config", "trusted_hosts"],
+  "check_params": { "ntp_config": { "expected_servers": "10.1.1.1" } },
+  "email": "alice@corp.com, bob@corp.com",
+  "format": "pdf",
+  "enabled": true,
+  "runs": [...]
+}
+```
+
+`checks`: list of check keys from `CHECKS_META`; empty list = run all 18.
+`check_params`: only entries for parameterized checks; omitted keys = `CONFIG_MISSING`.
+`email`: comma-separated string — `smtp_client._parse_recipients()` handles splitting.
+
+**`bulk_device_review_adom(adom, checks, check_params, max_workers=4)`** in `app/routes/device_review_routes.py` — session-free entry point for the scheduler. Uses `ThreadPoolExecutor(max_workers=4)`.
+
+**Admin API endpoints** (all `admin_required`):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/admin/api/device-review/jobs` | List all Device Review scheduled jobs |
+| `POST` | `/admin/api/device-review/jobs` | Create a new job |
+| `PUT` | `/admin/api/device-review/jobs/<id>` | Update an existing job |
+| `DELETE` | `/admin/api/device-review/jobs/<id>` | Delete a job |
+| `POST` | `/admin/api/device-review/jobs/<id>/run` | Trigger an immediate run |
+| `GET` | `/admin/api/device-review/jobs/<id>/status` | Get last run status / history |
 
 ### External API
 
