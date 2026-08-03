@@ -327,7 +327,10 @@ def _run_ntp_config(device_name: str, device_data: dict, params: dict) -> list[d
         parts.append(entry)
 
     detail = ", ".join(parts)
-    result = "FAIL" if any_fail else "PASS"
+    if any_fail:
+        result = "WARN" if configured else "FAIL"
+    else:
+        result = "PASS"
     return [_row(result, detail, ip_str)]
 
 
@@ -367,7 +370,12 @@ def _run_syslog_config(device_name: str, device_data: dict, params: dict) -> lis
             return [
                 _row("CONFIG_MISSING", "No remote syslog servers enabled on device")
             ]
-        return [_row("FAIL", "No remote syslog servers enabled on device")]
+        # No servers configured but expected ones specified: build parts list to show mismatches
+        parts = []
+        for exp in expected:
+            parts.append(f"{exp} ✗ (not found)")
+        detail = ", ".join(parts)
+        return [_row("FAIL", detail)]
 
     if not expected:
         return [_row("CONFIG_MISSING", "Syslog enabled. Configured: " + ip_str, ip_str)]
@@ -391,7 +399,7 @@ def _run_syslog_config(device_name: str, device_data: dict, params: dict) -> lis
         parts.append(entry)
 
     detail = ", ".join(parts)
-    result = "FAIL" if any_fail else "PASS"
+    result = "WARN" if any_fail else "PASS"
     return [_row(result, detail, ip_str)]
 
 
@@ -902,7 +910,12 @@ def _run_log_faz(device_name: str, device_data: dict, params: dict) -> list[dict
         parts.append(entry)
 
     detail = ", ".join(parts)
-    result = "PASS" if any_match else "FAIL"
+    if any_match:
+        result = "PASS"
+    elif enabled_servers:
+        result = "WARN"
+    else:
+        result = "FAIL"
     return [
         {
             **_cis_row(device_name, _CHECK_LOG_FAZ, result, detail),
@@ -960,7 +973,10 @@ def _run_dns(device_name: str, device_data: dict, params: dict) -> list[dict]:
         parts.append(entry)
 
     detail = ", ".join(parts)
-    result = "FAIL" if any_fail else "PASS"
+    if any_fail:
+        result = "WARN" if configured else "FAIL"
+    else:
+        result = "PASS"
     return [
         {
             **_cis_row(device_name, _CHECK_DNS, result, detail),

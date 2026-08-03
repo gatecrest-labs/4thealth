@@ -119,12 +119,20 @@ def test_ntp_pass_direct_ip():
     assert rows[0]["ip"] == "10.1.1.1, 10.1.1.2"
 
 
-def test_ntp_fail_missing_server():
+def test_ntp_warn_wrong_server():
     rows = _run_ntp_config("FW-01", NTP_DEVICE_DATA, {"expected_servers": "10.1.1.1, 10.1.1.3"})
-    assert rows[0]["result"] == "FAIL"
+    assert rows[0]["result"] == "WARN"
     assert "10.1.1.1 ✓" in rows[0]["detail"]
     assert "10.1.1.3 ✗" in rows[0]["detail"]
     assert rows[0]["ip"] == "10.1.1.1, 10.1.1.2"
+
+
+def test_ntp_warn_fqdn_not_found():
+    """FQDN expected but doesn't resolve to any configured server → WARN (servers exist)."""
+    with patch("app.device_review._resolve_host", return_value=frozenset()):
+        rows = _run_ntp_config("FW-01", NTP_DEVICE_DATA, {"expected_servers": "ntp.corp.com"})
+    assert rows[0]["result"] == "WARN"
+    assert "ntp.corp.com ✗" in rows[0]["detail"]
 
 
 def test_ntp_pass_via_dns():
@@ -140,6 +148,14 @@ def test_ntp_config_missing_no_params():
     rows = _run_ntp_config("FW-01", NTP_DEVICE_DATA, {})
     assert rows[0]["result"] == "CONFIG_MISSING"
     assert rows[0]["ip"] == "10.1.1.1, 10.1.1.2"
+
+
+def test_ntp_fail_sync_enabled_no_servers():
+    """NTP sync enabled but no servers in config → FAIL (nothing configured to compare)."""
+    data = {"ntp": {"ntpsync": "enable", "ntpserver": []}}
+    rows = _run_ntp_config("FW-01", data, {"expected_servers": "10.1.1.1"})
+    assert rows[0]["result"] == "FAIL"
+    assert "10.1.1.1 ✗" in rows[0]["detail"]
 
 
 def test_ntp_fail_sync_disabled():
@@ -167,11 +183,20 @@ def test_syslog_pass_direct():
     assert rows[0]["ip"] == "10.2.2.1, 10.2.2.2"
 
 
-def test_syslog_fail_missing():
+def test_syslog_warn_wrong_server():
     rows = _run_syslog_config("FW-01", SYSLOG_DEVICE_DATA, {"expected_servers": "10.2.2.1, 10.2.2.3"})
-    assert rows[0]["result"] == "FAIL"
+    assert rows[0]["result"] == "WARN"
+    assert "10.2.2.1 ✓" in rows[0]["detail"]
     assert "10.2.2.3 ✗" in rows[0]["detail"]
     assert rows[0]["ip"] == "10.2.2.1, 10.2.2.2"
+
+
+def test_syslog_fail_no_configured_servers():
+    """No syslog servers configured → FAIL (nothing to compare)."""
+    data = {"syslog": []}
+    rows = _run_syslog_config("FW-01", data, {"expected_servers": "10.2.2.1"})
+    assert rows[0]["result"] == "FAIL"
+    assert "10.2.2.1 ✗" in rows[0]["detail"]
 
 
 def test_syslog_pass_via_dns():
@@ -212,10 +237,19 @@ def test_faz_pass_direct():
     assert rows[0]["ip"] == "10.3.3.10"
 
 
-def test_faz_fail_wrong_server():
+def test_faz_warn_wrong_server():
     rows = _run_log_faz("FW-01", FAZ_DEVICE_DATA_ENABLED, {"expected_servers": "10.3.3.99"})
-    assert rows[0]["result"] == "FAIL"
+    assert rows[0]["result"] == "WARN"
+    assert "10.3.3.99 ✗" in rows[0]["detail"]
     assert rows[0]["ip"] == "10.3.3.10"
+
+
+def test_faz_fail_enabled_no_server_addresses():
+    """FAZ logging enabled but slot has no server address → FAIL (nothing to compare)."""
+    data = {"log_faz": [{"status": "enable", "server": ""}]}
+    rows = _run_log_faz("FW-01", data, {"expected_servers": "10.3.3.10"})
+    assert rows[0]["result"] == "FAIL"
+    assert "10.3.3.10 ✗" in rows[0]["detail"]
 
 
 def test_faz_pass_via_dns():
@@ -225,6 +259,14 @@ def test_faz_pass_via_dns():
     assert rows[0]["result"] == "PASS"
     assert "via DNS" in rows[0]["detail"]
     assert rows[0]["ip"] == "10.3.3.10"
+
+
+def test_faz_warn_fqdn_not_found():
+    """FAZ enabled with server, FQDN expected but doesn't resolve → WARN."""
+    with patch("app.device_review._resolve_host", return_value=frozenset()):
+        rows = _run_log_faz("FW-01", FAZ_DEVICE_DATA_ENABLED, {"expected_servers": "faz.corp.com"})
+    assert rows[0]["result"] == "WARN"
+    assert "faz.corp.com ✗" in rows[0]["detail"]
 
 
 def test_faz_config_missing_no_params():
@@ -271,11 +313,20 @@ def test_dns_pass_direct():
     assert rows[0]["ip"] == "10.4.4.1, 10.4.4.2"
 
 
-def test_dns_fail_missing():
+def test_dns_warn_wrong_server():
     rows = _run_dns("FW-01", DNS_DEVICE_DATA, {"expected_servers": "10.4.4.1, 10.4.4.9"})
-    assert rows[0]["result"] == "FAIL"
+    assert rows[0]["result"] == "WARN"
+    assert "10.4.4.1 ✓" in rows[0]["detail"]
     assert "10.4.4.9 ✗" in rows[0]["detail"]
     assert rows[0]["ip"] == "10.4.4.1, 10.4.4.2"
+
+
+def test_dns_fail_no_configured_addresses():
+    """DNS data retrieved but both addresses are 0.0.0.0 (unconfigured) → FAIL."""
+    data = {"dns": {"primary": "0.0.0.0", "secondary": "0.0.0.0"}}
+    rows = _run_dns("FW-01", data, {"expected_servers": "10.4.4.1"})
+    assert rows[0]["result"] == "FAIL"
+    assert "10.4.4.1 ✗" in rows[0]["detail"]
 
 
 def test_dns_pass_via_dns():
