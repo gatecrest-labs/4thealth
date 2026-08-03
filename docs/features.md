@@ -69,10 +69,12 @@ Runs configurable security checks against the management-plane interfaces of eve
 |---|---|
 | `INSECURE` | Red — cleartext protocol (HTTP, Telnet) is enabled |
 | `FAIL` | Red — CIS check failed (server missing, sync disabled, etc.) |
-| `WARN` | Yellow — no secure management alternative present |
+| `WARN` | Yellow — effectively unused for Interface Protocols (unknown protocols are treated as informational/INFO); may appear for non-interface CIS checks |
 | `CONFIG_MISSING` | Yellow — CIS check ran but no expected values supplied; device value shown for information |
 | `PASS` | Green — CIS check passed |
 | `INFO` | Blue — informational finding (e.g. PING enabled) |
+
+**Protocol Severity Override:** Protocol classifications (secure/insecure/informational) can be customised without code changes. Copy `protocol_severity.example.json` to `protocol_severity.json` at the project root and edit values. Valid values: `secure`, `insecure`, `info`, `null`. Changes take effect on app restart. Interfaces with only informational protocols (e.g. `ping`, `fgfm`) report **INFO**. The **WARN** result is effectively unused for Interface Protocols — unknown protocols default to `None` (informational), so WARN is unreachable in practice.
 
 ### Adding a New Check
 
@@ -150,6 +152,8 @@ While an "Export All" bulk export is running, the browser will prompt for confir
 ### Scheduled Exports (Admin)
 
 Admins can configure weekly scheduled Config-Delta exports in **Admin → Config-Diff**. Each job specifies an ADOM, day of week, time, export format (PDF/CSV/JSON), and an email recipient. Jobs run server-side via APScheduler and email the full diff report as an attachment with a summary in the email body. Run history (last 30 days by default) is visible per job.
+
+Device Review scheduled reports include a **Host Summary** table at the top of both the email body and the attached file, showing per-device counts for each result type (PASS, FAIL, INSECURE, WARN, CONFIG_MISSING, INFO, Total). The existing per-check aggregate summary remains in the email body below the host summary.
 
 ---
 

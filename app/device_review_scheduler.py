@@ -337,6 +337,75 @@ _RESULT_COLOR = {
     "INFO": "#1e40af",
 }
 
+_SUMMARY_RESULTS = ("PASS", "FAIL", "INSECURE", "WARN", "CONFIG_MISSING", "INFO")
+
+
+def _build_host_summary_html(results: list[dict]) -> str:
+    """Return an HTML table with one row per device showing per-result counts."""
+    totals = {r: 0 for r in _SUMMARY_RESULTS}
+    rows_html = ""
+    for dev in sorted(results, key=lambda d: d.get("device", "")):
+        device = dev.get("device", "unknown")
+        counts = {r: 0 for r in _SUMMARY_RESULTS}
+        for row in dev.get("rows", []):
+            res = row.get("result", "")
+            if res in counts:
+                counts[res] += 1
+                totals[res] += 1
+        total = sum(counts.values())
+        has_fail = counts["FAIL"] + counts["INSECURE"] > 0
+        has_warn = counts["WARN"] + counts["CONFIG_MISSING"] > 0
+        if has_fail:
+            row_style = "background:#fee2e2"
+        elif has_warn:
+            row_style = "background:#fef3c7"
+        else:
+            row_style = ""
+        error_suffix = (
+            " <span style='color:#991b1b'>(error)</span>" if dev.get("error") else ""
+        )
+        cells = "".join(
+            "<td style='padding:4px 8px;text-align:center;color:{c}'>{v}</td>".format(
+                c=_RESULT_COLOR.get(r, "#374151"), v=counts[r]
+            )
+            for r in _SUMMARY_RESULTS
+        )
+        rows_html += (
+            f"<tr style='{row_style}'>"
+            f"<td style='padding:4px 8px'>{_esc(device)}{error_suffix}</td>"
+            f"{cells}"
+            f"<td style='padding:4px 8px;text-align:center'>{total}</td>"
+            f"</tr>\n"
+        )
+    # Totals footer
+    total_all = sum(totals.values())
+    total_cells = "".join(
+        "<td style='padding:4px 8px;text-align:center;font-weight:600;"
+        "color:{c}'>{v}</td>".format(c=_RESULT_COLOR.get(r, "#374151"), v=totals[r])
+        for r in _SUMMARY_RESULTS
+    )
+    rows_html += (
+        f"<tr style='background:#f3f4f6;font-weight:600'>"
+        f"<td style='padding:4px 8px'>Totals</td>"
+        f"{total_cells}"
+        f"<td style='padding:4px 8px;text-align:center;font-weight:600'>{total_all}</td>"
+        f"</tr>\n"
+    )
+    header_cells = "".join(
+        f"<th style='padding:4px 8px'>{r}</th>" for r in _SUMMARY_RESULTS
+    )
+    return (
+        f"<h3 style='font-family:sans-serif;margin-top:24px'>Host Summary</h3>"
+        f"<table style='border-collapse:collapse;font-family:sans-serif;font-size:13px'>"
+        f"<thead><tr style='background:#f3f4f6'>"
+        f"<th style='padding:4px 8px;text-align:left'>Device</th>"
+        f"{header_cells}"
+        f"<th style='padding:4px 8px'>Total</th>"
+        f"</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        f"</table>"
+    )
+
 
 def _build_summary_html(adom: str, results: list[dict], generated_at: str) -> str:
     all_rows = [r for dev in results for r in dev.get("rows", [])]
@@ -361,7 +430,7 @@ def _build_summary_html(adom: str, results: list[dict], generated_at: str) -> st
         fail = counts["FAIL"] + counts["INSECURE"]
         warn = counts["WARN"] + counts["CONFIG_MISSING"]
         rows_html += (
-            f"<tr><td style='padding:4px 8px'>{check}</td>"
+            f"<tr><td style='padding:4px 8px'>{_esc(check)}</td>"
             f"<td style='padding:4px 8px;color:#166534'>{counts['PASS']}</td>"
             f"<td style='padding:4px 8px;color:#991b1b'>{fail}</td>"
             f"<td style='padding:4px 8px;color:#92400e'>{warn}</td></tr>\n"
@@ -370,15 +439,17 @@ def _build_summary_html(adom: str, results: list[dict], generated_at: str) -> st
     errors = [d.get("device", "unknown") for d in results if d.get("error")]
     error_note = ""
     if errors:
-        error_note = (
-            f"<p style='color:#991b1b'>Errors on devices: {', '.join(errors)}</p>"
-        )
+        error_note = f"<p style='color:#991b1b'>Errors on devices: {', '.join(_esc(e) for e in errors)}</p>"
+
+    host_summary_html = _build_host_summary_html(results)
 
     return f"""
-<h2 style="font-family:sans-serif">4THealth Device Review — {adom}</h2>
+<h2 style="font-family:sans-serif">4THealth Device Review — {_esc(adom)}</h2>
 <p style="font-family:sans-serif;color:#6b7280">Generated: {generated_at}</p>
 <p style="font-family:sans-serif">Devices scanned: {len(results)}</p>
 {error_note}
+{host_summary_html}
+<h3 style="font-family:sans-serif;margin-top:24px">Check Summary</h3>
 <table style="border-collapse:collapse;font-family:sans-serif;font-size:13px">
   <thead>
     <tr style="background:#f3f4f6">
@@ -403,11 +474,26 @@ def _build_attachment_dr(
     date_str = generated_at[:10]
 
     if fmt == "json":
+        host_summary = []
+        for dev in sorted(results, key=lambda d: d.get("device", "")):
+            counts = {r: 0 for r in _SUMMARY_RESULTS}
+            for row in dev.get("rows", []):
+                res = row.get("result", "")
+                if res in counts:
+                    counts[res] += 1
+            host_summary.append(
+                {
+                    "device": dev.get("device", ""),
+                    "counts": counts,
+                    "total": sum(counts.values()),
+                }
+            )
         payload = json.dumps(
             {
                 "report_type": "device_review",
                 "adom": adom,
                 "exported_at": generated_at,
+                "host_summary": host_summary,
                 "rows": all_rows,
             },
             indent=2,
@@ -424,6 +510,38 @@ def _build_attachment_dr(
         w.writerow(["# 4THealth Device Review"])
         w.writerow([f"# ADOM: {adom}"])
         w.writerow([f"# Generated: {generated_at}"])
+        w.writerow([])
+        w.writerow(["# Host Summary"])
+        w.writerow(
+            [
+                "# Device",
+                "PASS",
+                "FAIL",
+                "INSECURE",
+                "WARN",
+                "CONFIG_MISSING",
+                "INFO",
+                "Total",
+            ]
+        )
+        for dev in sorted(results, key=lambda d: d.get("device", "")):
+            counts = {r: 0 for r in _SUMMARY_RESULTS}
+            for row in dev.get("rows", []):
+                res = row.get("result", "")
+                if res in counts:
+                    counts[res] += 1
+            w.writerow(
+                [
+                    "# {}".format(dev.get("device", "")),
+                    counts["PASS"],
+                    counts["FAIL"],
+                    counts["INSECURE"],
+                    counts["WARN"],
+                    counts["CONFIG_MISSING"],
+                    counts["INFO"],
+                    sum(counts.values()),
+                ]
+            )
         w.writerow([])
         w.writerow(["Device", "Check", "Result", "Interface", "VDOM", "IP", "Detail"])
         for row in all_rows:
@@ -445,7 +563,7 @@ def _build_attachment_dr(
         }
 
     # pdf → styled HTML
-    html = _build_pdf_html_dr(adom, all_rows, generated_at)
+    html = _build_pdf_html_dr(adom, results, generated_at)
     return {
         "filename": f"device_review_{safe_adom}_{date_str}.html",
         "data": html.encode(),
@@ -453,9 +571,10 @@ def _build_attachment_dr(
     }
 
 
-def _build_pdf_html_dr(adom: str, rows: list[dict], generated_at: str) -> str:
+def _build_pdf_html_dr(adom: str, results: list[dict], generated_at: str) -> str:
+    all_rows = [r for dev in results for r in dev.get("rows", [])]
     rows_html = ""
-    for row in rows:
+    for row in all_rows:
         color = _RESULT_COLOR.get(row.get("result", ""), "#374151")
         rows_html += (
             f"<tr>"
@@ -468,14 +587,53 @@ def _build_pdf_html_dr(adom: str, rows: list[dict], generated_at: str) -> str:
             f"<td>{_esc(_fmt_detail(row))}</td>"
             f"</tr>\n"
         )
+
+    # Build host summary table inline
+    summary_header = "".join(
+        f"<th style='background:#f3f4f6;padding:4px 8px'>{r}</th>"
+        for r in _SUMMARY_RESULTS
+    )
+    summary_rows = ""
+    totals = {r: 0 for r in _SUMMARY_RESULTS}
+    for dev in sorted(results, key=lambda d: d.get("device", "")):
+        counts = {r: 0 for r in _SUMMARY_RESULTS}
+        for row in dev.get("rows", []):
+            res = row.get("result", "")
+            if res in counts:
+                counts[res] += 1
+                totals[res] += 1
+        total = sum(counts.values())
+        cells = "".join(
+            f"<td style='padding:4px 8px;text-align:center;color:{_RESULT_COLOR.get(r, '#374151')}'>{counts[r]}</td>"
+            for r in _SUMMARY_RESULTS
+        )
+        error_note = " (error)" if dev.get("error") else ""
+        dev_name = _esc(dev.get("device", ""))
+        summary_rows += (
+            f"<tr><td style='padding:4px 8px'>{dev_name}{error_note}</td>"
+            f"{cells}"
+            f"<td style='padding:4px 8px;text-align:center'>{total}</td></tr>\n"
+        )
+    total_cells = "".join(
+        f"<td style='padding:4px 8px;text-align:center;font-weight:600;color:{_RESULT_COLOR.get(r, '#374151')}'>{totals[r]}</td>"
+        for r in _SUMMARY_RESULTS
+    )
+    grand_total = sum(totals.values())
+    summary_rows += (
+        f"<tr style='background:#f3f4f6;font-weight:600'>"
+        f"<td style='padding:4px 8px'>Totals</td>{total_cells}"
+        f"<td style='padding:4px 8px;text-align:center'>{grand_total}</td></tr>\n"
+    )
+
     return f"""<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8">
 <style>
   body{{font-family:sans-serif;font-size:12px;color:#111}}
   h1{{font-size:18px;margin-bottom:4px}}
+  h2{{font-size:14px;margin-top:24px;margin-bottom:6px}}
   .meta{{color:#6b7280;margin-bottom:16px;font-size:11px}}
-  table{{border-collapse:collapse;width:100%}}
+  table{{border-collapse:collapse;width:100%;margin-bottom:24px}}
   th,td{{border:1px solid #e5e7eb;padding:4px 8px;text-align:left}}
   th{{background:#f3f4f6;font-weight:600}}
   tr:nth-child(even){{background:#fafafa}}
@@ -485,10 +643,22 @@ def _build_pdf_html_dr(adom: str, rows: list[dict], generated_at: str) -> str:
 <h1>4THealth Device Review Scheduler</h1>
 <div class="meta">
   ADOM: {adom} &nbsp;|&nbsp;
-  Devices scanned: {len({r.get("device") for r in rows})} &nbsp;|&nbsp;
-  Total findings: {len(rows)} &nbsp;|&nbsp;
+  Devices scanned: {len(results)} &nbsp;|&nbsp;
+  Total findings: {len(all_rows)} &nbsp;|&nbsp;
   Generated: {generated_at}
 </div>
+<h2>Host Summary</h2>
+<table>
+  <thead>
+    <tr>
+      <th style='background:#f3f4f6;padding:4px 8px'>Device</th>
+      {summary_header}
+      <th style='background:#f3f4f6;padding:4px 8px'>Total</th>
+    </tr>
+  </thead>
+  <tbody>{summary_rows}</tbody>
+</table>
+<h2>Findings</h2>
 <table>
   <thead>
     <tr>
