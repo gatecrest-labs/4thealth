@@ -37,6 +37,8 @@ params_schema — list of input descriptors that the UI should render before a
 from __future__ import annotations
 import functools
 import ipaddress
+import logging as _logging
+import pathlib as _pathlib
 import socket
 from typing import Any
 
@@ -58,10 +60,60 @@ _PROTO_SECURE: dict[str, bool | None] = {
     "ftm": None,  # FortiToken Mobile
 }
 
+_PROTO_SEVERITY_PATH = str(
+    _pathlib.Path(__file__).parent.parent / "protocol_severity.json"
+)
+
+_VALID_VALUES: dict[str, bool | None] = {
+    "secure": True,
+    "insecure": False,
+    "info": None,
+}
+
+
+def _load_proto_overrides() -> dict[str, bool | None]:
+    """Load protocol_severity.json overrides. Missing file → empty dict."""
+    import json as _json
+
+    try:
+        with open(_PROTO_SEVERITY_PATH) as fh:
+            raw = _json.load(fh)
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            "protocol_severity.json unreadable — using defaults: %s", exc
+        )
+        return {}
+    if not isinstance(raw, dict):
+        _logging.getLogger(__name__).warning(
+            "protocol_severity.json must be a JSON object — using defaults"
+        )
+        return {}
+    result: dict[str, bool | None] = {}
+    for key, val in raw.items():
+        if key.startswith("_"):
+            continue  # skip comment/metadata keys
+        if val is None:
+            result[key.lower()] = None
+        elif isinstance(val, str) and val.lower() in _VALID_VALUES:
+            result[key.lower()] = _VALID_VALUES[val.lower()]
+        else:
+            _logging.getLogger(__name__).warning(
+                "protocol_severity.json: invalid value %r for %r — ignored", val, key
+            )
+    return result
+
+
+_EFFECTIVE_PROTO_SECURE: dict[str, bool | None] = {
+    **_PROTO_SECURE,
+    **_load_proto_overrides(),
+}
+
 
 def _classify_proto(name: str) -> bool | None:
     """Return True=secure, False=insecure, None=informational."""
-    return _PROTO_SECURE.get(name.lower(), None)
+    return _EFFECTIVE_PROTO_SECURE.get(name.lower(), None)
 
 
 # ── Interface helpers ─────────────────────────────────────────────────────────
@@ -180,12 +232,14 @@ def _run_interface_protocols(
         has_insecure = any(p["secure"] is False for p in proto_list)
         has_secure = any(p["secure"] is True for p in proto_list)
 
+        has_info_only = any(p["secure"] is None for p in proto_list)
+
         if has_insecure:
             result = "INSECURE"
-        elif not has_secure:
-            result = "WARN"
-        else:
+        elif has_secure or has_info_only:
             result = "INFO"
+        else:
+            result = "WARN"  # no protocols of any known type — safety net
 
         rows.append(
             {

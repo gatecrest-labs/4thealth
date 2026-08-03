@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import datetime
 import pytest
@@ -245,3 +247,144 @@ def test_build_attachment_pdf_html(jobs_path):
     assert "Corp" in html
     assert "4THealth" in html
     assert "fw-01" in html
+
+
+# ── _build_host_summary_html ──────────────────────────────────────────────────
+
+def _make_results(device_rows: dict[str, list[dict]]) -> list[dict]:
+    """Helper: build a results list from {device: [rows]} dict."""
+    return [
+        {"device": dev, "rows": rows}
+        for dev, rows in device_rows.items()
+    ]
+
+
+def test_host_summary_html_columns():
+    """All seven result columns appear in the output."""
+    from app.device_review_scheduler import _build_host_summary_html
+    results = _make_results({"FW1": [
+        {"result": "PASS", "check": "NTP"},
+        {"result": "FAIL", "check": "NTP"},
+        {"result": "INSECURE", "check": "Interface Protocols"},
+        {"result": "WARN", "check": "Interface Protocols"},
+        {"result": "CONFIG_MISSING", "check": "NTP"},
+        {"result": "INFO", "check": "Interface Protocols"},
+    ]})
+    html = _build_host_summary_html(results)
+    for col in ("PASS", "FAIL", "INSECURE", "WARN", "CONFIG_MISSING", "INFO", "Total"):
+        assert col in html
+
+
+def test_host_summary_html_counts_correct():
+    """Row counts match the input data."""
+    from app.device_review_scheduler import _build_host_summary_html
+    results = _make_results({"FW1": [
+        {"result": "PASS"}, {"result": "PASS"}, {"result": "FAIL"},
+    ]})
+    html = _build_host_summary_html(results)
+    assert "FW1" in html
+    # Total = 3
+    assert ">3<" in html
+
+
+def test_host_summary_html_totals_row():
+    """A Totals footer row is present."""
+    from app.device_review_scheduler import _build_host_summary_html
+    results = _make_results({
+        "FW1": [{"result": "PASS"}, {"result": "FAIL"}],
+        "FW2": [{"result": "PASS"}],
+    })
+    html = _build_host_summary_html(results)
+    assert "Totals" in html
+    assert ">2<" in html   # PASS total across both devices
+    assert ">1<" in html   # FAIL total
+    assert ">3<" in html   # grand total
+
+
+def test_host_summary_html_sorted_devices():
+    """Devices are listed alphabetically."""
+    from app.device_review_scheduler import _build_host_summary_html
+    results = _make_results({
+        "ZFW": [{"result": "PASS"}],
+        "AFW": [{"result": "PASS"}],
+    })
+    html = _build_host_summary_html(results)
+    assert html.index("AFW") < html.index("ZFW")
+
+
+def test_host_summary_html_error_device():
+    """Devices with errors show (error) annotation."""
+    from app.device_review_scheduler import _build_host_summary_html
+    results = [{"device": "FW1", "rows": [], "error": "timeout"}]
+    html = _build_host_summary_html(results)
+    assert "error" in html.lower()
+    assert "FW1" in html
+
+
+def test_build_summary_html_includes_host_section():
+    """_build_summary_html output contains both host summary and per-check table."""
+    from app.device_review_scheduler import _build_summary_html
+    results = _make_results({"FW1": [
+        {"result": "PASS", "check": "NTP Configuration"},
+    ]})
+    html = _build_summary_html("TESTADOM", results, "2026-08-03T01:00:00Z")
+    assert "Host Summary" in html
+    assert "NTP Configuration" in html
+
+
+# ── Attachment host summaries ─────────────────────────────────────────────────
+
+def _make_results_with_rows() -> list[dict]:
+    return [
+        {"device": "FW1", "rows": [
+            {"result": "PASS", "check": "NTP Configuration", "interface": "system",
+             "vdom": "root", "ip": "", "detail": "ok", "protocols": []},
+            {"result": "WARN", "check": "Interface Protocols", "interface": "mgmt",
+             "vdom": "root", "ip": "10.0.0.1/24", "detail": "", "protocols": [{"name": "ping", "secure": None}]},
+        ]},
+        {"device": "FW2", "rows": [
+            {"result": "FAIL", "check": "NTP Configuration", "interface": "system",
+             "vdom": "root", "ip": "", "detail": "no ntp", "protocols": []},
+        ]},
+    ]
+
+
+def test_json_attachment_has_host_summary():
+    """JSON attachment includes 'host_summary' key before 'rows'."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr("TESTADOM", "json", _make_results_with_rows(), "2026-08-03T01:00:00Z")
+    data = json.loads(att["data"])
+    assert "host_summary" in data
+    assert isinstance(data["host_summary"], list)
+    assert len(data["host_summary"]) == 2
+    fw1 = next(h for h in data["host_summary"] if h["device"] == "FW1")
+    assert fw1["counts"]["PASS"] == 1
+    assert fw1["counts"]["WARN"] == 1
+    assert fw1["total"] == 2
+
+
+def test_json_attachment_host_summary_before_rows():
+    """'host_summary' key appears before 'rows' in JSON output."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr("TESTADOM", "json", _make_results_with_rows(), "2026-08-03T01:00:00Z")
+    raw = att["data"].decode()
+    assert raw.index("host_summary") < raw.index('"rows"')
+
+
+def test_csv_attachment_has_host_summary_comments():
+    """CSV attachment includes host summary comment lines before data rows."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr("TESTADOM", "csv", _make_results_with_rows(), "2026-08-03T01:00:00Z")
+    text = att["data"].decode()
+    assert "# Host Summary" in text
+    assert "FW1" in text
+    assert "FW2" in text
+
+
+def test_html_attachment_has_host_summary_table():
+    """HTML attachment includes 'Host Summary' heading and table before findings."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr("TESTADOM", "pdf", _make_results_with_rows(), "2026-08-03T01:00:00Z")
+    html = att["data"].decode()
+    assert "Host Summary" in html
+    assert html.index("Host Summary") < html.index("Findings")

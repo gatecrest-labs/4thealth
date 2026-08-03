@@ -199,10 +199,12 @@ Runs configurable security checks against every device in a selected ADOM. Combi
 **Result values:**
 - `INSECURE` — red: cleartext protocols (HTTP, Telnet) are enabled
 - `FAIL` — red: CIS check failed (server missing, sync disabled, etc.)
-- `WARN` — yellow: no secure management alternative present
+- `WARN` — yellow: effectively unused for Interface Protocols — unknown protocols classify as `None` (informational), so this result is unreachable in practice; may appear for non-interface CIS checks
 - `CONFIG_MISSING` — yellow: CIS check ran but no expected values were supplied; device value shown for information
 - `PASS` — green: CIS check passed
-- `INFO` — blue: informational finding (e.g. PING enabled)
+- `INFO` — blue: informational finding (e.g. PING enabled; interfaces with only informational protocols)
+
+**Protocol severity configuration:** Create `protocol_severity.json` at the project root (gitignored) to override default protocol classifications. See `protocol_severity.example.json` for all defaults and valid values (`secure`, `insecure`, `info`, `null`). Overrides take effect on app restart.
 
 **Implemented checks (18 total):**
 
@@ -440,6 +442,8 @@ Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs
 | `DELETE` | `/admin/api/device-review/jobs/<id>` | Delete a job |
 | `POST` | `/admin/api/device-review/jobs/<id>/run` | Trigger an immediate run |
 | `GET` | `/admin/api/device-review/jobs/<id>/status` | Get last run status / history |
+
+**Scheduled report output:** Email reports include a **per-host summary table** at the top of both the email body and the attached file (HTML, CSV, and JSON formats), showing per-device counts for each result type: Device | PASS | FAIL | INSECURE | WARN | CONFIG_MISSING | INFO | Total. The per-check aggregate summary follows below the host summary in the email body.
 
 ### External API
 

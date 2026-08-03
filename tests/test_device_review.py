@@ -1,4 +1,6 @@
 """Unit tests for device_review helpers and check functions."""
+import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -15,6 +17,7 @@ from app.device_review import (
     _run_syslog_config,
     _run_log_faz,
     _run_dns,
+    _run_interface_protocols,
 )
 
 
@@ -288,3 +291,111 @@ def test_dns_config_missing_no_params():
     rows = _run_dns("FW-01", DNS_DEVICE_DATA, {})
     assert rows[0]["result"] == "CONFIG_MISSING"
     assert rows[0]["ip"] == "10.4.4.1, 10.4.4.2"
+
+
+# ── _load_proto_overrides ────────────────────────────────────────────────────
+
+def test_load_proto_overrides_missing_file():
+    """Missing file returns empty dict — no error."""
+    from app.device_review import _load_proto_overrides
+    with patch("app.device_review._PROTO_SEVERITY_PATH", "/nonexistent/path.json"):
+        result = _load_proto_overrides()
+    assert result == {}
+
+
+def test_load_proto_overrides_secure_value(tmp_path):
+    """'secure' maps to True."""
+    from app.device_review import _load_proto_overrides
+    f = tmp_path / "protocol_severity.json"
+    f.write_text(json.dumps({"http": "secure"}))
+    with patch("app.device_review._PROTO_SEVERITY_PATH", str(f)):
+        result = _load_proto_overrides()
+    assert result["http"] is True
+
+
+def test_load_proto_overrides_insecure_value(tmp_path):
+    """'insecure' maps to False."""
+    from app.device_review import _load_proto_overrides
+    f = tmp_path / "protocol_severity.json"
+    f.write_text(json.dumps({"ping": "insecure"}))
+    with patch("app.device_review._PROTO_SEVERITY_PATH", str(f)):
+        result = _load_proto_overrides()
+    assert result["ping"] is False
+
+
+def test_load_proto_overrides_info_value(tmp_path):
+    """'info' and null both map to None."""
+    from app.device_review import _load_proto_overrides
+    f = tmp_path / "protocol_severity.json"
+    f.write_text(json.dumps({"https": "info", "ssh": None}))
+    with patch("app.device_review._PROTO_SEVERITY_PATH", str(f)):
+        result = _load_proto_overrides()
+    assert result["https"] is None
+    assert result["ssh"] is None
+
+
+def test_load_proto_overrides_invalid_value_ignored(tmp_path, caplog):
+    """Invalid values are skipped; valid entries in the same file still apply."""
+    from app.device_review import _load_proto_overrides
+    f = tmp_path / "protocol_severity.json"
+    f.write_text(json.dumps({"ping": "badvalue", "http": "insecure"}))
+    with patch("app.device_review._PROTO_SEVERITY_PATH", str(f)):
+        with caplog.at_level(logging.WARNING):
+            result = _load_proto_overrides()
+    assert "ping" not in result
+    assert result["http"] is False
+    assert any("ping" in r.message for r in caplog.records if r.levelno == logging.WARNING)
+
+
+def test_load_proto_overrides_unknown_protocol_accepted(tmp_path):
+    """Unknown protocol keys are accepted (future-proofing)."""
+    from app.device_review import _load_proto_overrides
+    f = tmp_path / "protocol_severity.json"
+    f.write_text(json.dumps({"myproto": "insecure"}))
+    with patch("app.device_review._PROTO_SEVERITY_PATH", str(f)):
+        result = _load_proto_overrides()
+    assert result["myproto"] is False
+
+
+# ── _run_interface_protocols result logic ─────────────────────────────────────
+
+def _iface(name: str, ip: str, protos: str) -> dict:
+    return {"name": name, "ip": ip, "allowaccess": protos, "vdom": "root",
+            "type": "physical", "status": "up"}
+
+
+def test_ping_only_is_info():
+    """ping-only interface must be INFO, not WARN."""
+    rows = _run_interface_protocols("FW1", {"interfaces": [_iface("mgmt", "10.0.0.1/24", "ping")]}, {})
+    assert len(rows) == 1
+    assert rows[0]["result"] == "INFO"
+
+
+def test_https_ping_is_info():
+    """https + ping = INFO (secure present)."""
+    rows = _run_interface_protocols("FW1", {"interfaces": [_iface("mgmt", "10.0.0.1/24", "https ping")]}, {})
+    assert rows[0]["result"] == "INFO"
+
+
+def test_https_only_is_info():
+    """https-only = INFO."""
+    rows = _run_interface_protocols("FW1", {"interfaces": [_iface("mgmt", "10.0.0.1/24", "https")]}, {})
+    assert rows[0]["result"] == "INFO"
+
+
+def test_http_only_is_insecure():
+    """http-only = INSECURE."""
+    rows = _run_interface_protocols("FW1", {"interfaces": [_iface("mgmt", "10.0.0.1/24", "http")]}, {})
+    assert rows[0]["result"] == "INSECURE"
+
+
+def test_http_https_is_insecure():
+    """http + https = INSECURE (insecure takes precedence)."""
+    rows = _run_interface_protocols("FW1", {"interfaces": [_iface("mgmt", "10.0.0.1/24", "http https")]}, {})
+    assert rows[0]["result"] == "INSECURE"
+
+
+def test_fgfm_only_is_info():
+    """fgfm-only = INFO (informational protocol)."""
+    rows = _run_interface_protocols("FW1", {"interfaces": [_iface("mgmt", "10.0.0.1/24", "fgfm")]}, {})
+    assert rows[0]["result"] == "INFO"
