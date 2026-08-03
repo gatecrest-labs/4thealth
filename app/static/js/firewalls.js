@@ -187,8 +187,21 @@ function ifaceIp(i) {
 function ifaceLink(i) {
   if (i.link === true  || i.link === 1) return 'up';
   if (i.link === false || i.link === 0) return 'down';
-  if (i.status === 'up' || i.status === 'down') return i.status;
+  // No live monitor data — fall back to CMDB admin-configured state.
+  // Return 'admin-up'/'admin-down' so callers can distinguish config state from live state.
+  if (i.status === 'up')   return 'admin-up';
+  if (i.status === 'down') return 'admin-down';
   return i.link_status || 'n/a';
+}
+
+function ifaceLinkBadge(i) {
+  const link = ifaceLink(i);
+  const _b = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:.75rem;font-weight:600;border:1px solid';
+  if (link === 'up')         return `<span style="${_b};color:#2d6a2d;border-color:#5a9e5a;background:#f4faf4">UP</span>`;
+  if (link === 'down')       return `<span style="${_b};color:#dc3545;border-color:#dc3545;background:#fff5f5">DOWN</span>`;
+  if (link === 'admin-up')   return `<span style="${_b};color:#6b7280;border-color:#9ca3af;background:#f9fafb" title="Admin-configured up — no live link data">UP*</span>`;
+  if (link === 'admin-down') return `<span style="${_b};color:#6b7280;border-color:#9ca3af;background:#f9fafb" title="Admin-configured down — no live link data">DOWN*</span>`;
+  return `<span style="color:#aaa">—</span>`;
 }
 
 const _INSECURE_PROTOS = new Set(['http', 'telnet', 'snmp']);
@@ -219,7 +232,7 @@ function renderHealthModal(deviceName, d) {
     const ip   = ifaceIp(i);
     const link = ifaceLink(i);
     const hasIp = ip && ip !== '0.0.0.0/0.0.0.0' && ip !== '0.0.0.0/255.255.255.255';
-    return hasIp || link === 'up';
+    return hasIp || link === 'up' || link === 'admin-up';
   });
 
   // Interface table is rendered as a paginated widget after modal insertion
@@ -376,7 +389,7 @@ function renderIfaceWidget(ifaces, vdomBadgeFn) {
         <td>${escHtml(i.name || i.interface || '')}</td>
         <td>${vdomBadgeFn(i.vdom || '')}</td>
         <td>${typeBadge}</td>
-        <td>${escHtml(ifaceLink(i))}</td>
+        <td>${ifaceLinkBadge(i)}</td>
         <td>${escHtml(ifaceIp(i))}</td>
         <td>${escHtml(String(i.speed || ''))}</td>
         <td>${escHtml(String(i.rx_errors ?? i.rx_err ?? 0))}</td>
