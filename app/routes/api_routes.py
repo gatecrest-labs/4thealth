@@ -571,12 +571,14 @@ def _assemble_health(
         first_val = (
             next(iter(iface_monitor_raw.values()), None) if iface_monitor_raw else None
         )
-        if (
-            isinstance(first_val, dict)
-            and not first_val.get("link")
-            and not first_val.get("rx_errors")
+        if isinstance(first_val, dict) and any(
+            isinstance(v, dict) for v in first_val.values()
         ):
             # Nested: {vdom: {iface_name: iface_dict}} — flatten across all VDOMs.
+            # Structural check: nested format has dict values (interface objects);
+            # flat format has primitive values (bool/int/str). The old field-presence
+            # check (`not link and not rx_errors`) incorrectly triggered when the first
+            # interface was physically down (link=False), emptying monitor_map.
             # The same physical interface can appear in multiple VDOM buckets; prefer
             # link=False (down) over link=True (up) so a stale up-state from one bucket
             # does not mask a genuine down-state reported by the interface's actual VDOM.
