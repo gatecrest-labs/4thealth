@@ -69,12 +69,14 @@ Runs configurable security checks against the management-plane interfaces of eve
 |---|---|
 | `INSECURE` | Red — cleartext protocol (HTTP, Telnet) is enabled |
 | `FAIL` | Red — CIS check failed (server missing, sync disabled, etc.) |
-| `WARN` | Yellow — effectively unused for Interface Protocols (unknown protocols are treated as informational/INFO); may appear for non-interface CIS checks |
+| `WARN` | Yellow — CIS host check — service is active but configured servers do not match expected (NTP, Syslog, FortiAnalyzer, DNS); effectively unreachable for Interface Protocols (unknown protocols default to informational) |
 | `CONFIG_MISSING` | Yellow — CIS check ran but no expected values supplied; device value shown for information |
 | `PASS` | Green — CIS check passed |
 | `INFO` | Blue — informational finding (e.g. PING enabled) |
 
 **Protocol Severity Override:** Protocol classifications (secure/insecure/informational) can be customised without code changes. Copy `protocol_severity.example.json` to `protocol_severity.json` at the project root and edit values. Valid values: `secure`, `insecure`, `info`, `null`. Changes take effect on app restart. Interfaces with only informational protocols (e.g. `ping`, `fgfm`) report **INFO**. The **WARN** result is effectively unused for Interface Protocols — unknown protocols default to `None` (informational), so WARN is unreachable in practice.
+
+**CIS Host Checks (NTP, Syslog, FortiAnalyzer, DNS):** These checks return **WARN** (amber) when the service is active but the configured servers do not exactly match the expected addresses. **FAIL** is reserved for when the service is completely disabled or unconfigured. IP addresses and FQDNs are both matched via DNS resolution.
 
 ### Adding a New Check
 

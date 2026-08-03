@@ -199,7 +199,7 @@ Runs configurable security checks against every device in a selected ADOM. Combi
 **Result values:**
 - `INSECURE` — red: cleartext protocols (HTTP, Telnet) are enabled
 - `FAIL` — red: CIS check failed (server missing, sync disabled, etc.)
-- `WARN` — yellow: effectively unused for Interface Protocols — unknown protocols classify as `None` (informational), so this result is unreachable in practice; may appear for non-interface CIS checks
+- `WARN` — yellow: CIS host check — service is active but configured servers do not match expected (NTP, Syslog, FortiAnalyzer, DNS); effectively unreachable for Interface Protocols (unknown protocols default to informational)
 - `CONFIG_MISSING` — yellow: CIS check ran but no expected values were supplied; device value shown for information
 - `PASS` — green: CIS check passed
 - `INFO` — blue: informational finding (e.g. PING enabled; interfaces with only informational protocols)

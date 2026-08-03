@@ -11,6 +11,7 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ### Changed
 - **Device Review — Interface Protocols:** Interfaces with only informational protocols (ping, fgfm, capwap, etc.) now report `INFO` instead of `WARN`. The `WARN` result is effectively unused for Interface Protocols — unknown protocols default to `None` (informational), making WARN unreachable in practice.
+- **Device Review — CIS Host Checks (NTP, Syslog, FortiAnalyzer, DNS):** Checks that compare expected server addresses now return `WARN` (amber) when the service is active but servers do not match, instead of `FAIL`. `FAIL` is reserved for when the service is disabled or completely unconfigured. IP addresses and FQDNs are both handled via DNS resolution.
 - **Admin tab renamed** — "Config-Diff" sub-tab renamed to "Scheduled" to reflect its role as the home for all recurring audit and report jobs.
 - **Config-Diff scheduled jobs** — day-of-week selector replaced with a multi-checkbox day picker; jobs now store `days_of_week` (array) instead of `day_of_week` (string), allowing any combination of 1–7 days per job (e.g. Mon + Thu only). Job form panel dark mode rendering fixed by replacing hard-coded inline hex colours with CSS custom properties.
 
