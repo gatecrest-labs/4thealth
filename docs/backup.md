@@ -35,13 +35,24 @@ All of these files are gitignored. None exist in the repository; you created the
 
 ---
 
-## RHEL / Rocky / AlmaLinux / Ubuntu — Manual Backup
+## RHEL / Rocky / AlmaLinux / Ubuntu — Production Backup
 
 The app runs as the `4thealth` system user from `/opt/4thealth`.
 
-### Create a backup archive
+The backup is a shell script that you create once on the server, then schedule to run automatically via cron. The steps below walk through the full setup.
+
+### Step 1 — Create the backup script
+
+SSH into the server and create the script file:
 
 ```bash
+sudo nano /opt/4thealth/backup.sh
+```
+
+Paste this content into the file, then save and exit (`Ctrl+O`, `Enter`, `Ctrl+X`):
+
+```bash
+#!/bin/bash
 BACKUP_DATE=$(date +%Y%m%d)
 BACKUP_FILE="/root/4thealth-backup-${BACKUP_DATE}.tar.gz"
 
@@ -73,29 +84,54 @@ ls -lh "$BACKUP_FILE"
 
 > `--ignore-failed-read` silently skips any file that doesn't exist yet (e.g. if `smtp_config.json` was never created).
 
-### Copy the backup off-server
+Make the script executable:
 
 ```bash
-# Copy to a remote host
+sudo chmod +x /opt/4thealth/backup.sh
+```
+
+You can test it runs correctly right now:
+
+```bash
+sudo /opt/4thealth/backup.sh
+ls -lh /root/4thealth-backup-*.tar.gz
+```
+
+### Step 2 — Copy the backup off-server
+
+Pick a destination for the archives and update the copy command to match. Common options:
+
+```bash
+# Copy to a remote backup host
 scp /root/4thealth-backup-*.tar.gz user@backup-host:/backups/
 
-# Or copy to a network share
+# Copy to a mounted network share
 rsync -av /root/4thealth-backup-*.tar.gz /mnt/nas/backups/4thealth/
 ```
 
-### Automate with cron (optional)
+Add your chosen copy command to the end of `backup.sh` so the archive is transferred automatically each time the script runs.
+
+### Step 3 — Schedule with cron (runs nightly)
+
+Open the root crontab:
 
 ```bash
 sudo crontab -e
 ```
 
-Add this line to run nightly at 02:30:
+Add this line to run the script nightly at 02:30 and prune archives older than 30 days:
 
 ```
-30 2 * * * tar -czf /root/4thealth-backup-$(date +\%Y\%m\%d).tar.gz --ignore-failed-read -C /opt/4thealth .env users.json groups.json certs/ infra_targets.json policy_db.json app_settings.json api_tokens.json smtp_config.json config_diff_jobs.json device_review_jobs.json summary_history.json && find /root -name '4thealth-backup-*.tar.gz' -mtime +30 -delete
+30 2 * * * /opt/4thealth/backup.sh && find /root -name '4thealth-backup-*.tar.gz' -mtime +30 -delete
 ```
 
-The `find` at the end prunes archives older than 30 days.
+Save and exit. Verify the cron entry was saved:
+
+```bash
+sudo crontab -l
+```
+
+From this point the backup runs automatically every night — no further manual action needed.
 
 ---
 
