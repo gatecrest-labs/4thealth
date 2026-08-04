@@ -254,8 +254,11 @@ def _execute_job(job_id: str) -> None:
 
         generated_at = record["ran_at"]
         subject = f"4THealth Device Review — {adom} — {generated_at[:10]}"
-        body_html = _build_summary_html(adom, results, generated_at)
-        attachment = _build_attachment_dr(adom, fmt, results, generated_at)
+        check_summary = _build_check_summary(results, checks)
+        body_html = _build_summary_html(adom, results, generated_at, check_summary)
+        attachment = _build_attachment_dr(
+            adom, fmt, results, generated_at, check_summary
+        )
 
         _send_email(email, subject, body_html, [attachment])
         _append_run(job_id, record)
@@ -339,6 +342,57 @@ _RESULT_COLOR = {
 
 _SUMMARY_RESULTS = ("PASS", "FAIL", "INSECURE", "WARN", "CONFIG_MISSING", "INFO")
 
+_CHECKS_META = None  # populated lazily; tests may monkeypatch this directly
+
+
+def _get_checks_meta():
+    from app.device_review import CHECKS_META
+
+    return CHECKS_META
+
+
+_CHECK_SUMMARY_RESULTS = ("PASS", "INFO", "WARN", "CONFIG_MISSING", "FAIL", "INSECURE")
+
+
+def _build_check_summary(results: list[dict], checks_ran: list[str]) -> list[dict]:
+    """Return per-check result counts ordered by CHECKS_META declaration order.
+
+    checks_ran: list of check keys that were run; empty means all checks.
+    Each entry: {key, name, description, PASS, INFO, WARN, CONFIG_MISSING, FAIL, INSECURE}
+    """
+    checks_meta = _CHECKS_META if _CHECKS_META is not None else _get_checks_meta()
+    active_keys = set(checks_ran) if checks_ran else {c["key"] for c in checks_meta}
+    # Build name→key lookup for matching row["check"] (display name) back to key
+    name_to_key = {c["name"]: c["key"] for c in checks_meta}
+    # Aggregate by check key
+    by_key: dict[str, dict] = {}
+    for dev in results:
+        for row in dev.get("rows", []):
+            check_name = row.get("check", "")
+            key = name_to_key.get(check_name)
+            if key is None or key not in active_keys:
+                continue
+            if key not in by_key:
+                by_key[key] = {r: 0 for r in _CHECK_SUMMARY_RESULTS}
+            result = row.get("result", "")
+            if result in by_key[key]:
+                by_key[key][result] += 1
+    # Build output in CHECKS_META order, filtered to active_keys
+    output = []
+    for c in checks_meta:
+        if c["key"] not in active_keys:
+            continue
+        counts = by_key.get(c["key"], {r: 0 for r in _CHECK_SUMMARY_RESULTS})
+        output.append(
+            {
+                "key": c["key"],
+                "name": c["name"],
+                "description": c.get("description", ""),
+                **counts,
+            }
+        )
+    return output
+
 
 def _build_host_summary_html(results: list[dict]) -> str:
     """Return an HTML table with one row per device showing per-result counts."""
@@ -407,39 +461,50 @@ def _build_host_summary_html(results: list[dict]) -> str:
     )
 
 
-def _build_summary_html(adom: str, results: list[dict], generated_at: str) -> str:
-    all_rows = [r for dev in results for r in dev.get("rows", [])]
-    by_check: dict[str, dict] = {}
-    for row in all_rows:
-        check = row.get("check", "Unknown")
-        if check not in by_check:
-            by_check[check] = {
-                "PASS": 0,
-                "FAIL": 0,
-                "INSECURE": 0,
-                "WARN": 0,
-                "CONFIG_MISSING": 0,
-                "INFO": 0,
-            }
-        result = row.get("result", "")
-        if result in by_check[check]:
-            by_check[check][result] += 1
-
-    rows_html = ""
-    for check, counts in sorted(by_check.items()):
-        fail = counts["FAIL"] + counts["INSECURE"]
-        warn = counts["WARN"] + counts["CONFIG_MISSING"]
-        rows_html += (
-            f"<tr><td style='padding:4px 8px'>{_esc(check)}</td>"
-            f"<td style='padding:4px 8px;color:#166534'>{counts['PASS']}</td>"
-            f"<td style='padding:4px 8px;color:#991b1b'>{fail}</td>"
-            f"<td style='padding:4px 8px;color:#92400e'>{warn}</td></tr>\n"
-        )
-
+def _build_summary_html(
+    adom: str,
+    results: list[dict],
+    generated_at: str,
+    check_summary: list[dict],
+) -> str:
     errors = [d.get("device", "unknown") for d in results if d.get("error")]
     error_note = ""
     if errors:
-        error_note = f"<p style='color:#991b1b'>Errors on devices: {', '.join(_esc(e) for e in errors)}</p>"
+        error_note = (
+            f"<p style='font-family:sans-serif;color:#991b1b'>"
+            f"Errors on devices: {', '.join(_esc(e) for e in errors)}</p>"
+        )
+
+    # ── Check Summary table ───────────────────────────────────────────────────
+    check_rows_html = ""
+    for entry in check_summary:
+        cells = "".join(
+            "<td style='padding:4px 8px;text-align:center;color:{c}'>{v}</td>".format(
+                c=_RESULT_COLOR.get(r, "#374151"), v=entry[r]
+            )
+            for r in _CHECK_SUMMARY_RESULTS
+        )
+        check_rows_html += (
+            f"<tr>"
+            f"<td style='padding:4px 8px'>{_esc(entry['name'])}</td>"
+            f"<td style='padding:4px 8px;color:#6b7280;font-size:12px'>{_esc(entry['description'])}</td>"
+            f"{cells}"
+            f"</tr>\n"
+        )
+    check_header_cells = "".join(
+        f"<th style='padding:4px 8px'>{r}</th>" for r in _CHECK_SUMMARY_RESULTS
+    )
+    check_summary_html = (
+        f"<h3 style='font-family:sans-serif;margin-top:24px'>Check Summary</h3>"
+        f"<table style='border-collapse:collapse;font-family:sans-serif;font-size:13px'>"
+        f"<thead><tr style='background:#f3f4f6'>"
+        f"<th style='padding:4px 8px;text-align:left'>Check</th>"
+        f"<th style='padding:4px 8px;text-align:left'>Description</th>"
+        f"{check_header_cells}"
+        f"</tr></thead>"
+        f"<tbody>{check_rows_html}</tbody>"
+        f"</table>"
+    )
 
     host_summary_html = _build_host_summary_html(results)
 
@@ -448,26 +513,19 @@ def _build_summary_html(adom: str, results: list[dict], generated_at: str) -> st
 <p style="font-family:sans-serif;color:#6b7280">Generated: {generated_at}</p>
 <p style="font-family:sans-serif">Devices scanned: {len(results)}</p>
 {error_note}
+{check_summary_html}
 {host_summary_html}
-<h3 style="font-family:sans-serif;margin-top:24px">Check Summary</h3>
-<table style="border-collapse:collapse;font-family:sans-serif;font-size:13px">
-  <thead>
-    <tr style="background:#f3f4f6">
-      <th style="padding:4px 8px;text-align:left">Check</th>
-      <th style="padding:4px 8px">Pass</th>
-      <th style="padding:4px 8px">Fail/Insecure</th>
-      <th style="padding:4px 8px">Warn</th>
-    </tr>
-  </thead>
-  <tbody>{rows_html}</tbody>
-</table>
 <p style="font-family:sans-serif;font-size:11px;color:#9ca3af;margin-top:16px">
   See attached report for full findings detail.
 </p>"""
 
 
 def _build_attachment_dr(
-    adom: str, fmt: str, results: list[dict], generated_at: str
+    adom: str,
+    fmt: str,
+    results: list[dict],
+    generated_at: str,
+    check_summary: list[dict],
 ) -> dict:
     all_rows = [r for dev in results for r in dev.get("rows", [])]
     safe_adom = adom.replace(" ", "_")
@@ -493,6 +551,14 @@ def _build_attachment_dr(
                 "report_type": "device_review",
                 "adom": adom,
                 "exported_at": generated_at,
+                "check_summary": [
+                    {
+                        "name": e["name"],
+                        "description": e["description"],
+                        **{r: e[r] for r in _CHECK_SUMMARY_RESULTS},
+                    }
+                    for e in check_summary
+                ],
                 "host_summary": host_summary,
                 "rows": all_rows,
             },
@@ -510,6 +576,33 @@ def _build_attachment_dr(
         w.writerow(["# 4THealth Device Review"])
         w.writerow([f"# ADOM: {adom}"])
         w.writerow([f"# Generated: {generated_at}"])
+        w.writerow([])
+        w.writerow(["# Check Summary"])
+        w.writerow(
+            [
+                "# Check",
+                "Description",
+                "PASS",
+                "INFO",
+                "WARN",
+                "CONFIG_MISSING",
+                "FAIL",
+                "INSECURE",
+            ]
+        )
+        for entry in check_summary:
+            w.writerow(
+                [
+                    f"# {entry['name']}",
+                    entry["description"],
+                    entry["PASS"],
+                    entry["INFO"],
+                    entry["WARN"],
+                    entry["CONFIG_MISSING"],
+                    entry["FAIL"],
+                    entry["INSECURE"],
+                ]
+            )
         w.writerow([])
         w.writerow(["# Host Summary"])
         w.writerow(
@@ -563,7 +656,7 @@ def _build_attachment_dr(
         }
 
     # pdf → styled HTML
-    html = _build_pdf_html_dr(adom, results, generated_at)
+    html = _build_pdf_html_dr(adom, results, generated_at, check_summary)
     return {
         "filename": f"device_review_{safe_adom}_{date_str}.html",
         "data": html.encode(),
@@ -571,8 +664,12 @@ def _build_attachment_dr(
     }
 
 
-def _build_pdf_html_dr(adom: str, results: list[dict], generated_at: str) -> str:
+def _build_pdf_html_dr(
+    adom: str, results: list[dict], generated_at: str, check_summary: list[dict]
+) -> str:
     all_rows = [r for dev in results for r in dev.get("rows", [])]
+
+    # ── Findings rows ─────────────────────────────────────────────────────────
     rows_html = ""
     for row in all_rows:
         color = _RESULT_COLOR.get(row.get("result", ""), "#374151")
@@ -588,7 +685,26 @@ def _build_pdf_html_dr(adom: str, results: list[dict], generated_at: str) -> str
             f"</tr>\n"
         )
 
-    # Build host summary table inline
+    # ── Check Summary table ───────────────────────────────────────────────────
+    cs_header = "".join(
+        f"<th style='background:#f3f4f6;padding:4px 8px'>{r}</th>"
+        for r in _CHECK_SUMMARY_RESULTS
+    )
+    cs_rows = ""
+    for entry in check_summary:
+        cells = "".join(
+            f"<td style='padding:4px 8px;text-align:center;color:{_RESULT_COLOR.get(r, '#374151')}'>{entry[r]}</td>"
+            for r in _CHECK_SUMMARY_RESULTS
+        )
+        cs_rows += (
+            f"<tr>"
+            f"<td style='padding:4px 8px'>{_esc(entry['name'])}</td>"
+            f"<td style='padding:4px 8px;color:#6b7280'>{_esc(entry['description'])}</td>"
+            f"{cells}"
+            f"</tr>\n"
+        )
+
+    # ── Host Summary table ────────────────────────────────────────────────────
     summary_header = "".join(
         f"<th style='background:#f3f4f6;padding:4px 8px'>{r}</th>"
         for r in _SUMMARY_RESULTS
@@ -642,11 +758,22 @@ def _build_pdf_html_dr(adom: str, results: list[dict], generated_at: str) -> str
 <body>
 <h1>4THealth Device Review Scheduler</h1>
 <div class="meta">
-  ADOM: {adom} &nbsp;|&nbsp;
+  ADOM: {_esc(adom)} &nbsp;|&nbsp;
   Devices scanned: {len(results)} &nbsp;|&nbsp;
   Total findings: {len(all_rows)} &nbsp;|&nbsp;
   Generated: {generated_at}
 </div>
+<h2>Check Summary</h2>
+<table>
+  <thead>
+    <tr>
+      <th style='background:#f3f4f6;padding:4px 8px'>Check</th>
+      <th style='background:#f3f4f6;padding:4px 8px'>Description</th>
+      {cs_header}
+    </tr>
+  </thead>
+  <tbody>{cs_rows}</tbody>
+</table>
 <h2>Host Summary</h2>
 <table>
   <thead>

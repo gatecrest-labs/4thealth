@@ -147,6 +147,12 @@ def test_prune_old_runs(jobs_path):
 def test_execute_job_sends_email(jobs_path, monkeypatch):
     from app import device_review_scheduler as sched
 
+    fake_meta = [
+        {"key": "trusted_hosts", "name": "Trusted Hosts on Admin Accounts (CIS)",
+         "description": "Check trusted hosts"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+
     job = sched.create_job({
         "name": "T", "adom": "CorpADOM", "days_of_week": ["MON"], "time": "06:00",
         "checks": ["trusted_hosts"], "check_params": {},
@@ -184,6 +190,50 @@ def test_execute_job_sends_email(jobs_path, monkeypatch):
     assert len(sent["attachments"]) == 1
 
 
+def test_execute_job_check_summary_in_email_body(jobs_path, monkeypatch):
+    """_execute_job passes check_summary to the email body builder."""
+    import app.device_review_scheduler as sched
+
+    fake_meta = [
+        {"key": "trusted_hosts", "name": "Trusted Hosts on Admin Accounts (CIS)",
+         "description": "Check trusted hosts"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+
+    job = sched.create_job({
+        "name": "T", "adom": "CorpADOM", "days_of_week": ["MON"], "time": "06:00",
+        "checks": ["trusted_hosts"], "check_params": {},
+        "format": "pdf", "email": "test@corp.com", "enabled": True,
+    })
+
+    fake_results = [
+        {"device": "fw-01", "ip": "10.0.0.1",
+         "rows": [{"device": "fw-01",
+                   "check": "Trusted Hosts on Admin Accounts (CIS)",
+                   "result": "PASS", "interface": "system", "vdom": "root",
+                   "ip": "", "detail": "ok", "protocols": [],
+                   "has_insecure": False, "has_secure": False}],
+         "error": None},
+    ]
+
+    sent = {}
+
+    monkeypatch.setattr(
+        "app.device_review_scheduler._bulk_device_review_adom",
+        lambda *a, **kw: fake_results,
+    )
+    monkeypatch.setattr(
+        "app.device_review_scheduler._send_email",
+        lambda to, subject, body_html, attachments: sent.update({"body": body_html}),
+    )
+
+    sched._execute_job(job["id"])
+
+    assert "Check Summary" in sent["body"]
+    assert "Trusted Hosts on Admin Accounts (CIS)" in sent["body"]
+    assert "Check trusted hosts" in sent["body"]
+
+
 def test_execute_job_appends_run_record(jobs_path, monkeypatch):
     from app import device_review_scheduler as sched
 
@@ -216,7 +266,7 @@ def test_build_attachment_json(jobs_path):
              "interface": "system", "vdom": "root", "ip": "", "detail": "ok",
              "protocols": [], "has_insecure": False, "has_secure": False}]
     results = [{"device": "fw-01", "ip": "10.0.0.1", "rows": rows, "error": None}]
-    att = sched._build_attachment_dr("Corp", "json", results, "2026-08-01T00:00:00Z")
+    att = sched._build_attachment_dr("Corp", "json", results, "2026-08-01T00:00:00Z", [])
     data = json.loads(att["data"])
     assert data["adom"] == "Corp"
     assert data["exported_at"] == "2026-08-01T00:00:00Z"
@@ -229,7 +279,7 @@ def test_build_attachment_csv(jobs_path):
              "interface": "system", "vdom": "root", "ip": "", "detail": "ok",
              "protocols": [], "has_insecure": False, "has_secure": False}]
     results = [{"device": "fw-01", "ip": "10.0.0.1", "rows": rows, "error": None}]
-    att = sched._build_attachment_dr("Corp", "csv", results, "2026-08-01T00:00:00Z")
+    att = sched._build_attachment_dr("Corp", "csv", results, "2026-08-01T00:00:00Z", [])
     text = att["data"].decode()
     assert "Corp" in text
     assert "fw-01" in text
@@ -242,7 +292,7 @@ def test_build_attachment_pdf_html(jobs_path):
              "interface": "system", "vdom": "root", "ip": "", "detail": "No NTP",
              "protocols": [], "has_insecure": False, "has_secure": False}]
     results = [{"device": "fw-01", "ip": "10.0.0.1", "rows": rows, "error": None}]
-    att = sched._build_attachment_dr("Corp", "pdf", results, "2026-08-01T00:00:00Z")
+    att = sched._build_attachment_dr("Corp", "pdf", results, "2026-08-01T00:00:00Z", [])
     html = att["data"].decode()
     assert "Corp" in html
     assert "4THealth" in html
@@ -322,14 +372,14 @@ def test_host_summary_html_error_device():
 
 
 def test_build_summary_html_includes_host_section():
-    """_build_summary_html output contains both host summary and per-check table."""
+    """_build_summary_html output contains both check summary and host summary sections."""
     from app.device_review_scheduler import _build_summary_html
     results = _make_results({"FW1": [
         {"result": "PASS", "check": "NTP Configuration"},
     ]})
-    html = _build_summary_html("TESTADOM", results, "2026-08-03T01:00:00Z")
+    html = _build_summary_html("TESTADOM", results, "2026-08-03T01:00:00Z", [])
     assert "Host Summary" in html
-    assert "NTP Configuration" in html
+    assert "Check Summary" in html
 
 
 # ── Attachment host summaries ─────────────────────────────────────────────────
@@ -352,7 +402,7 @@ def _make_results_with_rows() -> list[dict]:
 def test_json_attachment_has_host_summary():
     """JSON attachment includes 'host_summary' key before 'rows'."""
     from app.device_review_scheduler import _build_attachment_dr
-    att = _build_attachment_dr("TESTADOM", "json", _make_results_with_rows(), "2026-08-03T01:00:00Z")
+    att = _build_attachment_dr("TESTADOM", "json", _make_results_with_rows(), "2026-08-03T01:00:00Z", [])
     data = json.loads(att["data"])
     assert "host_summary" in data
     assert isinstance(data["host_summary"], list)
@@ -366,7 +416,7 @@ def test_json_attachment_has_host_summary():
 def test_json_attachment_host_summary_before_rows():
     """'host_summary' key appears before 'rows' in JSON output."""
     from app.device_review_scheduler import _build_attachment_dr
-    att = _build_attachment_dr("TESTADOM", "json", _make_results_with_rows(), "2026-08-03T01:00:00Z")
+    att = _build_attachment_dr("TESTADOM", "json", _make_results_with_rows(), "2026-08-03T01:00:00Z", [])
     raw = att["data"].decode()
     assert raw.index("host_summary") < raw.index('"rows"')
 
@@ -374,7 +424,7 @@ def test_json_attachment_host_summary_before_rows():
 def test_csv_attachment_has_host_summary_comments():
     """CSV attachment includes host summary comment lines before data rows."""
     from app.device_review_scheduler import _build_attachment_dr
-    att = _build_attachment_dr("TESTADOM", "csv", _make_results_with_rows(), "2026-08-03T01:00:00Z")
+    att = _build_attachment_dr("TESTADOM", "csv", _make_results_with_rows(), "2026-08-03T01:00:00Z", [])
     text = att["data"].decode()
     assert "# Host Summary" in text
     assert "FW1" in text
@@ -384,7 +434,239 @@ def test_csv_attachment_has_host_summary_comments():
 def test_html_attachment_has_host_summary_table():
     """HTML attachment includes 'Host Summary' heading and table before findings."""
     from app.device_review_scheduler import _build_attachment_dr
-    att = _build_attachment_dr("TESTADOM", "pdf", _make_results_with_rows(), "2026-08-03T01:00:00Z")
+    att = _build_attachment_dr("TESTADOM", "pdf", _make_results_with_rows(), "2026-08-03T01:00:00Z", [])
     html = att["data"].decode()
     assert "Host Summary" in html
     assert html.index("Host Summary") < html.index("Findings")
+
+
+# ── _build_check_summary ──────────────────────────────────────────────────────
+
+def test_check_summary_counts_all_result_types(monkeypatch):
+    """Each result type gets its own count; no collapsing."""
+    import app.device_review_scheduler as sched
+    fake_meta = [
+        {"key": "ntp_config", "name": "NTP Configuration", "description": "Check NTP servers"},
+        {"key": "syslog_config", "name": "Syslog Configuration", "description": "Check syslog"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+    results = [{"device": "FW1", "rows": [
+        {"check": "NTP Configuration", "result": "PASS"},
+        {"check": "NTP Configuration", "result": "FAIL"},
+        {"check": "NTP Configuration", "result": "INSECURE"},
+        {"check": "NTP Configuration", "result": "WARN"},
+        {"check": "NTP Configuration", "result": "CONFIG_MISSING"},
+        {"check": "NTP Configuration", "result": "INFO"},
+        {"check": "Syslog Configuration", "result": "PASS"},
+    ]}]
+    summary = sched._build_check_summary(results, [])
+    ntp = next(c for c in summary if c["key"] == "ntp_config")
+    assert ntp["PASS"] == 1
+    assert ntp["FAIL"] == 1
+    assert ntp["INSECURE"] == 1
+    assert ntp["WARN"] == 1
+    assert ntp["CONFIG_MISSING"] == 1
+    assert ntp["INFO"] == 1
+    syslog = next(c for c in summary if c["key"] == "syslog_config")
+    assert syslog["PASS"] == 1
+
+
+def test_check_summary_filters_to_checks_ran(monkeypatch):
+    """Only checks in checks_ran appear when checks_ran is non-empty."""
+    import app.device_review_scheduler as sched
+    fake_meta = [
+        {"key": "ntp_config", "name": "NTP Configuration", "description": "Check NTP"},
+        {"key": "syslog_config", "name": "Syslog Configuration", "description": "Check syslog"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+    results = [{"device": "FW1", "rows": [
+        {"check": "NTP Configuration", "result": "PASS"},
+        {"check": "Syslog Configuration", "result": "FAIL"},
+    ]}]
+    summary = sched._build_check_summary(results, ["ntp_config"])
+    assert len(summary) == 1
+    assert summary[0]["key"] == "ntp_config"
+
+
+def test_check_summary_empty_checks_ran_means_all(monkeypatch):
+    """Empty checks_ran includes all checks from CHECKS_META."""
+    import app.device_review_scheduler as sched
+    fake_meta = [
+        {"key": "ntp_config", "name": "NTP Configuration", "description": "Check NTP"},
+        {"key": "syslog_config", "name": "Syslog Configuration", "description": "Check syslog"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+    results = []
+    summary = sched._build_check_summary(results, [])
+    assert len(summary) == 2
+
+
+def test_check_summary_zero_counts_for_unmatched_check(monkeypatch):
+    """A check that ran but produced no rows still appears with all-zero counts."""
+    import app.device_review_scheduler as sched
+    fake_meta = [
+        {"key": "ntp_config", "name": "NTP Configuration", "description": "Check NTP"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+    results = [{"device": "FW1", "rows": []}]
+    summary = sched._build_check_summary(results, ["ntp_config"])
+    assert summary[0]["PASS"] == 0
+    assert summary[0]["FAIL"] == 0
+
+
+def test_check_summary_preserves_checks_meta_order(monkeypatch):
+    """Output order matches CHECKS_META declaration order, not row order."""
+    import app.device_review_scheduler as sched
+    fake_meta = [
+        {"key": "aaa", "name": "AAA Check", "description": "first"},
+        {"key": "bbb", "name": "BBB Check", "description": "second"},
+        {"key": "ccc", "name": "CCC Check", "description": "third"},
+    ]
+    monkeypatch.setattr("app.device_review_scheduler._CHECKS_META", fake_meta)
+    results = [{"device": "FW1", "rows": [
+        {"check": "CCC Check", "result": "PASS"},
+        {"check": "AAA Check", "result": "PASS"},
+    ]}]
+    summary = sched._build_check_summary(results, [])
+    assert [c["key"] for c in summary] == ["aaa", "bbb", "ccc"]
+
+
+# ── _build_summary_html check summary section ─────────────────────────────────
+
+def _make_check_summary_fixture():
+    return [
+        {"key": "ntp_config", "name": "NTP Configuration", "description": "Check NTP servers",
+         "PASS": 3, "INFO": 0, "WARN": 1, "CONFIG_MISSING": 0, "FAIL": 1, "INSECURE": 0},
+        {"key": "interface_protocols", "name": "Interface Protocols", "description": "Cleartext check",
+         "PASS": 0, "INFO": 2, "WARN": 0, "CONFIG_MISSING": 0, "FAIL": 0, "INSECURE": 1},
+    ]
+
+
+def test_summary_html_check_summary_above_host_summary():
+    """Check Summary section appears before Host Summary in email body."""
+    from app.device_review_scheduler import _build_summary_html
+    results = [{"device": "FW1", "rows": [{"result": "PASS", "check": "NTP Configuration"}]}]
+    html = _build_summary_html("ADOM", results, "2026-08-04T00:00:00Z", _make_check_summary_fixture())
+    assert "Check Summary" in html
+    assert "Host Summary" in html
+    assert html.index("Check Summary") < html.index("Host Summary")
+
+
+def test_summary_html_check_summary_has_6_columns():
+    """Check summary table has all 6 result-type columns in correct order."""
+    from app.device_review_scheduler import _build_summary_html
+    results = []
+    html = _build_summary_html("ADOM", results, "2026-08-04T00:00:00Z", _make_check_summary_fixture())
+    cols = ("PASS", "INFO", "WARN", "CONFIG_MISSING", "FAIL", "INSECURE")
+    # All columns present
+    for col in cols:
+        assert col in html
+    # Columns in correct order: PASS | INFO | WARN | CONFIG_MISSING | FAIL | INSECURE
+    for a, b in zip(cols, cols[1:]):
+        assert html.index(a) < html.index(b), f"{a} should appear before {b}"
+
+
+def test_summary_html_check_summary_shows_description():
+    """Check summary table includes the check description."""
+    from app.device_review_scheduler import _build_summary_html
+    results = []
+    html = _build_summary_html("ADOM", results, "2026-08-04T00:00:00Z", _make_check_summary_fixture())
+    assert "Check NTP servers" in html
+    assert "Cleartext check" in html
+
+
+def test_summary_html_check_summary_shows_counts():
+    """Check summary table renders non-zero counts."""
+    from app.device_review_scheduler import _build_summary_html
+    results = []
+    html = _build_summary_html("ADOM", results, "2026-08-04T00:00:00Z", _make_check_summary_fixture())
+    # NTP row: PASS=3, WARN=1, FAIL=1
+    assert ">3<" in html
+    # Interface Protocols: INSECURE=1, INFO=2
+    assert ">2<" in html
+    assert ">1<" in html
+
+
+# ── Attachment check summary ───────────────────────────────────────────────────
+
+def _make_check_summary_for_attachments():
+    return [
+        {"key": "ntp_config", "name": "NTP Configuration", "description": "Check NTP",
+         "PASS": 2, "INFO": 0, "WARN": 1, "CONFIG_MISSING": 0, "FAIL": 1, "INSECURE": 0},
+    ]
+
+
+def test_json_attachment_has_check_summary_before_host_summary():
+    """JSON attachment includes 'check_summary' key before 'host_summary'."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr(
+        "TESTADOM", "json", _make_results_with_rows(), "2026-08-04T00:00:00Z",
+        _make_check_summary_for_attachments()
+    )
+    data = json.loads(att["data"])
+    assert "check_summary" in data
+    raw = att["data"].decode()
+    assert raw.index("check_summary") < raw.index('"host_summary"')
+
+
+def test_json_attachment_check_summary_structure():
+    """check_summary entries have name, description, and all 6 result counts."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr(
+        "TESTADOM", "json", [], "2026-08-04T00:00:00Z",
+        _make_check_summary_for_attachments()
+    )
+    data = json.loads(att["data"])
+    entry = data["check_summary"][0]
+    assert entry["name"] == "NTP Configuration"
+    assert entry["description"] == "Check NTP"
+    for col in ("PASS", "INFO", "WARN", "CONFIG_MISSING", "FAIL", "INSECURE"):
+        assert col in entry
+
+
+def test_csv_attachment_has_check_summary_before_host_summary():
+    """CSV attachment has # Check Summary comment block before # Host Summary."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr(
+        "TESTADOM", "csv", _make_results_with_rows(), "2026-08-04T00:00:00Z",
+        _make_check_summary_for_attachments()
+    )
+    text = att["data"].decode()
+    assert "# Check Summary" in text
+    assert "# Host Summary" in text
+    assert text.index("# Check Summary") < text.index("# Host Summary")
+
+
+def test_csv_attachment_check_summary_contains_check_name():
+    """CSV check summary comment rows include the check name."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr(
+        "TESTADOM", "csv", [], "2026-08-04T00:00:00Z",
+        _make_check_summary_for_attachments()
+    )
+    text = att["data"].decode()
+    assert "NTP Configuration" in text
+
+
+def test_html_attachment_has_check_summary_before_host_summary():
+    """HTML attachment has Check Summary heading before Host Summary heading."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr(
+        "TESTADOM", "pdf", _make_results_with_rows(), "2026-08-04T00:00:00Z",
+        _make_check_summary_for_attachments()
+    )
+    html = att["data"].decode()
+    assert "Check Summary" in html
+    assert "Host Summary" in html
+    assert html.index("Check Summary") < html.index("Host Summary")
+
+
+def test_html_attachment_check_summary_shows_description():
+    """HTML attachment check summary table includes check description text."""
+    from app.device_review_scheduler import _build_attachment_dr
+    att = _build_attachment_dr(
+        "TESTADOM", "pdf", [], "2026-08-04T00:00:00Z",
+        _make_check_summary_for_attachments()
+    )
+    html = att["data"].decode()
+    assert "Check NTP" in html
