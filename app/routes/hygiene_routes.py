@@ -823,8 +823,7 @@ def hygiene_object_where_used(adom: str):
                     continue
                 members = grp.get("member") or []
                 member_names = {
-                    (m.get("name") if isinstance(m, dict) else str(m))
-                    for m in members
+                    (m.get("name") if isinstance(m, dict) else str(m)) for m in members
                 }
                 if name in member_names:
                     containing_groups.append(grp.get("name", ""))
@@ -852,7 +851,9 @@ def hygiene_object_where_used(adom: str):
                     action = pol.get("action", "")
 
                     if category == "address":
-                        fields = list(pol.get("srcaddr") or []) + list(pol.get("dstaddr") or [])
+                        fields = list(pol.get("srcaddr") or []) + list(
+                            pol.get("dstaddr") or []
+                        )
                     else:
                         fields = list(pol.get("service") or [])
 
@@ -863,38 +864,44 @@ def hygiene_object_where_used(adom: str):
 
                     # Direct reference
                     if name in field_names:
-                        matched_rules.append({
-                            "package":   pkg_path,
-                            "rule_id":   pol_id,
-                            "rule_name": pol_name,
-                            "action":    action,
-                            "via":       "direct",
-                        })
+                        matched_rules.append(
+                            {
+                                "package": pkg_path,
+                                "rule_id": pol_id,
+                                "rule_name": pol_name,
+                                "action": action,
+                                "via": "direct",
+                            }
+                        )
 
                     # Indirect reference (via a containing group)
                     for grp_name in containing_groups:
                         if grp_name in field_names:
-                            matched_rules.append({
-                                "package":   pkg_path,
-                                "rule_id":   pol_id,
-                                "rule_name": pol_name,
-                                "action":    action,
-                                "via":       grp_name,
-                            })
+                            matched_rules.append(
+                                {
+                                    "package": pkg_path,
+                                    "rule_id": pol_id,
+                                    "rule_name": pol_name,
+                                    "action": action,
+                                    "via": grp_name,
+                                }
+                            )
 
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
         return internal_api_error("hygiene", exc)
 
-    return jsonify({
-        "name":             name,
-        "category":         category,
-        "groups":           [{"name": g} for g in containing_groups if g],
-        "rules":            matched_rules,
-        "packages_scanned": packages_scanned,
-        "skipped_packages": skipped_packages,
-    })
+    return jsonify(
+        {
+            "name": name,
+            "category": category,
+            "groups": [{"name": g} for g in containing_groups if g],
+            "rules": matched_rules,
+            "packages_scanned": packages_scanned,
+            "skipped_packages": skipped_packages,
+        }
+    )
 
 
 # ── API: interface lookup ─────────────────────────────────────────────────────
