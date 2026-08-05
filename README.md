@@ -1,4 +1,4 @@
-![4THealth logo](logo.svg)
+<img alt="4tHealth logo" src="logo.svg" width="240">
 
 # 4THealth — Network Operations Dashboard
 
