@@ -12,7 +12,12 @@
 {% if session.get('user') %}
 <header class="topbar">
   <div class="topbar-brand">
-    <span class="brand-icon">&#128274;</span> 4THealth
+    <svg class="brand-mark" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M48 6 L86 26 V70 L48 90 L10 70 V26 Z" fill="#f4f6f8"/>
+      <path d="M48 6 L86 26 L48 46 L10 26 Z" fill="#2f9e6e"/>
+      <path d="M22 58 H36 L41 47 L48 68 L54 55 L58 62 H74" stroke="#141a24" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>
+    4THealth
   </div>
   <nav class="topbar-nav">
     {% for key, tab in nav_registry.items() %}
