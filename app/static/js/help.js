@@ -148,6 +148,10 @@ const SECTIONS = [
 </ul>
 <h3>Object Lookup</h3>
 <p>Search for address objects, address groups, service objects, and service groups by name across the selected ADOM. Partial name matching supported. Group members are shown inline with their subnet or port details.</p>
+<ul>
+  <li><strong>Where Used</strong> — click the button on any result row to see which groups contain that object, and which policy rules (across all packages in the ADOM) reference it — directly by name or indirectly through a group. The <em>Via</em> column shows <em>direct</em> or the group name for indirect matches.</li>
+  <li><strong>Exports</strong> — CSV, JSON, and PDF of the search results.</li>
+</ul>
 <h3>Interface Lookup</h3>
 <p>Find which firewall interface(s) in an ADOM are assigned a given IP address.</p>
 <ul>

@@ -1052,14 +1052,16 @@ function renderOlTable() {
         }).join('') +
         `</div>`;
     }
+    const adom = (olMeta || {}).adom || '';
     return `<tr>
       <td style="font-size:.8rem;color:var(--text-muted)">${globalIdx}</td>
       <td><strong>${esc(o.name)}</strong></td>
       <td>${typeBadge}</td>
       <td style="font-size:.8rem;color:var(--text-muted)">${esc(catLabel)}</td>
       <td style="font-size:.8rem">${detailHtml}</td>
+      <td style="text-align:right"><button class="btn btn-sm btn-secondary" onclick="openWhereUsed(${esc(JSON.stringify(o.name))},${esc(JSON.stringify(o.category))},${esc(JSON.stringify(adom))})">Where Used</button></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="5" class="empty-state" style="padding:.85rem 1rem">No objects match your filter.</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty-state" style="padding:.85rem 1rem">No objects match your filter.</td></tr>`;
 
   renderOlPagination(total);
 }
@@ -1077,6 +1079,78 @@ function renderOlPagination(total) {
   html += btn('&rsaquo;', olPage + 1, olPage === total, false);
   html += btn('&raquo;&raquo;', total, olPage === total, false);
   pg.innerHTML = html;
+}
+
+/* ── Object Lookup — Where Used ─────────────────────────────────────────────── */
+async function openWhereUsed(name, category, adom) {
+  const modal = document.getElementById('olWhereUsedModal');
+  const title = document.getElementById('olWhereUsedTitle');
+  const body  = document.getElementById('olWhereUsedBody');
+
+  const catLabel = category === 'service' ? 'Service' : 'Address';
+  title.innerHTML = `Where Used &mdash; <strong>${esc(name)}</strong> <span class="obj-type-badge obj-type-${category === 'service' ? 'svc' : 'object'}">${esc(catLabel)}</span>`;
+  body.innerHTML  = `<div style="text-align:center;padding:2rem"><span class="spinner"></span> Loading&hellip;</div>`;
+  modal.classList.remove('hidden');
+
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/objects/where-used`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name, category }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      body.innerHTML = `<div class="alert alert-danger">${esc(data.error || 'Request failed.')}</div>`;
+      return;
+    }
+
+    // Groups section
+    let groupsHtml;
+    if (data.groups && data.groups.length) {
+      const rows = data.groups.map(g => `<tr><td><strong>${esc(g.name)}</strong></td><td>${esc(category === 'service' ? 'SVC Group' : 'Addr Group')}</td></tr>`).join('');
+      groupsHtml = `<table class="data-table" style="margin-bottom:1.5rem">
+        <thead><tr><th>Group Name</th><th style="width:9rem">Type</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    } else {
+      groupsHtml = `<p class="text-muted" style="font-size:.85rem">Not a member of any group.</p>`;
+    }
+
+    // Rules section
+    let rulesHtml;
+    if (data.rules && data.rules.length) {
+      const rows = data.rules.map(r => {
+        const actionClass = (r.action || '').toLowerCase() === 'deny' ? 'badge-red' : 'badge-green';
+        const actionLabel = (r.action || '').toUpperCase() || '—';
+        const viaHtml = r.via === 'direct'
+          ? `<span style="color:var(--text-muted);font-size:.8rem">direct</span>`
+          : `<span class="obj-type-badge obj-type-group" style="font-size:.75rem">${esc(r.via)}</span>`;
+        return `<tr>
+          <td style="font-size:.82rem">${esc(r.package)}</td>
+          <td style="font-size:.82rem;color:var(--text-muted)">${esc(r.rule_id)}</td>
+          <td>${esc(r.rule_name || '—')}</td>
+          <td><span class="status-badge ${actionClass}">${esc(actionLabel)}</span></td>
+          <td>${viaHtml}</td>
+        </tr>`;
+      }).join('');
+      rulesHtml = `<table class="data-table">
+        <thead><tr><th>Package</th><th style="width:4rem">ID</th><th>Rule Name</th><th style="width:6rem">Action</th><th style="width:8rem">Via</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    } else {
+      rulesHtml = `<p class="text-muted" style="font-size:.85rem">Not referenced in any policy rule.</p>`;
+    }
+
+    const scanned = data.packages_scanned != null ? data.packages_scanned : '?';
+    body.innerHTML = `
+      <h4 style="margin:0 0 .5rem;font-size:.9rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Used in Groups</h4>
+      ${groupsHtml}
+      <h4 style="margin:0 0 .5rem;font-size:.9rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Used in Policy Rules</h4>
+      ${rulesHtml}
+      <p style="margin-top:1rem;font-size:.78rem;color:var(--text-muted)">${scanned} package${scanned !== 1 ? 's' : ''} scanned</p>`;
+  } catch (err) {
+    body.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
+  }
 }
 
 /* ── Object Lookup exports ──────────────────────────────────────────────────── */
@@ -1837,6 +1911,17 @@ document.getElementById('olPagination').addEventListener('click', e => {
 document.getElementById('olExportCsv').addEventListener('click', olExportCsv);
 document.getElementById('olExportJson').addEventListener('click', olExportJson);
 document.getElementById('olExportPdf').addEventListener('click', olExportPdf);
+
+/* ── Where Used modal close ─────────────────────────────────────────────────── */
+document.getElementById('olWhereUsedClose').addEventListener('click', () => {
+  document.getElementById('olWhereUsedModal').classList.add('hidden');
+});
+document.getElementById('olWhereUsedModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('olWhereUsedModal').classList.add('hidden');
+});
 
 /* ── Interface Lookup wiring ────────────────────────────────────────────────── */
 document.getElementById('ilCloseBtn').addEventListener('click', () => {

@@ -199,3 +199,151 @@ def test_nat_lookup_invalid_ip(client):
 def test_nat_lookup_missing_ip(client):
     resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {})
     assert resp.status_code == 400
+
+
+# ── Where Used ────────────────────────────────────────────────────────────────
+
+def test_where_used_direct_address_match(client):
+    packages = [{"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0}]
+    policies = [
+        {"policyid": 42, "name": "permit-srv", "action": "accept",
+         "srcaddr": [{"name": "HOST-10.1.1.1"}], "dstaddr": [{"name": "any"}], "service": []},
+        {"policyid": 99, "name": "other-rule", "action": "accept",
+         "srcaddr": [{"name": "other-obj"}], "dstaddr": [{"name": "any"}], "service": []},
+    ]
+    addr_groups = []
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_policy_packages.return_value = packages
+        inst.get_policies.return_value = policies
+        inst.get_address_groups.return_value = addr_groups
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
+                     {"name": "HOST-10.1.1.1", "category": "address"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["name"] == "HOST-10.1.1.1"
+    assert data["groups"] == []
+    assert data["packages_scanned"] == 1
+    assert len(data["rules"]) == 1
+    assert data["rules"][0]["rule_id"] == "42"
+    assert data["rules"][0]["rule_name"] == "permit-srv"
+    assert data["rules"][0]["via"] == "direct"
+    assert data["rules"][0]["package"] == "Corp-Policy"
+
+
+def test_where_used_indirect_via_group(client):
+    packages = [{"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0}]
+    policies = [
+        {"policyid": 55, "name": "block-out", "action": "deny",
+         "srcaddr": [{"name": "SERVERS"}], "dstaddr": [{"name": "any"}], "service": []},
+    ]
+    addr_groups = [
+        {"name": "SERVERS", "member": [{"name": "HOST-10.1.1.1"}, {"name": "HOST-10.1.1.2"}]},
+        {"name": "OTHER-GROUP", "member": [{"name": "HOST-10.2.2.2"}]},
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_policy_packages.return_value = packages
+        inst.get_policies.return_value = policies
+        inst.get_address_groups.return_value = addr_groups
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
+                     {"name": "HOST-10.1.1.1", "category": "address"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data["groups"]) == 1
+    assert data["groups"][0]["name"] == "SERVERS"
+    assert len(data["rules"]) == 1
+    assert data["rules"][0]["rule_id"] == "55"
+    assert data["rules"][0]["via"] == "SERVERS"
+
+
+def test_where_used_not_referenced(client):
+    packages = [{"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0}]
+    policies = [
+        {"policyid": 1, "name": "some-rule", "action": "accept",
+         "srcaddr": [{"name": "other-obj"}], "dstaddr": [{"name": "any"}], "service": []},
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_policy_packages.return_value = packages
+        inst.get_policies.return_value = policies
+        inst.get_address_groups.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
+                     {"name": "UNUSED-OBJ", "category": "address"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["groups"] == []
+    assert data["rules"] == []
+    assert data["packages_scanned"] == 1
+
+
+def test_where_used_service_category(client):
+    packages = [{"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0}]
+    policies = [
+        {"policyid": 10, "name": "web-rule", "action": "accept",
+         "srcaddr": [{"name": "any"}], "dstaddr": [{"name": "any"}],
+         "service": [{"name": "HTTPS-8443"}]},
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_policy_packages.return_value = packages
+        inst.get_policies.return_value = policies
+        inst.get_service_groups.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
+                     {"name": "HTTPS-8443", "category": "service"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert len(data["rules"]) == 1
+    assert data["rules"][0]["rule_id"] == "10"
+    assert data["rules"][0]["via"] == "direct"
+    assert data["groups"] == []
+    assert data["packages_scanned"] == 1
+
+
+def test_where_used_multiple_packages(client):
+    packages = [
+        {"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0},
+        {"name": "Edge-Policy", "path": "Folder/Edge-Policy", "obj ver": 0},
+    ]
+    policies_corp = [
+        {"policyid": 1, "name": "rule-a", "action": "accept",
+         "srcaddr": [{"name": "HOST-10.1.1.1"}], "dstaddr": [{"name": "any"}], "service": []},
+    ]
+    policies_edge = [
+        {"policyid": 2, "name": "rule-b", "action": "deny",
+         "srcaddr": [{"name": "any"}], "dstaddr": [{"name": "HOST-10.1.1.1"}], "service": []},
+    ]
+    def side_effect(adom, pkg_path):
+        if pkg_path == "Corp-Policy":
+            return policies_corp
+        if pkg_path == "Folder/Edge-Policy":
+            return policies_edge
+        return []
+
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_policy_packages.return_value = packages
+        inst.get_policies.side_effect = side_effect
+        inst.get_address_groups.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
+                     {"name": "HOST-10.1.1.1", "category": "address"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["packages_scanned"] == 2
+    rule_ids = {r["rule_id"] for r in data["rules"]}
+    assert rule_ids == {"1", "2"}
+    packages_seen = {r["package"] for r in data["rules"]}
+    assert "Corp-Policy" in packages_seen
+    assert "Folder/Edge-Policy" in packages_seen
+
+
+def test_where_used_missing_name_returns_400(client):
+    resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
+                 {"category": "address"})
+    assert resp.status_code == 400
+
+
+def test_where_used_invalid_category_returns_400(client):
+    resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
+                 {"name": "HOST-10.1.1.1", "category": "vip"})
+    assert resp.status_code == 400
