@@ -770,15 +770,21 @@ def _build_pdf_html_dr(
     all_rows = [r for dev in results for r in dev.get("rows", [])]
 
     # Build sorted unique device list for host dropdown
-    unique_devices = sorted({row.get("device", "") for row in all_rows if row.get("device")})
+    unique_devices = sorted(
+        {row.get("device", "") for row in all_rows if row.get("device")}
+    )
     host_options = '<option value="ALL">All Hosts</option>\n'
     for dev in unique_devices:
         host_options += f'<option value="{_esc(dev)}">{_esc(dev)}</option>\n'
 
     # Build result filter buttons
-    result_buttons = '<button class="dr-result-btn active" data-result="ALL">ALL</button>\n'
+    result_buttons = (
+        '<button class="dr-result-btn active" data-result="ALL">ALL</button>\n'
+    )
     for res in ("FAIL", "INSECURE", "WARN", "CONFIG_MISSING", "PASS", "INFO"):
-        result_buttons += f'<button class="dr-result-btn" data-result="{res}">{res}</button>\n'
+        result_buttons += (
+            f'<button class="dr-result-btn" data-result="{res}">{res}</button>\n'
+        )
 
     # ── Findings rows ─────────────────────────────────────────────────────────
     rows_html = ""
