@@ -851,7 +851,7 @@ def hygiene_object_where_used(adom: str):
                         continue
                     pol_id = str(pol.get("policyid", ""))
                     pol_name = pol.get("name", "")
-                    action = pol.get("action", "")
+                    action = _action(pol)
 
                     if category == "address":
                         fields = list(pol.get("srcaddr") or []) + list(
