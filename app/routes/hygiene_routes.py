@@ -785,6 +785,136 @@ def hygiene_object_lookup(adom: str):
     return jsonify({"objects": results, "total": len(results)})
 
 
+# ── API: object where-used ────────────────────────────────────────────────────
+
+
+@bp.route("/api/hygiene/adoms/<adom>/objects/where-used", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_object_where_used(adom: str):
+    """Find all groups and policy rules that reference a named object.
+
+    Body: { "name": "OBJECT-NAME", "category": "address" | "service" }
+    Returns: { name, category, groups, rules, packages_scanned }
+    """
+    if err := check_adom_access(adom):
+        return err
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    category = (data.get("category") or "").strip().lower()
+
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    if category not in ("address", "service"):
+        return jsonify({"error": "category must be 'address' or 'service'"}), 400
+
+    try:
+        with make_client() as client:
+            packages = client.get_policy_packages(adom)
+            if category == "address":
+                groups_raw = client.get_address_groups(adom)
+            else:
+                groups_raw = client.get_service_groups(adom)
+
+            # Find groups that directly contain this object
+            containing_groups: list[str] = []
+            for grp in groups_raw:
+                if not isinstance(grp, dict):
+                    continue
+                members = grp.get("member") or []
+                member_names = {
+                    (m.get("name") if isinstance(m, dict) else str(m)) for m in members
+                }
+                if name in member_names:
+                    containing_groups.append(grp.get("name", ""))
+
+            # Scan all policies across all packages — parallel fetch, one client per worker
+            import concurrent.futures
+
+            pkg_paths = [
+                pkg.get("path") or pkg.get("name", "")
+                for pkg in packages
+                if pkg.get("path") or pkg.get("name", "")
+            ]
+
+            def _scan_pkg(pkg_path: str) -> tuple[list[dict], int, int]:
+                """Fetch and scan one package; returns (rules, scanned, skipped)."""
+                try:
+                    with make_client() as c:
+                        policies = c.get_policies(adom, pkg_path)
+                except Exception:
+                    return [], 0, 1
+
+                rules: list[dict] = []
+                for pol in policies:
+                    if not isinstance(pol, dict):
+                        continue
+                    pol_id = str(pol.get("policyid", ""))
+                    pol_name = pol.get("name", "")
+                    action = _action(pol)
+
+                    if category == "address":
+                        fields = list(pol.get("srcaddr") or []) + list(
+                            pol.get("dstaddr") or []
+                        )
+                    else:
+                        fields = list(pol.get("service") or [])
+
+                    field_names = {
+                        (f.get("name") if isinstance(f, dict) else str(f))
+                        for f in fields
+                    }
+
+                    if name in field_names:
+                        rules.append(
+                            {
+                                "package": pkg_path,
+                                "rule_id": pol_id,
+                                "rule_name": pol_name,
+                                "action": action,
+                                "via": "direct",
+                            }
+                        )
+
+                    for grp_name in containing_groups:
+                        if grp_name in field_names:
+                            rules.append(
+                                {
+                                    "package": pkg_path,
+                                    "rule_id": pol_id,
+                                    "rule_name": pol_name,
+                                    "action": action,
+                                    "via": grp_name,
+                                }
+                            )
+                return rules, 1, 0
+
+            matched_rules: list[dict] = []
+            packages_scanned = 0
+            skipped_packages = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                for rules, scanned, skipped in pool.map(_scan_pkg, pkg_paths):
+                    matched_rules.extend(rules)
+                    packages_scanned += scanned
+                    skipped_packages += skipped
+
+    except FMGError as exc:
+        return upstream_api_error("hygiene", exc)
+    except Exception as exc:
+        return internal_api_error("hygiene", exc)
+
+    return jsonify(
+        {
+            "name": name,
+            "category": category,
+            "groups": [{"name": g} for g in containing_groups if g],
+            "rules": matched_rules,
+            "packages_scanned": packages_scanned,
+            "skipped_packages": skipped_packages,
+        }
+    )
+
+
 # ── API: interface lookup ─────────────────────────────────────────────────────
 
 

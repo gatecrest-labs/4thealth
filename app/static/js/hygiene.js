@@ -1052,14 +1052,16 @@ function renderOlTable() {
         }).join('') +
         `</div>`;
     }
+    const adom = (olMeta || {}).adom || '';
     return `<tr>
       <td style="font-size:.8rem;color:var(--text-muted)">${globalIdx}</td>
       <td><strong>${esc(o.name)}</strong></td>
       <td>${typeBadge}</td>
       <td style="font-size:.8rem;color:var(--text-muted)">${esc(catLabel)}</td>
       <td style="font-size:.8rem">${detailHtml}</td>
+      <td style="text-align:right"><button class="btn btn-sm btn-secondary" onclick="openWhereUsed(${esc(JSON.stringify(o.name))},${esc(JSON.stringify(o.category))},${esc(JSON.stringify(adom))})">Where Used</button></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="5" class="empty-state" style="padding:.85rem 1rem">No objects match your filter.</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty-state" style="padding:.85rem 1rem">No objects match your filter.</td></tr>`;
 
   renderOlPagination(total);
 }
@@ -1077,6 +1079,240 @@ function renderOlPagination(total) {
   html += btn('&rsaquo;', olPage + 1, olPage === total, false);
   html += btn('&raquo;&raquo;', total, olPage === total, false);
   pg.innerHTML = html;
+}
+
+/* ── Object Lookup — Where Used ─────────────────────────────────────────────── */
+let _wuData = null;       // last where-used API response (for export)
+let _wuMeta = {};         // { name, category, adom, scanned }
+let _wuPage = 1;
+let _wuPageSize = 25;
+
+function _wuRulesRow(r) {
+  const actionClass = (r.action || '').toLowerCase() === 'deny' ? 'badge-red' : 'badge-green';
+  const actionLabel = (r.action || '').toUpperCase() || '—';
+  const viaHtml = r.via === 'direct'
+    ? `<span style="color:var(--text-muted);font-size:.8rem">direct</span>`
+    : `<span class="obj-type-badge obj-type-group" style="font-size:.75rem">${esc(r.via)}</span>`;
+  const pkgShort = r.package && r.package.includes('/')
+    ? r.package.split('/').pop()
+    : (r.package || '—');
+  return `<tr>
+    <td style="font-size:.82rem;max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.package)}">${esc(pkgShort)}</td>
+    <td style="font-size:.82rem;color:var(--text-muted)">${esc(r.rule_id)}</td>
+    <td style="max-width:12rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.rule_name || '')}">${esc(r.rule_name || '—')}</td>
+    <td><span class="status-badge ${actionClass}">${esc(actionLabel)}</span></td>
+    <td>${viaHtml}</td>
+  </tr>`;
+}
+
+function _wuRenderRules(rules) {
+  const container = document.getElementById('wuRulesSection');
+  if (!container) return;
+  if (!rules || !rules.length) {
+    container.innerHTML = `<p class="text-muted" style="font-size:.85rem">Not referenced in any policy rule.</p>`;
+    return;
+  }
+
+  const total = rules.length;
+  const totalPages = Math.max(1, Math.ceil(total / _wuPageSize));
+  _wuPage = Math.min(_wuPage, totalPages);
+  const start = (_wuPage - 1) * _wuPageSize;
+  const pageRules = rules.slice(start, start + _wuPageSize);
+
+  const rows = pageRules.map(_wuRulesRow).join('');
+
+  // Pagination controls
+  const pageSizeOpts = [10, 25, 50].map(n =>
+    `<option value="${n}"${n === _wuPageSize ? ' selected' : ''}>${n}</option>`).join('');
+
+  const prevDis = _wuPage <= 1 ? ' disabled' : '';
+  const nextDis = _wuPage >= totalPages ? ' disabled' : '';
+  const pageLabel = `${start + 1}–${Math.min(start + _wuPageSize, total)} of ${total}`;
+
+  container.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+      <div style="font-size:.8rem;color:var(--text-muted)">
+        ${pageLabel} rule${total !== 1 ? 's' : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:.4rem">
+        <label style="font-size:.8rem;color:var(--text-muted)">Show</label>
+        <select class="form-select-sm" id="wuPageSize" onchange="wuChangePageSize(this.value)">${pageSizeOpts}</select>
+        <button class="btn btn-sm btn-secondary" onclick="wuGoPage(1)"${prevDis}>&laquo;</button>
+        <button class="btn btn-sm btn-secondary" onclick="wuGoPage(${_wuPage - 1})"${prevDis}>&lsaquo;</button>
+        <span style="font-size:.82rem;padding:0 .3rem">Page ${_wuPage} / ${totalPages}</span>
+        <button class="btn btn-sm btn-secondary" onclick="wuGoPage(${_wuPage + 1})"${nextDis}>&rsaquo;</button>
+        <button class="btn btn-sm btn-secondary" onclick="wuGoPage(${totalPages})"${nextDis}>&raquo;</button>
+      </div>
+    </div>
+    <table class="data-table" style="table-layout:fixed;width:100%">
+      <thead><tr><th style="width:28%">Package</th><th style="width:5rem">ID</th><th>Rule Name</th><th style="width:6rem">Action</th><th style="width:9rem">Via</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function wuGoPage(p) {
+  _wuPage = p;
+  if (_wuData) _wuRenderRules(_wuData.rules);
+}
+
+function wuChangePageSize(val) {
+  _wuPageSize = parseInt(val, 10);
+  _wuPage = 1;
+  if (_wuData) _wuRenderRules(_wuData.rules);
+}
+
+async function openWhereUsed(name, category, adom) {
+  const modal = document.getElementById('olWhereUsedModal');
+  const title = document.getElementById('olWhereUsedTitle');
+  const body  = document.getElementById('olWhereUsedBody');
+
+  _wuData = null;
+  _wuPage = 1;
+  _wuMeta = { name, category, adom };
+
+  const catLabel = category === 'service' ? 'Service' : 'Address';
+  title.innerHTML = `Where Used &mdash; <strong>${esc(name)}</strong> <span class="obj-type-badge obj-type-${category === 'service' ? 'svc' : 'object'}">${esc(catLabel)}</span>`;
+  body.innerHTML  = `<div style="text-align:center;padding:2rem"><span class="spinner"></span> Loading&hellip;</div>`;
+  modal.classList.remove('hidden');
+
+  try {
+    const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/objects/where-used`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name, category }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      body.innerHTML = `<div class="alert alert-danger">${esc(data.error || 'Request failed.')}</div>`;
+      return;
+    }
+
+    _wuData = data;
+    _wuMeta.scanned = data.packages_scanned != null ? data.packages_scanned : '?';
+
+    // Groups section
+    let groupsHtml;
+    if (data.groups && data.groups.length) {
+      const rows = data.groups.map(g =>
+        `<tr><td><strong>${esc(g.name)}</strong></td><td>${esc(category === 'service' ? 'SVC Group' : 'Addr Group')}</td></tr>`
+      ).join('');
+      groupsHtml = `<table class="data-table" style="margin-bottom:1.5rem">
+        <thead><tr><th>Group Name</th><th style="width:9rem">Type</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    } else {
+      groupsHtml = `<p class="text-muted" style="font-size:.85rem">Not a member of any group.</p>`;
+    }
+
+    const scanned = _wuMeta.scanned;
+    body.innerHTML = `
+      <h4 style="margin:0 0 .5rem;font-size:.9rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Used in Groups</h4>
+      ${groupsHtml}
+      <h4 style="margin:0 0 .5rem;font-size:.9rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Used in Policy Rules</h4>
+      <div id="wuRulesSection"></div>
+      <p style="margin-top:.75rem;font-size:.78rem;color:var(--text-muted)">${scanned} package${scanned !== 1 ? 's' : ''} scanned</p>
+      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--border-color);display:flex;align-items:center;gap:.5rem">
+        <span style="font-size:.82rem;color:var(--text-muted);margin-right:.25rem">Export:</span>
+        <button class="btn btn-sm btn-secondary" onclick="wuExportCsv()">CSV</button>
+        <button class="btn btn-sm btn-secondary" onclick="wuExportJson()">JSON</button>
+        <button class="btn btn-sm btn-secondary" onclick="wuExportPdf()">PDF</button>
+      </div>`;
+    _wuRenderRules(data.rules);
+  } catch (err) {
+    body.innerHTML = `<div class="alert alert-danger">${esc(err.message)}</div>`;
+  }
+}
+
+/* ── Where Used exports ──────────────────────────────────────────────────────── */
+function wuExportCsv() {
+  if (!_wuData) return;
+  const ts = new Date().toLocaleString();
+  const fh = [
+    `# Where Used — ${_wuMeta.name} (${_wuMeta.category})`,
+    `# ADOM: ${_wuMeta.adom}`,
+    `# Generated: ${ts}`,
+    `# Packages scanned: ${_wuMeta.scanned}`,
+  ];
+  const lines = [...fh, ''];
+
+  // Groups
+  lines.push('## Groups');
+  lines.push('Group Name,Type');
+  (_wuData.groups || []).forEach(g =>
+    lines.push(`"${g.name.replace(/"/g, '""')}","${_wuMeta.category === 'service' ? 'SVC Group' : 'Addr Group'}"`)
+  );
+  lines.push('');
+
+  // Rules
+  lines.push('## Rules');
+  lines.push('Package,Rule ID,Rule Name,Action,Via');
+  (_wuData.rules || []).forEach(r => {
+    const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    lines.push([q(r.package), q(r.rule_id), q(r.rule_name || ''), q((r.action || '').toUpperCase()), q(r.via)].join(','));
+  });
+
+  const slug = _wuMeta.name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+  download(`where_used_${slug}.csv`, lines.join('\r\n'), 'text/csv');
+}
+
+function wuExportJson() {
+  if (!_wuData) return;
+  const payload = {
+    name:             _wuMeta.name,
+    category:         _wuMeta.category,
+    adom:             _wuMeta.adom,
+    generated:        new Date().toISOString(),
+    packages_scanned: _wuMeta.scanned,
+    groups:           _wuData.groups || [],
+    rules:            _wuData.rules  || [],
+  };
+  const slug = _wuMeta.name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+  download(`where_used_${slug}.json`, JSON.stringify(payload, null, 2), 'application/json');
+}
+
+function wuExportPdf() {
+  if (!_wuData) return;
+  const title = `Where Used — "${esc(_wuMeta.name)}" (${esc(_wuMeta.category)}) in ${esc(_wuMeta.adom)}`;
+  const ts    = new Date().toLocaleString();
+
+  const groupRows = (_wuData.groups || []).map(g =>
+    `<tr><td>${esc(g.name)}</td><td>${esc(_wuMeta.category === 'service' ? 'SVC Group' : 'Addr Group')}</td></tr>`
+  ).join('') || '<tr><td colspan="2" style="color:#5a6478">Not a member of any group.</td></tr>';
+
+  const ruleRows = (_wuData.rules || []).map(r => {
+    const action = (r.action || '').toUpperCase();
+    const actionStyle = action === 'DENY' ? 'background:#fee2e2;color:#991b1b' : 'background:#d1fae5;color:#065f46';
+    return `<tr>
+      <td>${esc(r.package || '—')}</td>
+      <td>${esc(r.rule_id)}</td>
+      <td>${esc(r.rule_name || '—')}</td>
+      <td><span style="padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;${actionStyle}">${esc(action || '—')}</span></td>
+      <td>${esc(r.via)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" style="color:#5a6478">Not referenced in any policy rule.</td></tr>';
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Where Used — ${esc(_wuMeta.name)}</title>
+<style>
+  body{font-family:sans-serif;font-size:11px;color:#1a2133;margin:1.5cm}
+  h1{font-size:15px;margin-bottom:4px}
+  h2{font-size:12px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.05em;color:#5a6478}
+  .meta{font-size:10px;color:#5a6478;margin-bottom:12px;border-left:3px solid #93c5fd;padding-left:6px}
+  table{width:100%;border-collapse:collapse;margin-bottom:12px}
+  th{background:#eef1f5;text-align:left;padding:5px 8px;font-size:10px;text-transform:uppercase;border-bottom:2px solid #d0d7e2}
+  td{padding:4px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+  @media print{body{margin:1cm}}
+</style></head><body>
+<h1>Where Used &mdash; ${esc(_wuMeta.name)}</h1>
+<div class="meta">ADOM: ${esc(_wuMeta.adom)} &bull; Generated ${ts} &bull; ${_wuMeta.scanned} package(s) scanned</div>
+<h2>Used in Groups</h2>
+<table><thead><tr><th>Group Name</th><th>Type</th></tr></thead><tbody>${groupRows}</tbody></table>
+<h2>Used in Policy Rules</h2>
+<table><thead><tr><th>Package</th><th>ID</th><th>Rule Name</th><th>Action</th><th>Via</th></tr></thead><tbody>${ruleRows}</tbody></table>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) { win.document.write(html); win.document.close(); win.focus(); win.print(); }
 }
 
 /* ── Object Lookup exports ──────────────────────────────────────────────────── */
@@ -1837,6 +2073,17 @@ document.getElementById('olPagination').addEventListener('click', e => {
 document.getElementById('olExportCsv').addEventListener('click', olExportCsv);
 document.getElementById('olExportJson').addEventListener('click', olExportJson);
 document.getElementById('olExportPdf').addEventListener('click', olExportPdf);
+
+/* ── Where Used modal close ─────────────────────────────────────────────────── */
+document.getElementById('olWhereUsedClose').addEventListener('click', () => {
+  document.getElementById('olWhereUsedModal').classList.add('hidden');
+});
+document.getElementById('olWhereUsedModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('olWhereUsedModal').classList.add('hidden');
+});
 
 /* ── Interface Lookup wiring ────────────────────────────────────────────────── */
 document.getElementById('ilCloseBtn').addEventListener('click', () => {
