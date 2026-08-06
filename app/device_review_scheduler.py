@@ -353,6 +353,106 @@ def _get_checks_meta():
 
 _CHECK_SUMMARY_RESULTS = ("PASS", "INFO", "WARN", "CONFIG_MISSING", "FAIL", "INSECURE")
 
+_REPORT_CSS = """
+#dr-filter-bar {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 10;
+  padding: 8px 0 10px 0;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.dr-result-btn {
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #374151;
+}
+.dr-result-btn.active {
+  border-color: #6b7280;
+  background: #e5e7eb;
+  color: #111827;
+}
+.dr-result-btn[data-result="FAIL"].active,
+.dr-result-btn[data-result="INSECURE"].active { background:#fee2e2; border-color:#991b1b; color:#991b1b; }
+.dr-result-btn[data-result="WARN"].active,
+.dr-result-btn[data-result="CONFIG_MISSING"].active { background:#fef3c7; border-color:#92400e; color:#92400e; }
+.dr-result-btn[data-result="PASS"].active { background:#dcfce7; border-color:#166534; color:#166534; }
+.dr-result-btn[data-result="INFO"].active { background:#dbeafe; border-color:#1e40af; color:#1e40af; }
+#dr-host-select {
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  background: #f9fafb;
+  color: #374151;
+  cursor: pointer;
+}
+#dr-row-count {
+  font-size: 11px;
+  color: #6b7280;
+  margin-left: 8px;
+}
+"""
+
+_REPORT_JS = """
+(function() {
+  var activeResult = 'ALL';
+
+  function filterFindings() {
+    var hostSelect = document.getElementById('dr-host-select');
+    var activeHost = hostSelect ? hostSelect.value : 'ALL';
+    var rows = document.querySelectorAll('#dr-findings-tbody tr');
+    var shown = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var resultMatch = (activeResult === 'ALL') || (r.getAttribute('data-result') === activeResult);
+      var hostMatch = (activeHost === 'ALL') || (r.getAttribute('data-device') === activeHost);
+      if (resultMatch && hostMatch) {
+        r.style.display = '';
+        shown++;
+      } else {
+        r.style.display = 'none';
+      }
+    }
+    var counter = document.getElementById('dr-row-count');
+    if (counter) {
+      counter.textContent = 'Showing ' + shown + ' of ' + rows.length + ' findings';
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var buttons = document.querySelectorAll('.dr-result-btn');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener('click', function() {
+        for (var j = 0; j < buttons.length; j++) {
+          buttons[j].classList.remove('active');
+        }
+        this.classList.add('active');
+        activeResult = this.getAttribute('data-result');
+        var hostSelect = document.getElementById('dr-host-select');
+        if (hostSelect) hostSelect.value = 'ALL';
+        filterFindings();
+      });
+    }
+    var hostSelect = document.getElementById('dr-host-select');
+    if (hostSelect) {
+      hostSelect.addEventListener('change', filterFindings);
+    }
+    filterFindings();
+  });
+})();
+"""
+
 
 def _build_check_summary(results: list[dict], checks_ran: list[str]) -> list[dict]:
     """Return per-check result counts ordered by CHECKS_META declaration order.
@@ -669,12 +769,31 @@ def _build_pdf_html_dr(
 ) -> str:
     all_rows = [r for dev in results for r in dev.get("rows", [])]
 
+    # Build sorted unique device list for host dropdown
+    unique_devices = sorted(
+        {row.get("device", "") for row in all_rows if row.get("device")}
+    )
+    host_options = '<option value="ALL">All Hosts</option>\n'
+    for dev in unique_devices:
+        host_options += f'<option value="{_esc(dev)}">{_esc(dev)}</option>\n'
+
+    # Build result filter buttons
+    result_buttons = (
+        '<button class="dr-result-btn active" data-result="ALL">ALL</button>\n'
+    )
+    for res in ("FAIL", "INSECURE", "WARN", "CONFIG_MISSING", "PASS", "INFO"):
+        result_buttons += (
+            f'<button class="dr-result-btn" data-result="{res}">{res}</button>\n'
+        )
+
     # ── Findings rows ─────────────────────────────────────────────────────────
     rows_html = ""
     for row in all_rows:
         color = _RESULT_COLOR.get(row.get("result", ""), "#374151")
+        result_val = _esc(row.get("result", ""))
+        device_val = _esc(row.get("device", ""))
         rows_html += (
-            f"<tr>"
+            f'<tr data-result="{result_val}" data-device="{device_val}">'
             f"<td>{_esc(row.get('device', ''))}</td>"
             f"<td>{_esc(row.get('check', ''))}</td>"
             f"<td style='color:{color};font-weight:600'>{_esc(row.get('result', ''))}</td>"
@@ -753,6 +872,7 @@ def _build_pdf_html_dr(
   th,td{{border:1px solid #e5e7eb;padding:4px 8px;text-align:left}}
   th{{background:#f3f4f6;font-weight:600}}
   tr:nth-child(even){{background:#fafafa}}
+  {_REPORT_CSS}
 </style>
 </head>
 <body>
@@ -785,6 +905,11 @@ def _build_pdf_html_dr(
   </thead>
   <tbody>{summary_rows}</tbody>
 </table>
+<div id="dr-filter-bar">
+  {result_buttons}
+  <select id="dr-host-select">{host_options}</select>
+  <span id="dr-row-count"></span>
+</div>
 <h2>Findings</h2>
 <table>
   <thead>
@@ -793,8 +918,9 @@ def _build_pdf_html_dr(
       <th>Interface</th><th>VDOM</th><th>IP</th><th>Detail</th>
     </tr>
   </thead>
-  <tbody>{rows_html}</tbody>
+  <tbody id="dr-findings-tbody">{rows_html}</tbody>
 </table>
+<script>{_REPORT_JS}</script>
 </body>
 </html>"""
 
