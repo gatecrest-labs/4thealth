@@ -181,7 +181,7 @@
 
 <!-- Where Used Modal -->
 <div class="modal-overlay hidden" id="olWhereUsedModal" role="dialog" aria-modal="true">
-  <div class="modal-dialog" style="max-width:780px">
+  <div class="modal-dialog" style="max-width:min(95vw,960px)">
     <div class="modal-header">
       <span id="olWhereUsedTitle">Where Used</span>
       <button class="modal-close" id="olWhereUsedClose" aria-label="Close">&times;</button>
@@ -422,5 +422,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/hygiene.js') }}?v=14"></script>
+<script src="{{ url_for('static', filename='js/hygiene.js') }}?v=15"></script>
 {% endblock %}
