@@ -828,21 +828,24 @@ def hygiene_object_where_used(adom: str):
                 if name in member_names:
                     containing_groups.append(grp.get("name", ""))
 
-            # Scan all policies across all packages
-            matched_rules: list[dict] = []
-            packages_scanned = 0
-            skipped_packages = 0
-            for pkg in packages:
-                pkg_path = pkg.get("path") or pkg.get("name", "")
-                if not pkg_path:
-                    continue
-                try:
-                    policies = client.get_policies(adom, pkg_path)
-                except Exception:
-                    skipped_packages += 1
-                    continue
-                packages_scanned += 1
+            # Scan all policies across all packages — parallel fetch, one client per worker
+            import concurrent.futures
 
+            pkg_paths = [
+                pkg.get("path") or pkg.get("name", "")
+                for pkg in packages
+                if pkg.get("path") or pkg.get("name", "")
+            ]
+
+            def _scan_pkg(pkg_path: str) -> tuple[list[dict], int, int]:
+                """Fetch and scan one package; returns (rules, scanned, skipped)."""
+                try:
+                    with make_client() as c:
+                        policies = c.get_policies(adom, pkg_path)
+                except Exception:
+                    return [], 0, 1
+
+                rules: list[dict] = []
                 for pol in policies:
                     if not isinstance(pol, dict):
                         continue
@@ -862,9 +865,8 @@ def hygiene_object_where_used(adom: str):
                         for f in fields
                     }
 
-                    # Direct reference
                     if name in field_names:
-                        matched_rules.append(
+                        rules.append(
                             {
                                 "package": pkg_path,
                                 "rule_id": pol_id,
@@ -874,10 +876,9 @@ def hygiene_object_where_used(adom: str):
                             }
                         )
 
-                    # Indirect reference (via a containing group)
                     for grp_name in containing_groups:
                         if grp_name in field_names:
-                            matched_rules.append(
+                            rules.append(
                                 {
                                     "package": pkg_path,
                                     "rule_id": pol_id,
@@ -886,6 +887,16 @@ def hygiene_object_where_used(adom: str):
                                     "via": grp_name,
                                 }
                             )
+                return rules, 1, 0
+
+            matched_rules: list[dict] = []
+            packages_scanned = 0
+            skipped_packages = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                for rules, scanned, skipped in pool.map(_scan_pkg, pkg_paths):
+                    matched_rules.extend(rules)
+                    packages_scanned += scanned
+                    skipped_packages += skipped
 
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
