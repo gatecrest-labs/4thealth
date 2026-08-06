@@ -670,3 +670,194 @@ def test_html_attachment_check_summary_shows_description():
     )
     html = att["data"].decode()
     assert "Check NTP" in html
+
+
+def test_findings_rows_have_data_attributes():
+    """Each findings <tr> has data-result and data-device attributes."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    results = [
+        {"device": "fw-01", "rows": [
+            {"device": "fw-01", "check": "NTP", "result": "FAIL",
+             "interface": "system", "vdom": "root", "ip": "", "detail": "no ntp",
+             "protocols": [], "has_insecure": False, "has_secure": False},
+        ], "error": None},
+        {"device": "fw-02", "rows": [
+            {"device": "fw-02", "check": "Interface Protocols", "result": "INSECURE",
+             "interface": "mgmt", "vdom": "root", "ip": "10.0.0.1/24", "detail": "",
+             "protocols": [{"name": "http", "secure": False}],
+             "has_insecure": True, "has_secure": False},
+        ], "error": None},
+    ]
+    html = _build_pdf_html_dr("Corp", results, "2026-08-06T00:00:00Z", [])
+    assert 'data-result="FAIL"' in html
+    assert 'data-result="INSECURE"' in html
+    assert 'data-device="fw-01"' in html
+    assert 'data-device="fw-02"' in html
+
+
+# ── _REPORT_CSS and _REPORT_JS constants ──────────────────────────────────
+
+def test_report_css_constant_exists():
+    """_REPORT_CSS module constant is a non-empty string."""
+    import app.device_review_scheduler as sched
+    assert isinstance(sched._REPORT_CSS, str)
+    assert len(sched._REPORT_CSS) > 0
+
+
+def test_report_js_constant_exists():
+    """_REPORT_JS module constant is a non-empty string."""
+    import app.device_review_scheduler as sched
+    assert isinstance(sched._REPORT_JS, str)
+    assert len(sched._REPORT_JS) > 0
+
+
+def test_report_js_defines_filter_function():
+    """_REPORT_JS contains the filterFindings function definition."""
+    import app.device_review_scheduler as sched
+    assert "filterFindings" in sched._REPORT_JS
+
+
+def test_report_js_handles_all_result_filter():
+    """_REPORT_JS contains logic to handle the ALL result filter."""
+    import app.device_review_scheduler as sched
+    assert "ALL" in sched._REPORT_JS
+
+
+def _make_multi_host_results():
+    return [
+        {"device": "fw-alpha", "rows": [
+            {"device": "fw-alpha", "check": "NTP", "result": "FAIL",
+             "interface": "system", "vdom": "root", "ip": "", "detail": "no ntp",
+             "protocols": [], "has_insecure": False, "has_secure": False},
+            {"device": "fw-alpha", "check": "Interface Protocols", "result": "PASS",
+             "interface": "mgmt", "vdom": "root", "ip": "10.0.0.1/24", "detail": "",
+             "protocols": [], "has_insecure": False, "has_secure": True},
+        ], "error": None},
+        {"device": "fw-beta", "rows": [
+            {"device": "fw-beta", "check": "NTP", "result": "INSECURE",
+             "interface": "system", "vdom": "root", "ip": "", "detail": "bad ntp",
+             "protocols": [], "has_insecure": True, "has_secure": False},
+        ], "error": None},
+    ]
+
+
+def test_html_report_has_filter_bar():
+    """HTML report contains the filter bar div."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert 'id="dr-filter-bar"' in html
+
+
+def test_html_report_filter_bar_has_result_buttons():
+    """Filter bar contains a button for each result type plus ALL."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    for result in ("ALL", "FAIL", "INSECURE", "WARN", "CONFIG_MISSING", "PASS", "INFO"):
+        assert f'data-result="{result}"' in html
+
+
+def test_html_report_filter_bar_has_host_dropdown():
+    """Filter bar contains a host dropdown with device names as options."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert 'id="dr-host-select"' in html
+    assert 'value="fw-alpha"' in html
+    assert 'value="fw-beta"' in html
+
+
+def test_html_report_filter_bar_has_all_hosts_option():
+    """Host dropdown includes an 'All Hosts' default option."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert "All Hosts" in html
+
+
+def test_html_report_findings_tbody_has_id():
+    """Findings tbody has id='dr-findings-tbody' for JS targeting."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert 'id="dr-findings-tbody"' in html
+
+
+def test_html_report_has_row_count_span():
+    """HTML report contains the row count indicator span."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert 'id="dr-row-count"' in html
+
+
+def test_html_report_filter_bar_before_findings():
+    """Filter bar appears in the HTML before the Findings table."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert html.index('id="dr-filter-bar"') < html.index(">Findings<")
+
+
+def test_html_report_css_injected():
+    """_REPORT_CSS content is present in the <style> block."""
+    from app.device_review_scheduler import _build_pdf_html_dr, _REPORT_CSS
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert "dr-filter-bar" in html
+    assert "dr-result-btn" in html
+
+
+def test_html_report_js_injected():
+    """_REPORT_JS content is present in the output HTML."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert "filterFindings" in html
+
+
+def test_html_report_host_options_sorted_alphabetically():
+    """Host dropdown options are sorted alphabetically."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert html.index('value="fw-alpha"') < html.index('value="fw-beta"')
+
+
+def test_html_report_no_duplicate_host_options():
+    """Each device appears exactly once in the host dropdown even if it has multiple rows."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    # fw-alpha has 2 rows — should still appear once in the dropdown
+    html = _build_pdf_html_dr("Corp", _make_multi_host_results(), "2026-08-06T00:00:00Z", [])
+    assert html.count('value="fw-alpha"') == 1
+
+
+def test_html_report_device_names_are_escaped():
+    """Device names with HTML metacharacters are escaped in dropdown options and data attributes."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    results = [
+        {"device": 'fw-<evil>"&test', "rows": [
+            {"device": 'fw-<evil>"&test', "check": "NTP", "result": "FAIL",
+             "interface": "system", "vdom": "root", "ip": "", "detail": "bad",
+             "protocols": [], "has_insecure": True, "has_secure": False},
+        ], "error": None},
+    ]
+    html = _build_pdf_html_dr("Corp", results, "2026-08-06T00:00:00Z", [])
+    # Raw metacharacters must not appear in the output
+    assert "<evil>" not in html
+    assert '"&test' not in html
+    # Escaped forms must be present
+    assert "&lt;evil&gt;" in html
+    assert "&amp;test" in html
+
+
+def test_html_report_all_button_is_active_by_default():
+    """The ALL result button has the 'active' class on initial render."""
+    from app.device_review_scheduler import _build_pdf_html_dr
+    html = _build_pdf_html_dr("Corp", [], "2026-08-06T00:00:00Z", [])
+    assert 'class="dr-result-btn active" data-result="ALL"' in html
+
+
+def test_filter_bar_absent_from_csv_and_json():
+    """CSV and JSON attachments do not contain filter bar markup or JS."""
+    from app.device_review_scheduler import _build_attachment_dr
+    rows = [{"device": "fw-01", "check": "NTP", "result": "FAIL",
+             "interface": "system", "vdom": "root", "ip": "", "detail": "bad",
+             "protocols": [], "has_insecure": True, "has_secure": False}]
+    results = [{"device": "fw-01", "ip": "10.0.0.1", "rows": rows, "error": None}]
+    for fmt in ("csv", "json"):
+        att = _build_attachment_dr("Corp", fmt, results, "2026-08-06T00:00:00Z", [])
+        content = att["data"].decode()
+        assert "dr-filter-bar" not in content, f"{fmt} should not contain filter bar"
+        assert "filterFindings" not in content, f"{fmt} should not contain filter JS"
