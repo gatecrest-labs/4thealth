@@ -49,6 +49,9 @@
   <div class="table-controls">
     <span id="deviceCount"></span>
     <div class="table-controls-right">
+      <button id="exportCsvBtn"  class="btn btn-sm btn-secondary" onclick="exportCsv()"  disabled title="Export filtered list as CSV">CSV</button>
+      <button id="exportJsonBtn" class="btn btn-sm btn-secondary" onclick="exportJson()" disabled title="Export filtered list as JSON">JSON</button>
+      <button id="exportHtmlBtn" class="btn btn-sm btn-secondary" onclick="exportHtml()" disabled title="Export filtered list as HTML">HTML</button>
       <select id="pageSize" class="form-select-sm">
         <option value="10">10</option>
         <option value="25" selected>25</option>
@@ -93,5 +96,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/firewalls.js') }}?v=23"></script>
+<script src="{{ url_for('static', filename='js/firewalls.js') }}?v=25"></script>
 {% endblock %}
