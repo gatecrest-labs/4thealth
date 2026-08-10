@@ -40,7 +40,8 @@ JSON-RPC API** — no direct device connections are made.
 | **Zone Policy** | Self-contained network segmentation policy browser — query flows, browse zones and rules, validate schema, edit database (admin only) |
 | **Map** | Interactive geographic map of all managed FortiGate devices, coloured by configurable US geographic region |
 | **Config-Delta** | Per-device install-pending diff viewer — shows exactly which FortiOS CLI lines will change on the next install; export queue for CSV, JSON, or PDF change records |
-| **Admin** | *(admin only)* Group management, tab-level and ADOM-level permissions, map region configuration, log viewer, External API management |
+| **Backup** | AES-256 encrypted ZIP backups of all runtime config; one-time browser download or scheduled with FTP/SFTP remote transfer |
+| **Admin** | *(admin only)* Group management, tab-level and ADOM-level permissions, map region configuration, log viewer, External API management, Backup configuration |
 | **Auto-refresh** | Configurable: manual, 1 min, 5 min (default), 10 min, 15 min |
 | **Light / Dark mode** | Toggle in the nav bar; preference saved in `localStorage` |
 

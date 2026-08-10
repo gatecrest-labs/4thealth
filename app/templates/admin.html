@@ -14,6 +14,7 @@
   <button class="admin-tab" data-panel="map-regions">Map Region Colors</button>
   <button class="admin-tab" data-panel="external-api">External API</button>
   <button class="admin-tab" data-panel="scheduled">Scheduled</button>
+  <button class="admin-tab" data-panel="backup">Backup</button>
   <button class="admin-tab" data-panel="logs">Application Logs</button>
 </div>
 
@@ -349,6 +350,152 @@
     </table>
   </div>
 
+</div>
+
+<!-- ═══════════════════════  BACKUP PANEL  ═══════════════════════ -->
+<div class="admin-panel" id="panel-backup">
+  <div class="admin-panel-header">
+    <h2>Backup</h2>
+    <p class="admin-panel-desc">Create encrypted backups of all runtime configuration files. Archives are AES-256 password-protected ZIPs.</p>
+  </div>
+
+  <!-- Panel 1: Settings -->
+  <div class="admin-panel-header" style="margin-top:1.5rem">
+    <h3>Backup Settings</h3>
+  </div>
+  <form id="backupSettingsForm">
+    <div class="form-row">
+      <label for="backupPassword">Backup Password</label>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <input type="password" id="backupPassword" name="password" placeholder="Required — set before creating backups" style="flex:1">
+        <button type="button" class="btn btn-sm" id="backupPasswordToggle">Show</button>
+      </div>
+      <div id="backupPasswordHint" class="form-hint" style="color:var(--warning-color);display:none">
+        Store this password securely offline. If lost, all backups become permanently unrecoverable.
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="backupDir">Backup Directory</label>
+      <input type="text" id="backupDir" name="backup_dir" value="/var/backups/4thealth">
+    </div>
+    <div class="form-row">
+      <label>
+        <input type="checkbox" id="backupExcludeTlsKey" name="exclude_tls_key">
+        Exclude TLS private key (<code>certs/key.pem</code>) from backup
+      </label>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Settings</button>
+    <span id="backupSettingsSaveMsg" style="margin-left:0.5rem;display:none"></span>
+  </form>
+
+  <!-- Panel 2: Remote Transfer -->
+  <div class="admin-panel-header" style="margin-top:2rem">
+    <h3>Remote Transfer (FTP/SFTP)</h3>
+  </div>
+  <form id="backupFtpForm">
+    <div class="form-row">
+      <label>
+        <input type="checkbox" id="backupFtpEnabled" name="ftp_enabled">
+        Enable remote transfer after each scheduled backup
+      </label>
+    </div>
+    <div class="form-row">
+      <label for="backupFtpProtocol">Protocol</label>
+      <select id="backupFtpProtocol" name="protocol">
+        <option value="sftp">SFTP (recommended)</option>
+        <option value="ftp">FTP</option>
+      </select>
+    </div>
+    <div id="backupFtpWarning" class="alert alert-warning" style="display:none;margin:0.5rem 0">
+      &#9888; FTP transmits your username, password, and backup archive in plaintext over the network. Use SFTP where possible.
+    </div>
+    <div class="form-row">
+      <label for="backupFtpHost">Host</label>
+      <input type="text" id="backupFtpHost" name="host" placeholder="backup.example.com">
+    </div>
+    <div class="form-row">
+      <label for="backupFtpPort">Port</label>
+      <input type="number" id="backupFtpPort" name="port" value="22" style="width:6rem">
+    </div>
+    <div class="form-row">
+      <label for="backupFtpUsername">Username</label>
+      <input type="text" id="backupFtpUsername" name="username">
+    </div>
+    <div class="form-row">
+      <label for="backupFtpPassword">Password</label>
+      <input type="password" id="backupFtpPassword" name="ftp_password">
+    </div>
+    <div class="form-row">
+      <label for="backupFtpRemoteDir">Remote Directory</label>
+      <input type="text" id="backupFtpRemoteDir" name="remote_dir" value="/backups/4thealth">
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn btn-sm" id="backupFtpTestBtn">Test Connection</button>
+      <span id="backupFtpTestResult" style="display:none"></span>
+    </div>
+  </form>
+
+  <!-- Panel 3: One-Time Backup -->
+  <div class="admin-panel-header" style="margin-top:2rem">
+    <h3>One-Time Backup</h3>
+    <p class="admin-panel-desc">The backup is saved to the backup directory on the server and downloaded to your browser. Remote transfer is not triggered for manual backups.</p>
+  </div>
+  <div style="display:flex;align-items:center;gap:1rem">
+    <button class="btn btn-primary" id="backupRunNowBtn">Create Backup Now</button>
+    <span id="backupRunNowSpinner" style="display:none">Creating backup…</span>
+  </div>
+  <div id="backupLastManual" style="margin-top:0.75rem;font-size:0.875rem;color:var(--text-muted);display:none"></div>
+
+  <!-- Panel 4: Scheduled Backups -->
+  <div class="admin-panel-header" style="margin-top:2rem">
+    <h3>Scheduled Backups</h3>
+  </div>
+  <button class="btn btn-sm" id="backupAddJobBtn" style="margin-bottom:0.75rem">+ Add Job</button>
+
+  <div id="backupJobForm" class="admin-form-panel" style="display:none;margin-bottom:1rem">
+    <h4 id="backupJobFormTitle">Add Backup Job</h4>
+    <input type="hidden" id="backupJobId">
+    <div class="form-row">
+      <label for="backupJobName">Job Name</label>
+      <input type="text" id="backupJobName" placeholder="e.g. Nightly Backup">
+    </div>
+    <div class="form-row">
+      <label>Days of Week</label>
+      <div class="day-picker" id="backupDayPicker">
+        <label><input type="checkbox" value="SUN"> Sun</label>
+        <label><input type="checkbox" value="MON"> Mon</label>
+        <label><input type="checkbox" value="TUE"> Tue</label>
+        <label><input type="checkbox" value="WED"> Wed</label>
+        <label><input type="checkbox" value="THU"> Thu</label>
+        <label><input type="checkbox" value="FRI"> Fri</label>
+        <label><input type="checkbox" value="SAT"> Sat</label>
+      </div>
+    </div>
+    <div class="form-row">
+      <label for="backupJobTime">Time (HH:MM)</label>
+      <input type="time" id="backupJobTime" value="02:00">
+    </div>
+    <div class="form-row">
+      <label><input type="checkbox" id="backupJobEnabled" checked> Enabled</label>
+    </div>
+    <div style="display:flex;gap:0.5rem">
+      <button class="btn btn-primary" id="backupJobSaveBtn">Save Job</button>
+      <button class="btn btn-sm" id="backupJobCancelBtn">Cancel</button>
+    </div>
+    <div id="backupJobFormError" style="color:var(--danger-color);margin-top:0.5rem;display:none"></div>
+  </div>
+
+  <table class="admin-table" id="backupJobsTable">
+    <thead>
+      <tr>
+        <th>Name</th><th>Days</th><th>Time</th><th>Last Run</th><th>Status</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="backupJobsBody">
+      <tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No scheduled backup jobs.</td></tr>
+    </tbody>
+  </table>
 </div>
 
 <!-- ═══════════════════════  LOGS PANEL  ═══════════════════════ -->
