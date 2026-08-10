@@ -17,6 +17,7 @@ _BLUEPRINT_MODULES = [
     "app.routes.pending_changes_routes",
     "app.routes.map_routes",
     "app.routes.external_api_routes",
+    "app.routes.backup_routes",
     # "app.routes.my_new_module",  ← add future modules here
 ]
 
@@ -157,6 +158,20 @@ def create_app(test_config: dict | None = None) -> Flask:
                 init_dr_scheduler(app)
         except Exception as exc:
             app.logger.warning("Device Review scheduler failed to start: %s", exc)
+
+    if not app.config.get("TESTING") and not app.config.get(
+        "_BACKUP_SCHEDULER_STARTED"
+    ):
+        app.config["_BACKUP_SCHEDULER_STARTED"] = True
+        try:
+            from app.backup_scheduler import (
+                init_scheduler as init_backup_scheduler,
+            )
+
+            with app.app_context():
+                init_backup_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Backup scheduler failed to start: %s", exc)
 
     @app.context_processor
     def inject_session_globals():

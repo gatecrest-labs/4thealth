@@ -13,6 +13,7 @@
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
       if (btn.dataset.panel === 'scheduled') { loadSMTP(); loadJobs(); loadDRJobs(); }
+      if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
     });
   });
 
@@ -1157,3 +1158,286 @@ async function runDRJobNow(id) {
     }
   }, 3000);
 }
+
+// ── Backup sub-tab ────────────────────────────────────────────────────────────
+
+(function () {
+  // ── Config ─────────────────────────────────────────────────────────────────
+
+  window.loadBackupConfig = async function() {
+    const resp = await fetch('/admin/api/backup/config');
+    if (!resp.ok) return;
+    const cfg = await resp.json();
+    document.getElementById('backupPassword').value = cfg.password || '';
+    document.getElementById('backupDir').value = cfg.backup_dir || '/var/backups/4thealth';
+    document.getElementById('backupExcludeTlsKey').checked = !!cfg.exclude_tls_key;
+    const ftp = cfg.ftp || {};
+    document.getElementById('backupFtpEnabled').checked = !!ftp.enabled;
+    document.getElementById('backupFtpProtocol').value = ftp.protocol || 'sftp';
+    document.getElementById('backupFtpHost').value = ftp.host || '';
+    document.getElementById('backupFtpPort').value = ftp.port || 22;
+    document.getElementById('backupFtpUsername').value = ftp.username || '';
+    document.getElementById('backupFtpPassword').value = ftp.password || '';
+    document.getElementById('backupFtpRemoteDir').value = ftp.remote_dir || '/backups/4thealth';
+    toggleFtpWarning();
+  };
+
+  function toggleFtpWarning() {
+    const proto = document.getElementById('backupFtpProtocol').value;
+    const warn = document.getElementById('backupFtpWarning');
+    if (warn) warn.style.display = proto === 'ftp' ? '' : 'none';
+    const portEl = document.getElementById('backupFtpPort');
+    if (portEl && !portEl.dataset.manuallySet) {
+      portEl.value = proto === 'sftp' ? 22 : 21;
+    }
+  }
+
+  document.getElementById('backupFtpProtocol')
+    ?.addEventListener('change', toggleFtpWarning);
+
+  // Show/hide password toggle
+  document.getElementById('backupPasswordToggle')?.addEventListener('click', function () {
+    const pw = document.getElementById('backupPassword');
+    if (pw.type === 'password') {
+      pw.type = 'text';
+      this.textContent = 'Hide';
+    } else {
+      pw.type = 'password';
+      this.textContent = 'Show';
+    }
+  });
+
+  // Settings form save
+  document.getElementById('backupSettingsForm')?.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const existing = await (await fetch('/admin/api/backup/config')).json();
+    const ftp = existing.ftp || {};
+    const payload = {
+      password: document.getElementById('backupPassword').value,
+      backup_dir: document.getElementById('backupDir').value,
+      max_files: 20,
+      exclude_tls_key: document.getElementById('backupExcludeTlsKey').checked,
+      ftp: {
+        enabled: document.getElementById('backupFtpEnabled').checked,
+        protocol: document.getElementById('backupFtpProtocol').value,
+        host: document.getElementById('backupFtpHost').value,
+        port: parseInt(document.getElementById('backupFtpPort').value) || 22,
+        username: document.getElementById('backupFtpUsername').value,
+        password: document.getElementById('backupFtpPassword').value,
+        remote_dir: document.getElementById('backupFtpRemoteDir').value,
+      },
+    };
+    const resp = await fetch('/admin/api/backup/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+      body: JSON.stringify(payload),
+    });
+    const msg = document.getElementById('backupSettingsSaveMsg');
+    if (resp.ok) {
+      msg.textContent = '✓ Saved';
+      msg.style.color = 'var(--success-color)';
+      // Show password hint on first save
+      const hint = document.getElementById('backupPasswordHint');
+      if (hint && payload.password && payload.password !== '••••••') {
+        hint.style.display = '';
+        setTimeout(() => { hint.style.display = 'none'; }, 15000);
+      }
+    } else {
+      const data = await resp.json();
+      msg.textContent = data.error || 'Save failed';
+      msg.style.color = 'var(--danger-color)';
+    }
+    msg.style.display = '';
+    setTimeout(() => { msg.style.display = 'none'; }, 5000);
+  });
+
+  // FTP form save (reuses the same settings endpoint)
+  document.getElementById('backupFtpForm')?.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    // Get current settings to preserve password/dir/etc
+    const existing = await (await fetch('/admin/api/backup/config')).json();
+    const payload = {
+      ...existing,
+      password: existing.password,  // keep existing (masked) password
+      ftp: {
+        enabled: document.getElementById('backupFtpEnabled').checked,
+        protocol: document.getElementById('backupFtpProtocol').value,
+        host: document.getElementById('backupFtpHost').value,
+        port: parseInt(document.getElementById('backupFtpPort').value) || 22,
+        username: document.getElementById('backupFtpUsername').value,
+        password: document.getElementById('backupFtpPassword').value,
+        remote_dir: document.getElementById('backupFtpRemoteDir').value,
+      },
+    };
+    await fetch('/admin/api/backup/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+      body: JSON.stringify(payload),
+    });
+  });
+
+  // FTP test connection
+  document.getElementById('backupFtpTestBtn')?.addEventListener('click', async function () {
+    const ftpCfg = {
+      protocol: document.getElementById('backupFtpProtocol').value,
+      host: document.getElementById('backupFtpHost').value,
+      port: parseInt(document.getElementById('backupFtpPort').value) || 22,
+      username: document.getElementById('backupFtpUsername').value,
+      password: document.getElementById('backupFtpPassword').value,
+      remote_dir: document.getElementById('backupFtpRemoteDir').value,
+    };
+    const resultEl = document.getElementById('backupFtpTestResult');
+    resultEl.textContent = 'Testing…';
+    resultEl.style.display = '';
+    const resp = await fetch('/admin/api/backup/ftp/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+      body: JSON.stringify(ftpCfg),
+    });
+    const data = await resp.json();
+    resultEl.textContent = data.success ? '✓ ' + data.message : '✗ ' + data.message;
+    resultEl.style.color = data.success ? 'var(--success-color)' : 'var(--danger-color)';
+  });
+
+  // ── One-time backup ─────────────────────────────────────────────────────────
+
+  document.getElementById('backupRunNowBtn')?.addEventListener('click', async function () {
+    const btn = this;
+    const spinner = document.getElementById('backupRunNowSpinner');
+    btn.disabled = true;
+    spinner.style.display = '';
+
+    try {
+      const resp = await fetch('/admin/api/backup/run-now', { method: 'POST', headers: { 'X-CSRF-Token': getCSRF() } });
+      if (!resp.ok) {
+        const err = await resp.json();
+        alert('Backup failed: ' + (err.error || 'Unknown error'));
+        return;
+      }
+      const filename = resp.headers.get('X-Backup-Filename') || 'backup.zip';
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      const lastEl = document.getElementById('backupLastManual');
+      lastEl.textContent = 'Last manual backup: ' + filename + ' (' + new Date().toLocaleString() + ')';
+      lastEl.style.display = '';
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+    }
+  });
+
+  // ── Scheduled jobs ──────────────────────────────────────────────────────────
+
+  window.loadBackupJobs = async function() {
+    const resp = await fetch('/admin/api/backup/jobs');
+    if (!resp.ok) return;
+    const jobs = await resp.json();
+    const tbody = document.getElementById('backupJobsBody');
+    if (!tbody) return;
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No scheduled backup jobs.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = jobs.map(j => {
+      const lastRun = j.runs && j.runs[0];
+      const statusBadge = lastRun
+        ? `<span class="badge ${lastRun.status === 'success' ? 'badge-success' : 'badge-danger'}">${escH(lastRun.status)}</span>`
+        : '<span style="color:var(--text-muted)">Never</span>';
+      const lastRunTime = lastRun ? new Date(lastRun.started_at).toLocaleString() : '—';
+      return `<tr>
+        <td>${escH(j.name)}</td>
+        <td>${(j.days_of_week || []).join(', ')}</td>
+        <td>${escH(j.time)}</td>
+        <td>${lastRunTime}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <button class="btn btn-xs" onclick="backupEditJob('${escH(j.id)}')">Edit</button>
+          <button class="btn btn-xs btn-danger" onclick="backupDeleteJob('${escH(j.id)}')">Delete</button>
+          <button class="btn btn-xs" onclick="backupRunJobNow('${escH(j.id)}')">Run Now</button>
+        </td>
+      </tr>`;
+    }).join('');
+  };
+
+
+  document.getElementById('backupAddJobBtn')?.addEventListener('click', function () {
+    document.getElementById('backupJobId').value = '';
+    document.getElementById('backupJobFormTitle').textContent = 'Add Backup Job';
+    document.getElementById('backupJobName').value = '';
+    document.getElementById('backupJobTime').value = '02:00';
+    document.getElementById('backupJobEnabled').checked = true;
+    document.querySelectorAll('#backupDayPicker input').forEach(cb => { cb.checked = false; });
+    document.getElementById('backupJobFormError').style.display = 'none';
+    document.getElementById('backupJobForm').style.display = '';
+  });
+
+  document.getElementById('backupJobCancelBtn')?.addEventListener('click', function () {
+    document.getElementById('backupJobForm').style.display = 'none';
+  });
+
+  document.getElementById('backupJobSaveBtn')?.addEventListener('click', async function () {
+    const jobId = document.getElementById('backupJobId').value;
+    const days = Array.from(document.querySelectorAll('#backupDayPicker input:checked')).map(cb => cb.value);
+    const payload = {
+      name: document.getElementById('backupJobName').value.trim(),
+      days_of_week: days,
+      time: document.getElementById('backupJobTime').value,
+      enabled: document.getElementById('backupJobEnabled').checked,
+    };
+    const url = jobId ? `/admin/api/backup/jobs/${jobId}` : '/admin/api/backup/jobs';
+    const method = jobId ? 'PUT' : 'POST';
+    const resp = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      const errEl = document.getElementById('backupJobFormError');
+      errEl.textContent = err.error || 'Save failed';
+      errEl.style.display = '';
+      return;
+    }
+    document.getElementById('backupJobForm').style.display = 'none';
+    window.loadBackupJobs();
+  });
+
+  window.backupEditJob = async function (jobId) {
+    const resp = await fetch('/admin/api/backup/jobs');
+    const jobs = await resp.json();
+    const job = jobs.find(j => j.id === jobId);
+    if (!job) return;
+    document.getElementById('backupJobId').value = job.id;
+    document.getElementById('backupJobFormTitle').textContent = 'Edit Backup Job';
+    document.getElementById('backupJobName').value = job.name || '';
+    document.getElementById('backupJobTime').value = job.time || '02:00';
+    document.getElementById('backupJobEnabled').checked = !!job.enabled;
+    document.querySelectorAll('#backupDayPicker input').forEach(cb => {
+      cb.checked = (job.days_of_week || []).includes(cb.value);
+    });
+    document.getElementById('backupJobFormError').style.display = 'none';
+    document.getElementById('backupJobForm').style.display = '';
+  };
+
+  window.backupDeleteJob = async function (jobId) {
+    if (!confirm('Delete this backup job?')) return;
+    await fetch(`/admin/api/backup/jobs/${jobId}`, { method: 'DELETE', headers: { 'X-CSRF-Token': getCSRF() } });
+    window.loadBackupJobs();
+  };
+
+  window.backupRunJobNow = async function (jobId) {
+    const resp = await fetch(`/admin/api/backup/jobs/${jobId}/run`, { method: 'POST', headers: { 'X-CSRF-Token': getCSRF() } });
+    if (resp.ok) {
+      alert('Backup job queued. Check the jobs table for status in a moment.');
+      setTimeout(window.loadBackupJobs, 3000);
+    }
+  };
+})();

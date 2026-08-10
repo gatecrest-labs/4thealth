@@ -164,6 +164,7 @@ services:
       - ./infra_targets.json:/app/infra_targets.json:ro
       - ./policy_db.json:/app/policy_db.json:rw
       - ./certs:/app/certs:ro
+      - ./backups:/var/backups/4thealth   # backup archives
     healthcheck:
       test: ["CMD", "python3", "-c",
              "import urllib.request, ssl; urllib.request.urlopen('https://localhost:8100/login', context=ssl._create_unverified_context(), timeout=5)"]
@@ -178,6 +179,10 @@ services:
 > - `infra_targets.json` is `:ro` — it is only read at startup; edit it on the host and restart
 > - `certs/` is `:ro` — TLS certificates are never modified by the app
 > - `.env` is passed via `env_file` rather than mounted — Docker reads it as environment variables, which is the correct pattern
+
+> **Backup directory:** The default backup directory is `/var/backups/4thealth/` inside the container.
+> Mount a host directory or named volume here so archives survive container restarts.
+> Alternatively, set `backup_dir` in `backup_config.json` to any path that is already mounted.
 
 ### Step 4 — Adjust `.env` for the container
 
