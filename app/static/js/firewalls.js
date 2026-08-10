@@ -29,6 +29,15 @@ function fmtDest(r) {
   return cidr !== '' ? `${net}/${cidr}` : net;
 }
 
+function download(filename, content, mime) {
+  const a  = document.createElement('a');
+  const bl = new Blob([content], { type: mime });
+  a.href   = URL.createObjectURL(bl);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 /* ── State ─────────────────────────────────────────────────────────────── */
 let allDevices    = [];
 let filteredDevices = [];
@@ -78,6 +87,7 @@ function applyDeviceFilter() {
       (d.desc     || '').toLowerCase().includes(q)
     );
   }
+  setExportButtonState();
 }
 
 function renderTable() {
@@ -150,6 +160,7 @@ async function loadDevices(adom) {
     currentPage = 1;
     document.getElementById('deviceTableWrapper').style.display = '';
     renderTable();
+    setExportButtonState();
   } catch (err) {
     alert('Failed to load devices: ' + err.message);
   } finally {
@@ -862,6 +873,135 @@ function scheduleRefresh(seconds) {
   if (seconds > 0 && adom) refreshTimer = setInterval(() => loadDevices(adom), seconds * 1000);
 }
 
+/* ── Exports ────────────────────────────────────────────────────────────── */
+const _HA_MODE_LABELS = { 0: 'Standalone', 1: 'Active-Passive', 2: 'Active-Active' };
+
+function haLabel(ha_mode) {
+  if (ha_mode === '' || ha_mode == null) return 'Standalone';
+  return _HA_MODE_LABELS[ha_mode] ?? _HA_MODE_LABELS[Number(ha_mode)] ?? String(ha_mode);
+}
+
+function currentAdom() {
+  return document.getElementById('adomSelect').value || 'export';
+}
+
+function csvCell(v) {
+  return `"${String(v ?? '').replace(/"/g, '""')}"`;
+}
+
+function exportCsv() {
+  if (!filteredDevices.length) return;
+  const adom = currentAdom();
+  const ts   = new Date().toLocaleString();
+  const meta = [
+    `ADOM,${csvCell(adom)}`,
+    `Exported,${csvCell(ts)}`,
+    `Total Devices,${csvCell(allDevices.length)}`,
+    `Filtered Devices,${csvCell(filteredDevices.length)}`,
+    '',
+  ].join('\r\n');
+  const cols = ['Name', 'Comment', 'Management IP', 'Platform', 'Version', 'Serial', 'HA Mode'];
+  const body = [
+    cols.join(','),
+    ...filteredDevices.map(d => [
+      d.name    || '',
+      d.desc    || '',
+      d.ip      || '',
+      d.platform|| '',
+      d.version || '',
+      d.serial  || '',
+      haLabel(d.ha_mode),
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')),
+  ].join('\r\n');
+  download(`firewalls-${adom}.csv`, meta + body, 'text/csv');
+}
+
+function exportJson() {
+  if (!filteredDevices.length) return;
+  const adom = currentAdom();
+  const payload = {
+    meta: {
+      adom,
+      exported_at: new Date().toISOString(),
+      total: allDevices.length,
+      filtered: filteredDevices.length,
+    },
+    devices: filteredDevices.map(d => ({
+      name:     d.name     || '',
+      comment:  d.desc     || '',
+      mgmt_ip:  d.ip       || '',
+      platform: d.platform || '',
+      version:  d.version  || '',
+      serial:   d.serial   || '',
+      ha_mode:  haLabel(d.ha_mode),
+    })),
+  };
+  download(`firewalls-${adom}.json`, JSON.stringify(payload, null, 2), 'application/json');
+}
+
+function exportHtml() {
+  if (!filteredDevices.length) return;
+  const adom  = currentAdom();
+  const ts    = new Date().toLocaleString();
+  const title = `Firewall Inventory — ADOM: ${escHtml(adom)}`;
+
+  const rows = filteredDevices.map(d => `
+    <tr>
+      <td>${escHtml(d.name || '')}</td>
+      <td>${escHtml(d.desc || '')}</td>
+      <td><code>${escHtml(d.ip || '')}</code></td>
+      <td>${escHtml(d.platform || '')}</td>
+      <td>${escHtml(d.version || '')}</td>
+      <td><code>${escHtml(d.serial || '')}</code></td>
+      <td>${escHtml(haLabel(d.ha_mode))}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${title}</title>
+<style>
+  body{font-family:Arial,sans-serif;font-size:11px;color:#1a2133;margin:1.5cm}
+  h1{font-size:16px;margin-bottom:6px}
+  .meta{background:#f3f4f6;border-left:4px solid #3b82f6;padding:8px 12px;border-radius:3px;margin-bottom:14px;font-size:10px}
+  .meta table{border:none;width:auto}
+  .meta td{padding:1px 14px 1px 0;border:none;background:none}
+  .meta td:first-child{font-weight:700;color:#1f2937}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th{background:#1e3a5f;color:#fff;padding:5px 8px;text-align:left;font-size:10px}
+  td{padding:4px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+  tr:nth-child(even) td{background:#f9fafb}
+  code{font-family:monospace;font-size:10px}
+  @media print{body{margin:1cm}}
+</style>
+</head><body>
+<h1>${title}</h1>
+<div class="meta">
+  <table>
+    <tr><td>ADOM</td><td>${escHtml(adom)}</td></tr>
+    <tr><td>Exported</td><td>${escHtml(ts)}</td></tr>
+    <tr><td>Total Devices</td><td>${allDevices.length}</td></tr>
+    <tr><td>Filtered Devices</td><td>${filteredDevices.length}</td></tr>
+  </table>
+</div>
+<table>
+  <thead><tr>
+    <th>Name</th><th>Comment</th><th>Management IP</th>
+    <th>Platform</th><th>Version</th><th>Serial</th><th>HA Mode</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+</body></html>`;
+
+  download(`firewalls-${adom}.html`, html, 'text/html');
+}
+
+function setExportButtonState() {
+  const disabled = filteredDevices.length === 0;
+  ['exportCsvBtn', 'exportJsonBtn', 'exportHtmlBtn'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = disabled;
+  });
+}
+
 /* ── Event wiring ──────────────────────────────────────────────────────── */
 document.getElementById('adomSelect').addEventListener('change', function () {
   if (this.value) loadDevices(this.value);
@@ -938,3 +1078,4 @@ async function checkDeepLink() {
 loadAdoms();
 scheduleRefresh(parseInt(document.getElementById('autoRefresh').value, 10));
 checkDeepLink();
+setExportButtonState();

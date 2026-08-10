@@ -487,6 +487,7 @@ def devices(adom: str):
                     "status": status,
                     "adom": adom,
                     "desc": d.get("desc", "").strip(),
+                    "ha_mode": d.get("ha_mode", d.get("ha_group_name", "")),
                 }
             )
         return jsonify(result)

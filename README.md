@@ -34,12 +34,12 @@ JSON-RPC API** — no direct device connections are made.
 | **Firewalls** | Per-ADOM device list with health indicator, paginated table, full-text search |
 | **Device Detail** | Modal pop-up — system info, CPU/memory, interfaces, routing table, BGP/OSPF neighbors, IPsec tunnels |
 | **Device Versions** | Per-ADOM version distribution chart — clickable bars filter the device list; CSV and JSON export |
-| **Rule Review** | Policy viewer (full rule table with search, pagination, group expansion, export) plus seven automated hygiene checks |
+| **Rule Review** | Policy viewer (full rule table with search, pagination, group expansion, export) plus six automated hygiene checks |
 | **Device Review** | Management-interface security audit — checks for cleartext protocols, missing secure alternatives; export as CSV, JSON, or PDF |
 | **Rule Validation** | Pre-change analysis — enter requested flows, select policy packages, get per-flow verdicts; integrates zone segmentation policy checks |
 | **Zone Policy** | Self-contained network segmentation policy browser — query flows, browse zones and rules, validate schema, edit database (admin only) |
-| **Map (Beta)** | Interactive geographic map of all managed FortiGate devices, coloured by configurable US geographic region |
-| **DIFF (Beta)** | Per-device install-pending diff viewer — shows exactly which FortiOS CLI lines will change on the next install; export queue for CSV, JSON, or PDF change records |
+| **Map** | Interactive geographic map of all managed FortiGate devices, coloured by configurable US geographic region |
+| **Config-Delta** | Per-device install-pending diff viewer — shows exactly which FortiOS CLI lines will change on the next install; export queue for CSV, JSON, or PDF change records |
 | **Admin** | *(admin only)* Group management, tab-level and ADOM-level permissions, map region configuration, log viewer, External API management |
 | **Auto-refresh** | Configurable: manual, 1 min, 5 min (default), 10 min, 15 min |
 | **Light / Dark mode** | Toggle in the nav bar; preference saved in `localStorage` |
@@ -59,14 +59,25 @@ JSON-RPC API** — no direct device connections are made.
 │   ├── registry.py              Tab key registry; maps keys to display names and routes
 │   ├── groups.py                Group CRUD, tab-permission checks, ADOM access control
 │   ├── fmg_client.py            FortiManager JSON-RPC client (context-manager; auto login/logout)
-│   ├── hygiene.py               Rule hygiene check engine (7 checks, read-only)
+│   ├── fmg_helpers.py           FMGClient factory / session helper
+│   ├── hygiene.py               Rule hygiene check engine (6 checks, read-only)
 │   ├── device_review.py         Device Review check engine; add new checks here
 │   ├── rule_review.py           Rule Validation — flow/policy matching, path analysis, zone integration
 │   ├── zone_db.py               Zone policy DB engine — loads policy_db.json, runs queries, CRUD
 │   ├── map_regions.py           Map region config — load/save map_regions.json, state validation
 │   ├── map_cache.py             Background cache: device lat/lon for all ADOMs, refreshed daily
+│   ├── versions_cache.py        Background cache: per-ADOM device version data
 │   ├── adom_cache.py            Background cache: ADOM list from FortiManager, refreshed every 30 min
+│   ├── pending_status_cache.py  Background cache: pending-changes device sync status
+│   ├── infra_health_cache.py    SNMPv3 background poller for infrastructure CPU/memory health
 │   ├── summary_job.py           Background job: managed firewall + rule counts, nightly APScheduler
+│   ├── summary_history.py       Summary history persistence
+│   ├── config_diff_scheduler.py APScheduler — Config-Delta scheduled exports
+│   ├── device_review_scheduler.py APScheduler — Device Review CIS audit scheduled exports
+│   ├── smtp_client.py           SMTP delivery for scheduled export emails
+│   ├── atomic_io.py             Atomic JSON write helper
+│   ├── security.py              API error response helpers
+│   ├── radius_auth.py           RADIUS/AD authentication backend
 │   ├── app_settings.py          Feature-flag settings backed by app_settings.json
 │   ├── api_tokens.py            Bearer token CRUD for the External API
 │   └── routes/
