@@ -206,6 +206,7 @@ def transfer_file(ftp_cfg: dict, local_path: Path, filename: str | None = None) 
             client.close()
     elif protocol == "scp":
         import scp as scp_lib
+
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(host, port=port, username=username, password=password, timeout=30)
@@ -245,7 +246,9 @@ def test_connection(ftp_cfg: dict) -> dict:
         elif protocol == "scp":
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(host, port=port, username=username, password=password, timeout=30)
+            ssh.connect(
+                host, port=port, username=username, password=password, timeout=30
+            )
             remote_dir = ftp_cfg.get("remote_dir", "/")
             try:
                 sftp = ssh.open_sftp()
