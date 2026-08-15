@@ -2583,6 +2583,7 @@ a:hover { text-decoration: underline; }
     border-radius: 999px;
     border: 1px solid var(--border);
     background: transparent;
+    color: inherit;
     cursor: pointer;
     font-size: 0.78rem;
     line-height: 1.4;
@@ -2631,3 +2632,17 @@ a:hover { text-decoration: underline; }
     opacity: 0.55;
     cursor: help;
 }
+
+#panel-zone-policy input:not([type=checkbox]),
+#panel-zone-policy select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: .35rem .6rem;
+    font-size: .875rem;
+    outline: none;
+    transition: border-color .15s;
+}
+#panel-zone-policy input:not([type=checkbox]):focus,
+#panel-zone-policy select:focus { border-color: var(--accent); }

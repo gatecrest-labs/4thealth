@@ -11,7 +11,7 @@ function debounce(fn, ms) {
 }
 
 /* ── Sub-tab routing ────────────────────────────────────────────────────────── */
-const panels = ['query', 'browse', 'validate'];
+const panels = ['query', 'browse'];
 
 document.querySelectorAll('.zp-tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -356,57 +356,4 @@ document.getElementById('zpPolSearch').addEventListener('input', dPolSearch);
 document.getElementById('zpPolAccessFilter').addEventListener('change', renderPolicies);
 document.getElementById('zpPolSevFilter').addEventListener('change', renderPolicies);
 
-/* ════════════════════════════════════════════════════════════════════════════
-   VALIDATE PANEL
-   ════════════════════════════════════════════════════════════════════════════ */
-
-document.getElementById('zpValidateBtn').addEventListener('click', async () => {
-  document.getElementById('zpValidateResult').style.display = 'none';
-  document.getElementById('zpValidateError').style.display  = 'none';
-  document.getElementById('zpValidateRunning').style.display = '';
-  document.getElementById('zpValidateBtn').disabled          = true;
-
-  try {
-    const resp = await fetch('/api/zone/validate');
-    const data = await resp.json();
-    if (!resp.ok || data.error) {
-      const el = document.getElementById('zpValidateError');
-      el.textContent = data.error || 'Validation failed.'; el.style.display = '';
-      return;
-    }
-    renderValidateReport(data);
-    document.getElementById('zpValidateResult').style.display = '';
-  } catch (e) {
-    const el = document.getElementById('zpValidateError');
-    el.textContent = e.message; el.style.display = '';
-  } finally {
-    document.getElementById('zpValidateRunning').style.display = 'none';
-    document.getElementById('zpValidateBtn').disabled          = false;
-  }
-});
-
-function renderValidateReport(r) {
-  const badge = document.getElementById('zpValidateBadge');
-  badge.textContent = r.ok ? '✓ VALID' : '✗ INVALID';
-  badge.className   = `zp-validate-badge ${r.ok ? 'zp-valid' : 'zp-invalid'}`;
-  badge.title       = `${r.zone_count} zones · ${r.subnet_count} subnets · ${r.policy_count} policies`;
-
-  const statsLine = document.createElement('div');
-  statsLine.style.cssText = 'font-size:.82rem;color:var(--text-muted);margin-top:.35rem';
-  statsLine.textContent   = `${r.zone_count} zones · ${r.subnet_count} subnets · ${r.policy_count} policy rules`;
-  badge.after(statsLine);
-
-  const errEl  = document.getElementById('zpValidateErrors');
-  const warnEl = document.getElementById('zpValidateWarnings');
-
-  errEl.innerHTML = r.errors.length
-    ? `<div style="font-weight:600;color:var(--danger);margin-bottom:.3rem">Errors (${r.errors.length})</div>` +
-      r.errors.map(e => `<div class="zp-issue zp-issue-error">&#10007; ${esc(e)}</div>`).join('')
-    : `<div class="zp-issue zp-issue-ok">&#10003; No errors</div>`;
-
-  warnEl.innerHTML = r.warnings.length
-    ? `<div style="font-weight:600;color:var(--warning);margin-bottom:.3rem;margin-top:.5rem">Warnings (${r.warnings.length})</div>` +
-      r.warnings.map(w => `<div class="zp-issue zp-issue-warn">&#9888; ${esc(w)}</div>`).join('')
-    : '';
-}
 

@@ -658,6 +658,20 @@
       </form>
     </div>
   </div>
+
+  <hr style="margin:1.25rem 0;border-color:var(--border)">
+  <h3>Validate Database</h3>
+  <p class="text-muted" style="font-size:.85rem;margin:.25rem 0 .75rem">Check <code>policy_db.json</code> for schema errors and inconsistencies.</p>
+  <div style="display:flex;gap:.75rem;align-items:center;margin-bottom:.75rem">
+    <button class="btn btn-secondary" id="zpAdminValidateBtn">&#10003; Run Validation</button>
+    <span id="zpAdminValidateRunning" class="text-muted" style="display:none;font-style:italic">Validating…</span>
+  </div>
+  <div id="zpAdminValidateResult" style="display:none">
+    <div id="zpAdminValidateBadge" class="zp-validate-badge"></div>
+    <div id="zpAdminValidateErrors" style="margin-top:.75rem"></div>
+    <div id="zpAdminValidateWarnings" style="margin-top:.5rem"></div>
+  </div>
+  <div id="zpAdminValidateError" class="alert alert-danger" style="display:none;margin-top:.75rem"></div>
 </div>
 
 <!-- ═══════════════════════  LOGS PANEL  ═══════════════════════ -->
