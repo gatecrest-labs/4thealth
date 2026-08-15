@@ -8,6 +8,40 @@
   </div>
 </div>
 
+<div class="admin-metrics-header">
+  <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.35rem">
+    Web server host resources &mdash; sampled every 60&nbsp;s, 90-day retention.
+  </div>
+  <div class="metrics-range-bar">
+    <span class="metrics-range-label">Time Range:</span>
+    <button class="metrics-range-btn active" data-range="1h">1H</button>
+    <button class="metrics-range-btn" data-range="4h">4H</button>
+    <button class="metrics-range-btn" data-range="12h">12H</button>
+    <button class="metrics-range-btn" data-range="1d">1D</button>
+    <button class="metrics-range-btn" data-range="7d">7D</button>
+    <button class="metrics-range-btn" data-range="14d">14D</button>
+  </div>
+  <div class="metrics-cards">
+    <div class="metrics-card">
+      <div class="metrics-card-title">CPU</div>
+      <div class="metrics-chart-wrap"><canvas id="chartCpu"></canvas></div>
+    </div>
+    <div class="metrics-card">
+      <div class="metrics-card-title">
+        Memory
+        <span class="metrics-docker-note" id="metricsDockerNote"
+              title="Reflects host memory — container memory limit may differ"
+              style="display:none;">ⓘ</span>
+      </div>
+      <div class="metrics-chart-wrap"><canvas id="chartMem"></canvas></div>
+    </div>
+    <div class="metrics-card">
+      <div class="metrics-card-title">Disk</div>
+      <div class="metrics-chart-wrap"><canvas id="chartDisk"></canvas></div>
+    </div>
+  </div>
+</div>
+
 <!-- Admin sub-tabs -->
 <div class="admin-tabs" id="adminTabs">
   <button class="admin-tab active" data-panel="groups">Groups &amp; Permissions</button>
@@ -15,6 +49,7 @@
   <button class="admin-tab" data-panel="external-api">External API</button>
   <button class="admin-tab" data-panel="scheduled">Scheduled</button>
   <button class="admin-tab" data-panel="backup">Backup</button>
+  <button class="admin-tab" data-panel="zone-policy">Zone Policy</button>
   <button class="admin-tab" data-panel="logs">Application Logs</button>
 </div>
 
@@ -403,6 +438,7 @@
       <label for="backupFtpProtocol">Protocol</label>
       <select id="backupFtpProtocol" name="protocol">
         <option value="sftp">SFTP (recommended)</option>
+        <option value="scp">SCP</option>
         <option value="ftp">FTP</option>
       </select>
     </div>
@@ -496,6 +532,132 @@
       <tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No scheduled backup jobs.</td></tr>
     </tbody>
   </table>
+</div>
+
+<!-- ═══════════════════════  ZONE POLICY PANEL  ═══════════════════════ -->
+<div class="admin-panel" id="panel-zone-policy">
+  <h2>Zone Policy Database</h2>
+  <p class="text-muted" style="font-size:.85rem;margin-top:.25rem;margin-bottom:1rem">
+    Manage zones, subnets, and policy rules in <code>policy_db.json</code>.
+    This panel replaces the Edit Database sub-tab that previously appeared on the Zone Policy page.
+  </p>
+
+  <div class="section-block" style="margin-bottom:1rem;">
+    <button id="zpAdminBackupBtn" class="btn btn-secondary">Backup policy_db.json</button>
+    <span id="zpAdminBackupStatus" style="margin-left:0.75rem;font-size:0.85rem;"></span>
+  </div>
+
+  <div class="zp-edit-grid">
+    <div class="zp-edit-section">
+      <h3>Zone Operations</h3>
+
+      <form id="zpAdminZoneAddForm" class="zp-form">
+        <h4>Add Zone</h4>
+        <label>Name <input type="text" name="name" required></label>
+        <label>Domain <input type="text" name="domain" value="Default"></label>
+        <label>Description <input type="text" name="description"></label>
+        <label><input type="checkbox" name="is_shared"> Shared</label>
+        <button type="submit" class="btn btn-primary btn-sm">Add Zone</button>
+        <span class="form-status" id="zpAdminZoneAddStatus"></span>
+      </form>
+
+      <form id="zpAdminZoneRemoveForm" class="zp-form">
+        <h4>Remove Zone</h4>
+        <label>Zone <select name="zone" id="zpAdminRemoveZoneSelect"></select></label>
+        <button type="submit" class="btn btn-danger btn-sm">Remove Zone</button>
+        <span class="form-status" id="zpAdminZoneRemoveStatus"></span>
+      </form>
+
+      <form id="zpAdminZoneModifyForm" class="zp-form">
+        <h4>Modify Zone Field</h4>
+        <label>Zone <select name="zone" id="zpAdminModifyZoneSelect"></select></label>
+        <label>Field
+          <select name="field">
+            <option value="description">description</option>
+            <option value="domain">domain</option>
+            <option value="is_shared">is_shared</option>
+          </select>
+        </label>
+        <label>Value <input type="text" name="value"></label>
+        <button type="submit" class="btn btn-primary btn-sm">Update</button>
+        <span class="form-status" id="zpAdminZoneModifyStatus"></span>
+      </form>
+    </div>
+
+    <div class="zp-edit-section">
+      <h3>Subnet Operations</h3>
+
+      <form id="zpAdminSubnetAddForm" class="zp-form">
+        <h4>Add Subnet to Zone</h4>
+        <label>Zone <select name="zone" id="zpAdminSubnetAddZoneSelect"></select></label>
+        <label>Subnet (CIDR) <input type="text" name="subnet" placeholder="10.0.0.0/24"></label>
+        <label>Description <input type="text" name="description"></label>
+        <button type="submit" class="btn btn-primary btn-sm">Add Subnet</button>
+        <span class="form-status" id="zpAdminSubnetAddStatus"></span>
+      </form>
+
+      <form id="zpAdminSubnetRemoveForm" class="zp-form">
+        <h4>Remove Subnet from Zone</h4>
+        <label>Zone <select name="zone" id="zpAdminSubnetRemoveZoneSelect"></select></label>
+        <label>Subnet <input type="text" name="subnet" placeholder="exact CIDR e.g. 10.0.0.0/24"></label>
+        <button type="submit" class="btn btn-danger btn-sm">Remove Subnet</button>
+        <span class="form-status" id="zpAdminSubnetRemoveStatus"></span>
+      </form>
+    </div>
+
+    <div class="zp-edit-section zp-edit-section--full">
+      <h3>Policy Rule Operations</h3>
+
+      <form id="zpAdminPolicyAddForm" class="zp-form">
+        <h4>Add Policy Rule</h4>
+        <label>Policy Set <input type="text" name="policy_set" required></label>
+        <label>From Zone <select name="from_zone" id="zpAdminPolicyFromZoneSelect"></select></label>
+        <label>To Zone <select name="to_zone" id="zpAdminPolicyToZoneSelect"></select></label>
+        <label>Access Type
+          <select name="access_type">
+            <option value="allow all">allow all</option>
+            <option value="allow only">allow only</option>
+            <option value="block all">block all</option>
+            <option value="block only">block only</option>
+          </select>
+        </label>
+        <label>Severity
+          <select name="severity">
+            <option value="critical">critical</option>
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low">low</option>
+          </select>
+        </label>
+        <label>Services (comma-separated) <input type="text" name="services"></label>
+        <label>Description <input type="text" name="description"></label>
+        <button type="submit" class="btn btn-primary btn-sm">Add Rule</button>
+        <span class="form-status" id="zpAdminPolicyAddStatus"></span>
+      </form>
+
+      <form id="zpAdminPolicyEditForm" class="zp-form">
+        <h4>Modify / Remove Rule by Index</h4>
+        <label>Index <input type="number" name="index" min="0" id="zpAdminPolicyIndex"></label>
+        <label>Field
+          <select name="field" id="zpAdminPolicyField">
+            <option value="policy_set">policy_set</option>
+            <option value="from_zone">from_zone</option>
+            <option value="to_zone">to_zone</option>
+            <option value="access_type">access_type</option>
+            <option value="severity">severity</option>
+            <option value="services">services</option>
+            <option value="description">description</option>
+          </select>
+        </label>
+        <label>Value <input type="text" name="value" id="zpAdminPolicyValue"></label>
+        <div class="btn-row" style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+          <button type="button" id="zpAdminPolicyUpdateBtn" class="btn btn-primary btn-sm">Update</button>
+          <button type="button" id="zpAdminPolicyRemoveBtn" class="btn btn-danger btn-sm">Remove</button>
+        </div>
+        <span class="form-status" id="zpAdminPolicyEditStatus"></span>
+      </form>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════════════  LOGS PANEL  ═══════════════════════ -->
@@ -690,8 +852,10 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=9"></script>
+<script src="{{ url_for('static', filename='js/vendor/chart.min.js') }}"></script>
 <script>
+  window._inDocker = {{ in_docker | tojson }};
   const DR_CHECK_DEFS = {{ checks_meta | tojson }};
 </script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=9"></script>
 {% endblock %}

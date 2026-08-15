@@ -1188,7 +1188,7 @@ async function runDRJobNow(id) {
     if (warn) warn.style.display = proto === 'ftp' ? '' : 'none';
     const portEl = document.getElementById('backupFtpPort');
     if (portEl && !portEl.dataset.manuallySet) {
-      portEl.value = proto === 'sftp' ? 22 : 21;
+      portEl.value = (proto === 'sftp' || proto === 'scp') ? 22 : 21;
     }
   }
 
@@ -1440,4 +1440,257 @@ async function runDRJobNow(id) {
       setTimeout(window.loadBackupJobs, 3000);
     }
   };
+})();
+
+// --- Zone Policy Edit ---
+
+function zpAdminLoadZones() {
+  fetch('/api/zone/zones')
+    .then(r => r.json())
+    .then(data => {
+      const names = (data.zones || []).map(z => z.name).sort();
+      const opts  = names.map(n => `<option value="${escH(n)}">${escH(n)}</option>`).join('');
+      [
+        'zpAdminRemoveZoneSelect', 'zpAdminModifyZoneSelect',
+        'zpAdminSubnetAddZoneSelect', 'zpAdminSubnetRemoveZoneSelect',
+        'zpAdminPolicyFromZoneSelect', 'zpAdminPolicyToZoneSelect'
+      ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = opts;
+      });
+    })
+    .catch(() => {});
+}
+
+function zpAdminSetStatus(id, msg, ok) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color  = ok ? 'var(--success, green)' : 'var(--danger, red)';
+  setTimeout(() => { el.textContent = ''; }, 4000);
+}
+
+function zpAdminPost(url, body, statusId, successMsg, onSuccess) {
+  fetch(url, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+    body:    JSON.stringify(body),
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { zpAdminSetStatus(statusId, d.error, false); return; }
+      zpAdminSetStatus(statusId, successMsg, true);
+      zpAdminLoadZones();
+      if (onSuccess) onSuccess(d);
+    })
+    .catch(e => zpAdminSetStatus(statusId, e.message, false));
+}
+
+(function initZpAdminPanel() {
+  const panel = document.getElementById('panel-zone-policy');
+  if (!panel) return;
+
+  let loaded = false;
+
+  // Lazy-load zone dropdowns the first time the tab is opened
+  document.querySelectorAll('.admin-tab[data-panel="zone-policy"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!loaded) { zpAdminLoadZones(); loaded = true; }
+    });
+  });
+
+  // Backup
+  document.getElementById('zpAdminBackupBtn').addEventListener('click', () => {
+    fetch('/api/zone/backup', {
+      method:  'POST',
+      headers: { 'X-CSRF-Token': getCSRF() },
+    })
+      .then(r => r.json())
+      .then(d => {
+        const el = document.getElementById('zpAdminBackupStatus');
+        el.textContent  = d.error ? d.error : (d.filename || 'Backup created');
+        el.style.color  = d.error ? 'var(--danger, red)' : 'var(--success, green)';
+      });
+  });
+
+  // Add Zone
+  document.getElementById('zpAdminZoneAddForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    zpAdminPost(
+      '/api/zone/zone/add',
+      { name: fd.get('name'), domain: fd.get('domain'),
+        description: fd.get('description'), is_shared: fd.get('is_shared') === 'on' },
+      'zpAdminZoneAddStatus', 'Zone added',
+      () => e.target.reset()
+    );
+  });
+
+  // Remove Zone
+  document.getElementById('zpAdminZoneRemoveForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    zpAdminPost('/api/zone/zone/remove', { name: fd.get('zone') },
+      'zpAdminZoneRemoveStatus', 'Zone removed');
+  });
+
+  // Modify Zone
+  document.getElementById('zpAdminZoneModifyForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    zpAdminPost('/api/zone/zone/modify',
+      { name: fd.get('zone'), field: fd.get('field'), value: fd.get('value') },
+      'zpAdminZoneModifyStatus', 'Updated');
+  });
+
+  // Add Subnet
+  document.getElementById('zpAdminSubnetAddForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    zpAdminPost('/api/zone/subnet/add',
+      { zone: fd.get('zone'), subnet: fd.get('subnet'), description: fd.get('description') },
+      'zpAdminSubnetAddStatus', 'Subnet added',
+      () => e.target.reset()
+    );
+  });
+
+  // Remove Subnet
+  document.getElementById('zpAdminSubnetRemoveForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    zpAdminPost('/api/zone/subnet/remove',
+      { zone: fd.get('zone'), subnet: fd.get('subnet') },
+      'zpAdminSubnetRemoveStatus', 'Subnet removed');
+  });
+
+  // Add Policy Rule
+  document.getElementById('zpAdminPolicyAddForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    zpAdminPost('/api/zone/policy/add',
+      { policy_set:   fd.get('policy_set'),
+        from_zone:    fd.get('from_zone'),
+        to_zone:      fd.get('to_zone'),
+        access_type:  fd.get('access_type'),
+        severity:     fd.get('severity'),
+        services:     fd.get('services'),
+        description:  fd.get('description') },
+      'zpAdminPolicyAddStatus', 'Rule added',
+      () => e.target.reset()
+    );
+  });
+
+  // Modify Policy Rule
+  document.getElementById('zpAdminPolicyUpdateBtn').addEventListener('click', () => {
+    zpAdminPost('/api/zone/policy/modify',
+      { index: parseInt(document.getElementById('zpAdminPolicyIndex').value, 10),
+        field: document.getElementById('zpAdminPolicyField').value,
+        value: document.getElementById('zpAdminPolicyValue').value },
+      'zpAdminPolicyEditStatus', 'Updated');
+  });
+
+  // Remove Policy Rule
+  document.getElementById('zpAdminPolicyRemoveBtn').addEventListener('click', () => {
+    zpAdminPost('/api/zone/policy/remove',
+      { index: parseInt(document.getElementById('zpAdminPolicyIndex').value, 10) },
+      'zpAdminPolicyEditStatus', 'Rule removed');
+  });
+})();
+
+// --- Host Metrics Charts ---
+
+(function initAdminMetrics() {
+    let charts   = {};
+    let current  = '1h';
+    let timer    = null;
+
+    function fmtLabel(ts, range) {
+        const d = new Date(ts * 1000);
+        if (['1h', '4h', '12h'].includes(range)) {
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
+               d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function makeChart(canvasId, color) {
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return null;
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    borderColor: color,
+                    backgroundColor: color + '28',
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 0,
+                    borderWidth: 1.5,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    y: {
+                        min: 0, max: 100,
+                        ticks: { callback: v => v + '%', maxTicksLimit: 5 },
+                    },
+                    x: { ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: ctx => ctx.parsed.y.toFixed(1) + '%' } },
+                },
+            },
+        });
+    }
+
+    function loadMetrics(range) {
+        current = range;
+        document.querySelectorAll('.metrics-range-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.range === range);
+        });
+        fetch('/admin/api/host-metrics?range=' + range)
+            .then(r => r.json())
+            .then(data => {
+                [['cpu', charts.cpu], ['mem', charts.mem], ['disk', charts.disk]]
+                    .forEach(([key, chart]) => {
+                        if (!chart) return;
+                        chart.data.labels               = data[key].map(p => fmtLabel(p.ts, range));
+                        chart.data.datasets[0].data     = data[key].map(p => p.v);
+                        chart.update('none');
+                    });
+            })
+            .catch(() => {});
+    }
+
+    function init() {
+        charts.cpu  = makeChart('chartCpu',  '#4e79a7');
+        charts.mem  = makeChart('chartMem',  '#f28e2b');
+        charts.disk = makeChart('chartDisk', '#59a14f');
+
+        if (!charts.cpu) return; // canvases absent — not on admin page
+
+        if (window._inDocker) {
+            const note = document.getElementById('metricsDockerNote');
+            if (note) note.style.display = 'inline';
+        }
+
+        document.querySelectorAll('.metrics-range-btn').forEach(btn => {
+            btn.addEventListener('click', () => loadMetrics(btn.dataset.range));
+        });
+
+        loadMetrics('1h');
+        timer = setInterval(() => loadMetrics(current), 60000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();

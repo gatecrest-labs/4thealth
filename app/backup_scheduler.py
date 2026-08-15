@@ -11,6 +11,7 @@ import datetime
 import fcntl
 import ftplib
 import json
+import os
 import tempfile
 import threading
 import uuid
@@ -180,7 +181,7 @@ def get_job_status(job_id: str) -> dict:
 # ── FTP/SFTP transfer ─────────────────────────────────────────────────────────
 
 
-def transfer_file(ftp_cfg: dict, local_path: Path, filename: str) -> None:
+def transfer_file(ftp_cfg: dict, local_path: Path, filename: str | None = None) -> None:
     """Transfer local_path to the remote server.  Raises on any failure."""
     protocol = ftp_cfg.get("protocol", "sftp")
     host = ftp_cfg["host"]
@@ -188,6 +189,8 @@ def transfer_file(ftp_cfg: dict, local_path: Path, filename: str) -> None:
     username = ftp_cfg.get("username", "")
     password = ftp_cfg.get("password", "")
     remote_dir = ftp_cfg.get("remote_dir", "/").rstrip("/")
+    if filename is None:
+        filename = os.path.basename(str(local_path))
 
     if protocol == "sftp":
         client = paramiko.SSHClient()
@@ -201,6 +204,17 @@ def transfer_file(ftp_cfg: dict, local_path: Path, filename: str) -> None:
             sftp.close()
         finally:
             client.close()
+    elif protocol == "scp":
+        import scp as scp_lib
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(host, port=port, username=username, password=password, timeout=30)
+        remote_path = remote_dir.rstrip("/") + "/" + os.path.basename(str(local_path))
+        try:
+            with scp_lib.SCPClient(ssh.get_transport()) as scpc:
+                scpc.put(str(local_path), remote_path)
+        finally:
+            ssh.close()
     else:
         # Plain FTP
         with ftplib.FTP() as ftp:
@@ -228,6 +242,20 @@ def test_connection(ftp_cfg: dict) -> dict:
                 host, port=port, username=username, password=password, timeout=10
             )
             client.close()
+        elif protocol == "scp":
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(host, port=port, username=username, password=password, timeout=30)
+            remote_dir = ftp_cfg.get("remote_dir", "/")
+            try:
+                sftp = ssh.open_sftp()
+                try:
+                    sftp.stat(remote_dir)
+                finally:
+                    sftp.close()
+            finally:
+                ssh.close()
+            return {"success": True, "message": f"Connected to {host}:{port} via SCP"}
         else:
             with ftplib.FTP() as ftp:
                 ftp.connect(host, port, timeout=10)

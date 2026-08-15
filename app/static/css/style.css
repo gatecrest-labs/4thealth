@@ -2558,3 +2558,76 @@ a:hover { text-decoration: underline; }
 }
 .badge-green { background: #d1fae5; color: #065f46; }
 .badge-red   { background: #fee2e2; color: #991b1b; }
+
+/* Admin host metrics header */
+.admin-metrics-header {
+    margin-bottom: 1.5rem;
+}
+
+.metrics-range-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.metrics-range-label {
+    font-size: 0.82rem;
+    opacity: 0.7;
+    margin-right: 0.25rem;
+}
+
+.metrics-range-btn {
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    transition: background 0.15s, color 0.15s;
+}
+
+.metrics-range-btn.active,
+.metrics-range-btn:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.metrics-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    .metrics-cards { grid-template-columns: 1fr; }
+}
+
+.metrics-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+}
+
+.metrics-card-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.metrics-chart-wrap {
+    height: 130px;
+    position: relative;
+}
+
+.metrics-docker-note {
+    font-size: 0.75rem;
+    opacity: 0.55;
+    cursor: help;
+}
