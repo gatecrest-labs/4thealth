@@ -37,6 +37,9 @@ External API tokens (JSON):
   DELETE /admin/api/tokens/<id>      revoke token
 """
 
+import os
+import time
+
 from flask import Blueprint, render_template, session, jsonify, request
 from app.decorators import admin_required as _admin_required
 from app.groups import list_groups, get_group, create_group, update_group, delete_group
@@ -68,7 +71,10 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 def admin_page():
     app_log("DEBUG", "admin", "Admin page accessed", username=session["user"])
     return render_template(
-        "admin.html", user=session["user"], checks_meta=_DR_CHECKS_META
+        "admin.html",
+        user=session["user"],
+        checks_meta=_DR_CHECKS_META,
+        in_docker=os.path.exists("/.dockerenv"),
     )
 
 
@@ -476,3 +482,18 @@ def admin_dr_jobs_status(job_id: str):
         return jsonify({"error": "Job not found"}), 404
     last_run = job["runs"][0] if job.get("runs") else None
     return jsonify({"running": _dr_sched.is_job_running(job_id), "last_run": last_run})
+
+
+# ── Host Metrics API ──────────────────────────────────────────────────────────
+
+
+@bp.route("/api/host-metrics")
+@_admin_required
+def api_host_metrics():
+    from app import host_metrics as _hm
+
+    range_key = request.args.get("range", "1h")
+    data = _hm.get_metrics(range_key)
+    data["range"] = range_key
+    data["generated_at"] = int(time.time())
+    return jsonify(data)

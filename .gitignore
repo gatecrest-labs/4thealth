@@ -19,6 +19,7 @@ backup_config.json
 protocol_severity.json
 api_tokens.json
 app_settings.json
+host_metrics.db
 
 # Python
 .venv/
@@ -63,6 +64,7 @@ todo.md
 graphify-out/
 
 # Claude Code local user overrides
+.claude/settings.json
 .claude/settings.local.json
 .claude/CLAUDE.local.md
 
