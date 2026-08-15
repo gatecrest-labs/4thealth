@@ -20,7 +20,6 @@
 <div class="zp-tab-bar">
   <button class="zp-tab active" data-panel="query">&#128270; Query Flow</button>
   <button class="zp-tab" data-panel="browse">&#128209; Browse</button>
-  <button class="zp-tab" data-panel="validate">&#10003; Validate</button>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -135,24 +134,6 @@
   </div>
 
   <div id="zpBrowseError" class="alert alert-danger" style="display:none;margin-top:.75rem"></div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════════════════
-     VALIDATE PANEL
-     ══════════════════════════════════════════════════════════════════════════ -->
-<div id="panel-validate" class="zp-panel" style="display:none">
-  <div style="margin-bottom:.75rem;display:flex;gap:.75rem;align-items:center">
-    <button class="btn btn-primary" id="zpValidateBtn" {% if not db_available %}disabled{% endif %}>
-      &#10003; Run Validation
-    </button>
-    <span id="zpValidateRunning" class="text-muted" style="display:none;font-style:italic">Validating…</span>
-  </div>
-  <div id="zpValidateResult" style="display:none">
-    <div id="zpValidateBadge" class="zp-validate-badge"></div>
-    <div id="zpValidateErrors" style="margin-top:.75rem"></div>
-    <div id="zpValidateWarnings" style="margin-top:.5rem"></div>
-  </div>
-  <div id="zpValidateError" class="alert alert-danger" style="display:none;margin-top:.75rem"></div>
 </div>
 
 {% endblock %}

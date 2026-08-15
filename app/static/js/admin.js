@@ -1694,3 +1694,64 @@ function zpAdminPost(url, body, statusId, successMsg, onSuccess) {
         init();
     }
 })();
+
+/* --- Zone Policy Validate --- */
+(function () {
+  const btn     = document.getElementById('zpAdminValidateBtn');
+  if (!btn) return;
+  const running = document.getElementById('zpAdminValidateRunning');
+  const result  = document.getElementById('zpAdminValidateResult');
+  const badge   = document.getElementById('zpAdminValidateBadge');
+  const errorsEl  = document.getElementById('zpAdminValidateErrors');
+  const warningsEl = document.getElementById('zpAdminValidateWarnings');
+  const errorEl = document.getElementById('zpAdminValidateError');
+
+  btn.addEventListener('click', async () => {
+    result.style.display = 'none';
+    errorEl.style.display = 'none';
+    badge.textContent = '';
+    badge.className = 'zp-validate-badge';
+    errorsEl.innerHTML = '';
+    warningsEl.innerHTML = '';
+    running.style.display = '';
+    btn.disabled = true;
+    try {
+      const resp = await fetch('/api/zone/validate', {headers: {'X-CSRF-Token': getCSRF()}});
+      const data = await resp.json();
+      if (!resp.ok || data.error) {
+        errorEl.textContent = data.error || 'Validation failed.';
+        errorEl.style.display = '';
+        return;
+      }
+      renderAdminValidateReport(data);
+      result.style.display = '';
+    } catch (e) {
+      errorEl.textContent = e.message;
+      errorEl.style.display = '';
+    } finally {
+      running.style.display = 'none';
+      btn.disabled = false;
+    }
+  });
+
+  function renderAdminValidateReport(r) {
+    badge.textContent = r.ok ? '✓ VALID' : '✗ INVALID';
+    badge.className   = `zp-validate-badge ${r.ok ? 'zp-valid' : 'zp-invalid'}`;
+    badge.title       = `${r.zone_count} zones · ${r.subnet_count} subnets · ${r.policy_count} policies`;
+
+    const statsLine = document.createElement('div');
+    statsLine.style.cssText = 'font-size:.82rem;color:var(--text-muted);margin-top:.35rem';
+    statsLine.textContent   = `${r.zone_count} zones · ${r.subnet_count} subnets · ${r.policy_count} policy rules`;
+    badge.after(statsLine);
+
+    errorsEl.innerHTML = r.errors.length
+      ? `<div style="font-weight:600;color:var(--danger);margin-bottom:.3rem">Errors (${r.errors.length})</div>` +
+        r.errors.map(e => `<div class="zp-issue zp-issue-error">&#10007; ${escH(e)}</div>`).join('')
+      : `<div class="zp-issue zp-issue-ok">&#10003; No errors</div>`;
+
+    warningsEl.innerHTML = r.warnings.length
+      ? `<div style="font-weight:600;color:var(--warning);margin-bottom:.3rem;margin-top:.5rem">Warnings (${r.warnings.length})</div>` +
+        r.warnings.map(w => `<div class="zp-issue zp-issue-warn">&#9888; ${escH(w)}</div>`).join('')
+      : '';
+  }
+})();
