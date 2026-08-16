@@ -15,10 +15,11 @@ import csv
 import io
 
 from flask import Blueprint, current_app, jsonify, render_template, request, session
-from app.decorators import tab_required, check_adom_access
-from app.fmg_helpers import make_client
-from app.fmg_client import FMGError
+
 from app import registry
+from app.decorators import check_adom_access, tab_required
+from app.fmg_client import FMGError
+from app.fmg_helpers import make_client
 from app.rule_review import analyze_flows, zone_script_available
 from app.security import internal_api_error, upstream_api_error
 
@@ -44,6 +45,7 @@ def rule_review_page():
 def rr_adoms():
     try:
         from flask import session as _session
+
         from app.groups import get_allowed_adoms
 
         allowed = get_allowed_adoms(
