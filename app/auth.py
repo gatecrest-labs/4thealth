@@ -58,7 +58,7 @@ def authenticate(username: str, password: str) -> "tuple[str, list] | None":
     if not entry:
         return None
     stored_hash = entry.get("password_hash", "")
-    if bcrypt.checkpw(password.encode(), stored_hash.encode()):
+    if bcrypt.checkpw(password.encode()[:72], stored_hash.encode()):
         return entry.get("role", "viewer"), []
     return None
 
@@ -79,7 +79,7 @@ def validate_password_policy(password: str) -> None:
 def add_user(username: str, password: str, role: str = "viewer") -> None:
     validate_password_policy(password)
     users = _load_users()
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    hashed = bcrypt.hashpw(password.encode()[:72], bcrypt.gensalt()).decode()
     users[username] = {"password_hash": hashed, "role": role}
     with USERS_FILE.open("w") as f:
         json.dump(users, f, indent=2)

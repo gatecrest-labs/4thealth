@@ -379,6 +379,10 @@ function renderResults(zoneAvail) {
           ${policyNotes.map(n => `<div class="rr-note">${esc(n)}</div>`).join('')}
         </div>` : '';
 
+    const _riskLevel = (r.approval || {}).risk_level || '';
+    const _riskBadge = _riskLevel
+      ? `<span class="badge badge-risk-${_riskLevel}">${_riskLevel.toUpperCase()}</span>` : '';
+
     const card = document.createElement('div');
     card.className = `rr-result-card result-card-${vClass}`;
     card.innerHTML = `
@@ -393,6 +397,7 @@ function renderResults(zoneAvail) {
         <div class="rr-card-badges">
           ${pathBadge}
           <span class="verdict-${vClass}">${esc(vLabel)}</span>
+          ${_riskBadge}
           <button class="btn btn-sm btn-secondary rr-detail-btn" data-idx="${idx}" title="Full details">⋯</button>
         </div>
       </div>
@@ -542,10 +547,87 @@ function showDetail(idx) {
     </div>`;
   }
 
+  // Planner fields
+  html += renderObjectPlans(r.object_plans);
+  html += renderApproval(r.approval);
+  html += renderAlternative(r.alternative);
+  html += renderPermissivenessWarnings(r.permissiveness_warnings);
+
   document.getElementById('rrModalTitle').textContent =
     `${r.src} → ${r.dst}${r.service ? ' : ' + r.service : ''} — ${r.pkg_name}`;
   document.getElementById('rrModalBody').innerHTML = html;
   document.getElementById('rrDetailModal').style.display = '';
+}
+
+/* ── Planner render helpers ─────────────────────────────────────────────────── */
+function renderObjectPlans(plans) {
+  if (!plans || !plans.length) return '';
+  const rows = plans.map(o => {
+    const actionBadge = o.action === 'reuse'
+      ? '<span class="badge badge-success">REUSE</span>'
+      : '<span class="badge badge-warning">CREATE</span>';
+    const cliBlock = o.cli
+      ? `<pre class="cli-block cli-block-sm">${esc(o.cli)}</pre>`
+      : '';
+    return `<tr>
+      <td>${esc(o.role)}</td>
+      <td>${esc(o.obj_type)}</td>
+      <td><code>${esc(o.name)}</code></td>
+      <td>${actionBadge}</td>
+      <td>${cliBlock}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="rr-detail-section object-plans-section">
+      <div class="rr-detail-section-title">Object Plan</div>
+      <table class="object-plans-table">
+        <thead><tr><th>Role</th><th>Type</th><th>Name</th><th>Action</th><th>CLI</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderApproval(approval) {
+  if (!approval || !approval.risk_level) return '';
+  const approvers = (approval.approvers || []).join(', ') || 'None listed';
+  const sla = approval.sla_hours ? `${approval.sla_hours}h SLA` : '';
+  const window_ = approval.change_window || '';
+  return `
+    <div class="rr-detail-section approval-section">
+      <div class="rr-detail-section-title">Approval Requirements <span class="badge badge-risk-${approval.risk_level}">${approval.risk_level.toUpperCase()}</span></div>
+      <table class="approval-table">
+        <tr><td>Approvers</td><td>${esc(approvers)}</td></tr>
+        ${approval.peer_review ? `<tr><td>Peer Review</td><td>${esc(approval.peer_review)}</td></tr>` : ''}
+        ${approval.security_review ? `<tr><td>Security Review</td><td>${esc(approval.security_review)}</td></tr>` : ''}
+        ${window_ ? `<tr><td>Change Window</td><td>${esc(window_)}</td></tr>` : ''}
+        ${sla ? `<tr><td>SLA</td><td>${esc(sla)}</td></tr>` : ''}
+      </table>
+    </div>`;
+}
+
+function renderAlternative(alt) {
+  if (!alt) return '';
+  const membersList = (alt.member_names || []).map(n => `<code>${esc(n)}</code>`).join(', ');
+  const cliContent = alt.group_cli || alt.direct_cli || '';
+  const affectedNote = alt.affected_count > 0
+    ? `<div class="alert alert-warning">&#9888; Appending to group also affects ${alt.affected_count} other rule(s).</div>`
+    : '';
+  const warnList = (alt.warnings || []).map(w => `<li>${esc(w)}</li>`).join('');
+  return `
+    <div class="rr-detail-section alternative-section alert alert-info">
+      <strong>Alternative Available:</strong> ${esc(alt.summary)}
+      <br>Members: ${membersList}
+      ${affectedNote}
+      ${warnList ? `<ul>${warnList}</ul>` : ''}
+      ${cliContent ? `<pre class="cli-block cli-block-sm">${esc(cliContent)}</pre>` : ''}
+      <small class="text-muted">Choose ONE option — new rule OR this alternative, not both.</small>
+    </div>`;
+}
+
+function renderPermissivenessWarnings(warnings) {
+  if (!warnings || !warnings.length) return '';
+  const items = warnings.map(w => `<li class="text-warning">&#9888; ${esc(w)}</li>`).join('');
+  return `<div class="rr-detail-section"><ul class="permissiveness-warnings">${items}</ul></div>`;
 }
 
 /* ── Clear all ──────────────────────────────────────────────────────────────── */

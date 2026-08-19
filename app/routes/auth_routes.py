@@ -3,7 +3,16 @@ import time
 from collections import defaultdict
 from urllib.parse import urlparse
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 from app import registry
 from app.app_logger import app_log
@@ -101,7 +110,12 @@ def login():
             )
             return render_template("login.html"), 429
 
-        auth_result = authenticate(username, password)
+        try:
+            auth_result = authenticate(username, password)
+        except Exception:
+            current_app.logger.exception("Unexpected error during authentication")
+            flash("An unexpected error occurred. Please try again.", "error")
+            return render_template("login.html"), 500
         if auth_result is not None:
             role, ad_groups = auth_result
             _clear_failures(ip, username)
