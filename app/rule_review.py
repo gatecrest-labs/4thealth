@@ -316,8 +316,8 @@ def check_path_relevance(
 
 # ── Planner-based analysis ────────────────────────────────────────────────────
 
-from app.planner.engine import plan_flow  # noqa: E402
-from app.planner.fetch import build_snapshot  # noqa: E402
+from app.planner.engine import plan_flow
+from app.planner.fetch import build_snapshot
 
 
 def analyze_flows(

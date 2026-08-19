@@ -3,7 +3,16 @@ import time
 from collections import defaultdict
 from urllib.parse import urlparse
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 from app import registry
 from app.app_logger import app_log
