@@ -5,6 +5,7 @@ The planner engine expects typed catalog objects (AddressCatalog, ServiceCatalog
 rather than raw dict lookups. This module converts 4thealth's pre-fetched FMG
 dicts into those typed structures without making additional network calls.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

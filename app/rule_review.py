@@ -354,11 +354,11 @@ def analyze_flows(
         zone_domains: dict = {}
         try:
             import app.zone_db as zdb
+
             if zdb.db_available():
                 db = zdb.load_db()
                 zone_domains = {
-                    name: z.get("domain", "")
-                    for name, z in db.get("zones", {}).items()
+                    name: z.get("domain", "") for name, z in db.get("zones", {}).items()
                 }
         except Exception:
             pass
@@ -374,16 +374,21 @@ def analyze_flows(
             dev_key = device or pkg_name
             if dev_key in routing:
                 path_check = check_path_relevance(
-                    src_raw, dst_raw,
+                    src_raw,
+                    dst_raw,
                     routing[dev_key].get("interfaces", []),
                     routing[dev_key].get("routes", []),
                 )
             else:
                 path_check = {
-                    "in_path": None, "confidence": "low",
-                    "src_reachable": False, "dst_reachable": False,
-                    "src_iface": None, "dst_iface": None,
-                    "src_route": None, "dst_route": None,
+                    "in_path": None,
+                    "confidence": "low",
+                    "src_reachable": False,
+                    "dst_reachable": False,
+                    "src_iface": None,
+                    "dst_iface": None,
+                    "src_route": None,
+                    "dst_route": None,
                     "notes": ["Routing data not available for this device."],
                 }
 
@@ -400,7 +405,9 @@ def analyze_flows(
             )
 
             row = plan_flow(
-                src=src_raw, dst=dst_raw, service=svc_raw,
+                src=src_raw,
+                dst=dst_raw,
+                service=svc_raw,
                 snapshot=snapshot,
                 zone_verdict=zone_result,
                 path_check=path_check,

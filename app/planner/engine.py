@@ -7,6 +7,7 @@ analyze_flows(). It uses the typed catalog objects from DeviceSnapshot
 for set-semantics matching, adds object planning, GroupAppendAlternative
 detection, and risk/approval chain.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -28,6 +29,7 @@ from app.planner.models import GroupAppendAlternative, InsertionPlan, ObjectPlan
 # Object planning helpers
 # ---------------------------------------------------------------------------
 
+
 def _normalize_cidr(ip: str) -> str:
     return str(ipaddress.ip_network(ip, strict=False))
 
@@ -37,8 +39,11 @@ def _address_object_plan(role: str, ip: str, snapshot: DeviceSnapshot) -> Object
     existing = snapshot.addr_catalog.exact_match_name(cidr)
     if existing:
         return ObjectPlan(
-            role=role, action="reuse", name=existing,
-            obj_type="host" if cidr.endswith("/32") else "network", value=cidr,
+            role=role,
+            action="reuse",
+            name=existing,
+            obj_type="host" if cidr.endswith("/32") else "network",
+            value=cidr,
         )
     if cidr.endswith("/32"):
         name = standards.object_name("host", ip=cidr)
@@ -47,7 +52,11 @@ def _address_object_plan(role: str, ip: str, snapshot: DeviceSnapshot) -> Object
         name = standards.object_name("network", ip=cidr)
         obj_type = "network"
     return ObjectPlan(
-        role=role, action="create", name=name, obj_type=obj_type, value=cidr,
+        role=role,
+        action="create",
+        name=name,
+        obj_type=obj_type,
+        value=cidr,
         cli=cli_gen.address_object_cli(name, cidr),
     )
 
@@ -56,15 +65,36 @@ def _service_object_plan(token: str, snapshot: DeviceSnapshot) -> list[ObjectPla
     try:
         ranges = parse_service_request(token)
     except ValueError:
-        return [ObjectPlan(role="service", action="reuse", name="ALL",
-                           obj_type="service", value=token)]
+        return [
+            ObjectPlan(
+                role="service",
+                action="reuse",
+                name="ALL",
+                obj_type="service",
+                value=token,
+            )
+        ]
     if not ranges or any(r.protocol == "ip" for r in ranges):
-        return [ObjectPlan(role="service", action="reuse", name="ALL",
-                           obj_type="service", value=token)]
+        return [
+            ObjectPlan(
+                role="service",
+                action="reuse",
+                name="ALL",
+                obj_type="service",
+                value=token,
+            )
+        ]
     existing = snapshot.svc_catalog.exact_match_name(ranges)
     if existing:
-        return [ObjectPlan(role="service", action="reuse", name=existing,
-                           obj_type="service", value=token)]
+        return [
+            ObjectPlan(
+                role="service",
+                action="reuse",
+                name=existing,
+                obj_type="service",
+                value=token,
+            )
+        ]
     plans: list[ObjectPlan] = []
     for r in ranges:
         port_expr = str(r.start) if r.start == r.end else f"{r.start}-{r.end}"
@@ -73,10 +103,16 @@ def _service_object_plan(token: str, snapshot: DeviceSnapshot) -> list[ObjectPla
             cli = cli_gen.service_object_cli(name, r.protocol, port_expr)
         except ValueError:
             cli = ""
-        plans.append(ObjectPlan(
-            role="service", action="create", name=name, obj_type="service",
-            value=f"{r.protocol}/{port_expr}", cli=cli,
-        ))
+        plans.append(
+            ObjectPlan(
+                role="service",
+                action="create",
+                name=name,
+                obj_type="service",
+                value=f"{r.protocol}/{port_expr}",
+                cli=cli,
+            )
+        )
     return plans
 
 
@@ -93,6 +129,7 @@ def _dedupe(objs: list[ObjectPlan]) -> list[ObjectPlan]:
 # ---------------------------------------------------------------------------
 # GroupAppendAlternative detection (simplified: scans snapshot packages only)
 # ---------------------------------------------------------------------------
+
 
 def _find_alternative(
     snapshot: DeviceSnapshot,
@@ -132,38 +169,61 @@ def _find_alternative(
                 if ok_full and not failing_full:
                     if pol.get(f"{key}-negate", "disable") in ("enable", 1, True):
                         continue
-                    other_refs = list(_names(pol.get("srcaddr" if key == "dstaddr" else "dstaddr", [])))
+                    other_refs = list(
+                        _names(
+                            pol.get("srcaddr" if key == "dstaddr" else "dstaddr", [])
+                        )
+                    )
                     non_all = sum(1 for ref in other_refs if ref.lower() != "all")
                     has_specific = 1 if non_all > 0 else 0
                     group = next(
-                        (n for n in _names(pol.get(key, []))
-                         if snapshot.addr_catalog.is_group(n)), None,
+                        (
+                            n
+                            for n in _names(pol.get(key, []))
+                            if snapshot.addr_catalog.is_group(n)
+                        ),
+                        None,
                     )
                     member = _address_object_plan(side, missing_ip, snapshot)
                     if group is not None:
                         score: tuple[int, int, int] = (has_specific, -non_all, 0)
-                        candidates.append((score, GroupAppendAlternative(
-                            package=pkg,
-                            policy_id=pol.get("policyid", 0),
-                            policy_name=pol.get("name", ""),
-                            side=side, group=group,
-                            members=[member],
-                            group_cli=cli_gen.addrgrp_append_cli(group, [member.name]),
-                        )))
+                        candidates.append(
+                            (
+                                score,
+                                GroupAppendAlternative(
+                                    package=pkg,
+                                    policy_id=pol.get("policyid", 0),
+                                    policy_name=pol.get("name", ""),
+                                    side=side,
+                                    group=group,
+                                    members=[member],
+                                    group_cli=cli_gen.addrgrp_append_cli(
+                                        group, [member.name]
+                                    ),
+                                ),
+                            )
+                        )
                     else:
                         failing_refs = list(_names(pol.get(key, [])))
                         if not failing_refs or failing_refs == ["all"]:
                             continue
                         score = (has_specific, -non_all, 1)
-                        candidates.append((score, GroupAppendAlternative(
-                            package=pkg,
-                            policy_id=pol.get("policyid", 0),
-                            policy_name=pol.get("name", ""),
-                            side=side, group=None,
-                            members=[member],
-                            direct_cli=cli_gen.policy_addr_append_cli(
-                                pol.get("policyid", 0), key, [member.name]),
-                        )))
+                        candidates.append(
+                            (
+                                score,
+                                GroupAppendAlternative(
+                                    package=pkg,
+                                    policy_id=pol.get("policyid", 0),
+                                    policy_name=pol.get("name", ""),
+                                    side=side,
+                                    group=None,
+                                    members=[member],
+                                    direct_cli=cli_gen.policy_addr_append_cli(
+                                        pol.get("policyid", 0), key, [member.name]
+                                    ),
+                                ),
+                            )
+                        )
 
     if not candidates:
         return None
@@ -171,11 +231,13 @@ def _find_alternative(
     # Simplified blast-radius: count other policies in snapshot referencing the group
     if winner.group:
         affected_count = sum(
-            1 for _pkg, pols in snapshot.policies_by_package.items()
+            1
+            for _pkg, pols in snapshot.policies_by_package.items()
             for p in pols
             if p.get("policyid", 0) != winner.policy_id
-            and any(winner.group in _names(p.get(k, []))
-                    for k in ("srcaddr", "dstaddr"))
+            and any(
+                winner.group in _names(p.get(k, [])) for k in ("srcaddr", "dstaddr")
+            )
         )
         winner.affected_policies = [{"count": affected_count}]
         if affected_count:
@@ -189,6 +251,7 @@ def _find_alternative(
 # ---------------------------------------------------------------------------
 # Interface resolution (simple: first interface whose subnet contains the IP)
 # ---------------------------------------------------------------------------
+
 
 def _resolve_interface(ip: str, interfaces: list[dict]) -> str:
     try:
@@ -225,6 +288,7 @@ def _resolve_interface(ip: str, interfaces: list[dict]) -> str:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def plan_flow(
     src: str,
     dst: str,
@@ -244,13 +308,23 @@ def plan_flow(
     Returns a result dict that is a superset of the old analyze_flows() row
     shape — new keys added, none removed.
     """
+
     def _err(msg: str) -> dict:
         return {
-            "src": src, "dst": dst, "service": service,
-            "adom": snapshot.adom, "pkg_path": pkg_path, "pkg_name": pkg_name,
-            "device": snapshot.device, "verdict": "ERROR", "notes": [msg],
-            "matching_rules": [], "modifiable_rules": [], "partial_matches": [],
-            "suggested_position": None, "fortios_cli": "",
+            "src": src,
+            "dst": dst,
+            "service": service,
+            "adom": snapshot.adom,
+            "pkg_path": pkg_path,
+            "pkg_name": pkg_name,
+            "device": snapshot.device,
+            "verdict": "ERROR",
+            "notes": [msg],
+            "matching_rules": [],
+            "modifiable_rules": [],
+            "partial_matches": [],
+            "suggested_position": None,
+            "fortios_cli": "",
             "zone_verdict": zone_verdict.get("verdict", "UNAVAILABLE"),
             "zone_source": zone_verdict.get("source", "none"),
             "zone_src": zone_verdict.get("src_zones", []),
@@ -265,7 +339,10 @@ def plan_flow(
             "path_src_route": path_check.get("src_route"),
             "path_dst_route": path_check.get("dst_route"),
             "path_notes": path_check.get("notes", []),
-            "object_plans": [], "approval": {}, "permissiveness_warnings": [], "alternative": None,
+            "object_plans": [],
+            "approval": {},
+            "permissiveness_warnings": [],
+            "alternative": None,
         }
 
     try:
@@ -301,21 +378,31 @@ def plan_flow(
             last_permit_seq = pol_id
         if not r.matched:
             continue
-        entry = {"id": pol_id, "name": pol_name, "action": r.action,
-                 "seq": idx + 1, "package": pkg_key}
+        entry = {
+            "id": pol_id,
+            "name": pol_name,
+            "action": r.action,
+            "seq": idx + 1,
+            "package": pkg_key,
+        }
         if r.full_cover and not r.disabled:
             matching.append(entry)
         elif r.action == "accept" and not r.disabled:
             svc_gap = matcher.uncovered_services(pol, service_ranges)
             entry["svc_gap"] = [
-                f"{pr.protocol}/{pr.start}" if pr.start == pr.end
+                f"{pr.protocol}/{pr.start}"
+                if pr.start == pr.end
                 else f"{pr.protocol}/{pr.start}-{pr.end}"
                 for pr in svc_gap
             ]
             if svc_gap:
-                entry["suggestion"] = f"Add service '{service}' to this rule's service list"
+                entry["suggestion"] = (
+                    f"Add service '{service}' to this rule's service list"
+                )
             else:
-                entry["suggestion"] = "Expand source or destination address to include the requested endpoint"
+                entry["suggestion"] = (
+                    "Expand source or destination address to include the requested endpoint"
+                )
             partial.append(entry)
 
     permit_rules = [r for r in matching if r["action"] == "accept"]
@@ -332,11 +419,17 @@ def plan_flow(
 
     notes: list[str] = []
     if permit_rules:
-        notes.append(f"Flow already permitted by rule ID {permit_rules[0]['id']} ({permit_rules[0]['name'] or 'unnamed'})")
+        notes.append(
+            f"Flow already permitted by rule ID {permit_rules[0]['id']} ({permit_rules[0]['name'] or 'unnamed'})"
+        )
     elif deny_rules:
-        notes.append(f"Flow explicitly denied by rule ID {deny_rules[0]['id']} ({deny_rules[0]['name'] or 'unnamed'})")
+        notes.append(
+            f"Flow explicitly denied by rule ID {deny_rules[0]['id']} ({deny_rules[0]['name'] or 'unnamed'})"
+        )
     elif partial:
-        notes.append(f"Rule ID {partial[0]['id']} covers src/dst — add service to permit")
+        notes.append(
+            f"Rule ID {partial[0]['id']} covers src/dst — add service to permit"
+        )
 
     # Insertion analysis
     insertion: InsertionPlan | None = None
@@ -345,8 +438,14 @@ def plan_flow(
         if policies:
             try:
                 insertion = plan_insertion(
-                    pkg_key, policies, matcher,
-                    [src], [dst], service_ranges, srcintf, dstintf,
+                    pkg_key,
+                    policies,
+                    matcher,
+                    [src],
+                    [dst],
+                    service_ranges,
+                    srcintf,
+                    dstintf,
                 )
                 suggested_position = insertion.insert_before_policy_id
                 if insertion.rationale:
@@ -354,7 +453,9 @@ def plan_flow(
             except Exception:
                 if last_permit_seq:
                     suggested_position = last_permit_seq
-                    notes.append(f"Suggest inserting new rule after ID {last_permit_seq}")
+                    notes.append(
+                        f"Suggest inserting new rule after ID {last_permit_seq}"
+                    )
         elif last_permit_seq:
             suggested_position = last_permit_seq
             notes.append(f"Suggest inserting new rule after ID {last_permit_seq}")
@@ -362,9 +463,19 @@ def plan_flow(
     # Object plans
     src_obj = _address_object_plan("source", src, snapshot)
     dst_obj = _address_object_plan("destination", dst, snapshot)
-    svc_objs: list[ObjectPlan] = _service_object_plan(service, snapshot) if service else [
-        ObjectPlan(role="service", action="reuse", name="ALL", obj_type="service", value="any"),
-    ]
+    svc_objs: list[ObjectPlan] = (
+        _service_object_plan(service, snapshot)
+        if service
+        else [
+            ObjectPlan(
+                role="service",
+                action="reuse",
+                name="ALL",
+                obj_type="service",
+                value="any",
+            ),
+        ]
+    )
     object_plans = _dedupe([src_obj, dst_obj] + svc_objs)
 
     # FortiOS CLI
@@ -376,7 +487,11 @@ def plan_flow(
             dstintf or "any",
         )
         blocked = zone_verdict.get("verdict") == "BLOCKED"
-        comments = cli_gen.exception_comment(ticket_id) if blocked else f"Ticket {ticket_id or '<TICKET_ID>'}"
+        comments = (
+            cli_gen.exception_comment(ticket_id)
+            if blocked
+            else f"Ticket {ticket_id or '<TICKET_ID>'}"
+        )
         fortios_cli = cli_gen.policy_cli(
             name=policy_name,
             srcintf=srcintf or "any",
@@ -406,14 +521,22 @@ def plan_flow(
     }
 
     # Permissiveness warnings
-    permissiveness_warnings = standards.permissiveness_warnings([src], [dst], service_ranges)
+    permissiveness_warnings = standards.permissiveness_warnings(
+        [src], [dst], service_ranges
+    )
 
     # GroupAppendAlternative
     alternative_raw: GroupAppendAlternative | None = None
     alternative: dict | None = None
     if verdict == "NEW_RULE_NEEDED":
         alternative_raw = _find_alternative(
-            snapshot, matcher, src, dst, service_ranges, srcintf, dstintf,
+            snapshot,
+            matcher,
+            src,
+            dst,
+            service_ranges,
+            srcintf,
+            dstintf,
         )
     if alternative_raw is not None:
         alt = alternative_raw
@@ -427,14 +550,18 @@ def plan_flow(
             "member_names": member_names,
             "group_cli": alt.group_cli,
             "direct_cli": alt.direct_cli,
-            "affected_count": alt.affected_policies[0]["count"] if alt.affected_policies else 0,
+            "affected_count": alt.affected_policies[0]["count"]
+            if alt.affected_policies
+            else 0,
             "warnings": alt.warnings,
             "summary": (
                 f"Rule #{alt.policy_id} {alt.policy_name!r} covers everything "
                 f"except the {alt.side} — "
-                + (f"append {', '.join(member_names)} to group {alt.group!r}"
-                   if alt.group
-                   else f"add {', '.join(member_names)} directly to rule's {alt.side} address list")
+                + (
+                    f"append {', '.join(member_names)} to group {alt.group!r}"
+                    if alt.group
+                    else f"add {', '.join(member_names)} directly to rule's {alt.side} address list"
+                )
                 + " instead of creating a new policy."
             ),
         }
@@ -450,19 +577,29 @@ def plan_flow(
                 "is blocked by segmentation policy"
             )
         elif zv == "UNKNOWN":
-            notes.append("Zone policy: no rule covers this zone pair — treat as implicit deny")
+            notes.append(
+                "Zone policy: no rule covers this zone pair — treat as implicit deny"
+            )
 
     # Path notes
     if path_check.get("in_path") is False:
-        notes.append(f"⚠ PATH CHECK: {path_check['notes'][0] if path_check.get('notes') else 'Device may not be in traffic path'}")
+        notes.append(
+            f"⚠ PATH CHECK: {path_check['notes'][0] if path_check.get('notes') else 'Device may not be in traffic path'}"
+        )
     elif path_check.get("in_path") is True:
-        notes.append(f"✓ PATH CHECK: {path_check['notes'][0] if path_check.get('notes') else 'Device appears in traffic path'}")
+        notes.append(
+            f"✓ PATH CHECK: {path_check['notes'][0] if path_check.get('notes') else 'Device appears in traffic path'}"
+        )
 
     return {
         # Core
-        "src": src, "dst": dst, "service": service,
-        "adom": snapshot.adom, "pkg_path": pkg_path,
-        "pkg_name": pkg_name, "device": snapshot.device,
+        "src": src,
+        "dst": dst,
+        "service": service,
+        "adom": snapshot.adom,
+        "pkg_path": pkg_path,
+        "pkg_name": pkg_name,
+        "device": snapshot.device,
         # Verdict
         "verdict": verdict,
         "matching_rules": matching,
@@ -489,8 +626,14 @@ def plan_flow(
         "path_notes": path_check.get("notes", []),
         # New fields
         "object_plans": [
-            {"role": o.role, "action": o.action, "name": o.name,
-             "obj_type": o.obj_type, "value": o.value, "cli": o.cli}
+            {
+                "role": o.role,
+                "action": o.action,
+                "name": o.name,
+                "obj_type": o.obj_type,
+                "value": o.value,
+                "cli": o.cli,
+            }
             for o in object_plans
         ],
         "approval": approval,
