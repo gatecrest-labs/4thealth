@@ -2,7 +2,16 @@ import threading
 import time
 from collections import defaultdict
 from urllib.parse import urlparse
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+from flask import (
+    Blueprint,
+    current_app,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    flash,
+)
 from app.auth import authenticate
 from app.groups import get_allowed_tabs
 from app.app_logger import app_log
@@ -99,7 +108,12 @@ def login():
             )
             return render_template("login.html"), 429
 
-        auth_result = authenticate(username, password)
+        try:
+            auth_result = authenticate(username, password)
+        except Exception:
+            current_app.logger.exception("Unexpected error during authentication")
+            flash("An unexpected error occurred. Please try again.", "error")
+            return render_template("login.html"), 500
         if auth_result is not None:
             role, ad_groups = auth_result
             _clear_failures(ip, username)

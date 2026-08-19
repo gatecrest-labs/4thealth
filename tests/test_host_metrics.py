@@ -73,7 +73,10 @@ def test_get_metrics_unknown_range_defaults_to_1h(db):
 
 def test_get_metrics_7d_buckets_by_hour(db):
     from app.host_metrics import get_metrics
-    now = int(time.time())
+    # Anchor to the middle of an hourly bucket (get_metrics buckets by
+    # ts // 3600) so the 900s spread below can never straddle a bucket
+    # boundary, regardless of when the test happens to run.
+    now = (int(time.time()) // 3600) * 3600 + 1800
     conn = sqlite3.connect(db)
     # 4 rows within the same 1-hour bucket
     for i in range(4):

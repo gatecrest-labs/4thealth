@@ -478,6 +478,10 @@ def policy_add(
 ) -> str:
     if access_type not in VALID_ACCESS_TYPES:
         raise ValueError(f"Invalid access_type '{access_type}'.")
+    if severity not in VALID_SEVERITIES:
+        raise ValueError(
+            f"Invalid severity '{severity}'. Must be one of: {sorted(VALID_SEVERITIES)}"
+        )
     services = normalize_service_list(services or [])
     if access_type in ("block only", "allow only") and not services:
         raise ValueError(f"'{access_type}' requires at least one service.")
@@ -513,6 +517,10 @@ def policy_modify(db: dict, index: int, field: str, value: str) -> str:
         raise IndexError(f"Index {index} out of range.")
     if field not in POLICY_MUTABLE_FIELDS:
         raise ValueError(f"Field '{field}' is not editable.")
+    if field == "severity" and value not in VALID_SEVERITIES:
+        raise ValueError(
+            f"Invalid severity '{value}'. Must be one of: {sorted(VALID_SEVERITIES)}"
+        )
     coerced = (
         normalize_service_list([s.strip() for s in value.split(",") if s.strip()])
         if field == "services"

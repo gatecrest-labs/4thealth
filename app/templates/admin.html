@@ -625,8 +625,6 @@
           <select name="severity">
             <option value="critical">critical</option>
             <option value="high">high</option>
-            <option value="medium">medium</option>
-            <option value="low">low</option>
           </select>
         </label>
         <label>Services (comma-separated) <input type="text" name="services"></label>
@@ -871,5 +869,5 @@
   window._inDocker = {{ in_docker | tojson }};
   const DR_CHECK_DEFS = {{ checks_meta | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=9"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=10"></script>
 {% endblock %}

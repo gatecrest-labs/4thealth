@@ -9,7 +9,26 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ## [Unreleased]
 
+### Added
+- **Rule Validation — Object planning:** each flow result now includes `object_plans` — a list of proposed FortiGate address/service objects with `reuse` vs. `create` decisions, standards-based naming (from `app/planner/data/naming.yaml`), and ready-to-paste CLI blocks displayed below the verdict.
+- **Rule Validation — Risk & approval chain:** each result includes an `approval` block: `risk_level` (critical / high / medium), required approvers, peer-review and security-review flags, change window, and SLA hours — derived from `app/planner/data/review_requirements.yaml` using zone-pair domain classification.
+- **Rule Validation — GroupAppendAlternative:** when a new rule would otherwise be needed, the engine scans existing policy packages for near-miss rules (rules that match on all dimensions except one address side). When found, an `alternative` block is returned with CLI to append to an existing address group or directly to the rule's address list — a smaller, lower-risk change than creating a new policy. Blast-radius count (how many other rules reference the same group) is shown.
+- **Rule Validation — Permissiveness warnings:** flows with broad source/destination CIDRs (wider than /24) or any-service requests generate advisory warnings surfaced below the verdict card.
+- **`app/planner/` package** — self-contained deterministic analysis engine, no AI in the decision path:
+  - `matching.py` — PolicyMatcher, AddressCatalog, ServiceCatalog, PortRange (set-semantics CIDR containment and port-range coverage)
+  - `standards.py` — risk classification, naming conventions, review requirements
+  - `insertion.py` — insertion-point analysis with first-match shadowing detection
+  - `cli_gen.py` — FortiOS `config firewall ...` CLI block generation
+  - `fetch.py` — DeviceSnapshot bridge (builds catalogs from pre-fetched FMG data, no new HTTP calls)
+  - `engine.py` — `plan_flow()` main entry point returning a 31-key result dict
+- `pyyaml>=6.0.3` added as the only new dependency (for YAML data files in `app/planner/data/`).
+
 ### Changed
+- **Rule Validation — matching engine replaced:** `analyze_flows()` in `app/rule_review.py` now delegates to `plan_flow()` from `app/planner/engine.py`. Matching uses proper set-semantics (CIDR containment, PortRange coverage) instead of simple dict lookups. Result dict is backward-compatible — all existing keys are preserved; new keys (`object_plans`, `approval`, `permissiveness_warnings`, `alternative`) are additive.
+- **Rule Validation — MODIFIABLE suggestion text** now correctly distinguishes address-dimension gaps ("Expand source or destination address to include the requested endpoint") from service-dimension gaps ("Add service '...' to this rule's service list").
+
+### Fixed
+- Dependencies: bumped flask 3.1.3, requests 2.34.2, bcrypt 5.0.0, gunicorn 26.0.0, cryptography 50.0.0, and other packages to latest Dependabot-recommended floors
 - **Device Review — Interface Protocols:** Interfaces with only informational protocols (ping, fgfm, capwap, etc.) now report `INFO` instead of `WARN`. The `WARN` result is effectively unused for Interface Protocols — unknown protocols default to `None` (informational), making WARN unreachable in practice.
 - **Device Review — CIS Host Checks (NTP, Syslog, FortiAnalyzer, DNS):** Checks that compare expected server addresses now return `WARN` (amber) when the service is active but servers do not match, instead of `FAIL`. `FAIL` is reserved for when the service is disabled or completely unconfigured. IP addresses and FQDNs are both handled via DNS resolution.
 - **Admin tab renamed** — "Config-Diff" sub-tab renamed to "Scheduled" to reflect its role as the home for all recurring audit and report jobs.
