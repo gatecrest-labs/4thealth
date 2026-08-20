@@ -76,6 +76,35 @@ def create_app(test_config: dict | None = None) -> Flask:
             return jsonify({"error": "Uploaded file is too large"}), 413
         return "Uploaded file is too large", 413
 
+    @app.errorhandler(Exception)
+    def _unhandled_exception(exc):
+        from werkzeug.exceptions import HTTPException
+
+        # Let werkzeug HTTP exceptions (4xx/5xx) propagate normally
+        if isinstance(exc, HTTPException):
+            return exc
+
+        import traceback
+        from app.app_logger import app_log
+
+        tb = traceback.format_exc()
+        app_log(
+            "ERROR",
+            "app",
+            "Unhandled exception",
+            exc_type=type(exc).__name__,
+            exc=str(exc),
+            traceback=tb,
+            path=request.path,
+        )
+        if (
+            request.path.startswith("/api/")
+            or request.path.startswith("/admin/api/")
+            or request.path.startswith("/external/api/")
+        ):
+            return jsonify({"error": "Internal server error", "detail": str(exc)}), 500
+        raise exc
+
     # Import every blueprint module (triggers registry.register() calls)
     # then pull the bp object out and register it with Flask.
     import importlib
