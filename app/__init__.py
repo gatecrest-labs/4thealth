@@ -80,8 +80,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     def _unhandled_exception(exc):
         from werkzeug.exceptions import HTTPException
 
-        # Let werkzeug HTTP exceptions (4xx/5xx) propagate normally
+        # For werkzeug HTTP exceptions on API paths, return JSON so clients
+        # always get machine-readable errors (returning exc directly renders HTML)
         if isinstance(exc, HTTPException):
+            if (
+                request.path.startswith("/api/")
+                or request.path.startswith("/admin/api/")
+                or request.path.startswith("/external/api/")
+            ):
+                return (
+                    jsonify({"error": exc.name, "description": exc.description}),
+                    exc.code,
+                )
             return exc
 
         import traceback

@@ -241,8 +241,14 @@ async function runReview() {
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
       body:    JSON.stringify({ flows, selections, metadata: getMetadata() }),
     });
+    if (!resp.ok) {
+      let errorMsg = `Analysis failed (HTTP ${resp.status}).`;
+      try { const errData = await resp.json(); errorMsg = errData.error || errorMsg; }
+      catch (_) { /* response was not JSON — keep the generic message */ }
+      showError(errorMsg);
+      return;
+    }
     const data = await resp.json();
-    if (!resp.ok) { showError(data.error || 'Analysis failed.'); return; }
 
     results  = data.results  || [];
     metadata = data.metadata || {};
@@ -792,15 +798,48 @@ function downloadHtmlReport() {
             `</p>`;
         }
 
+        if (r.modifiable_rules && r.modifiable_rules.length) {
+          html += `<p><strong>Rule${r.modifiable_rules.length > 1 ? 's' : ''} that could be modified:</strong> ` +
+            r.modifiable_rules.map(m => `#${esc(m.id)} ${esc(m.name || '')} — ${esc(m.suggestion || '')}`).join('; ') +
+            `</p>`;
+        }
+
+        if (r.zone_available) {
+          const zv = r.zone_verdict || 'UNKNOWN';
+          const zvColor = zv === 'ALLOWED' ? '#1a7f3c' : zv === 'BLOCKED' ? '#c0392b' : '#d35400';
+          html += `<p><strong>Zone Policy:</strong> <span style="color:${zvColor};font-weight:700">${esc(zv)}</span>`;
+          if (r.zone_src && r.zone_src.length) html += ` — src: ${esc(r.zone_src.join(', '))}`;
+          if (r.zone_dst && r.zone_dst.length) html += ` → dst: ${esc(r.zone_dst.join(', '))}`;
+          html += `</p>`;
+        }
+
+        const policyNotes = (r.notes || []).filter(n =>
+          !n.startsWith('⚠ PATH') && !n.startsWith('✓ PATH')
+        );
+        if (policyNotes.length) {
+          html += policyNotes.map(n => `<p style="color:#555;font-size:.88rem">${esc(n)}</p>`).join('');
+        }
+
+        if (r.approval && r.approval.risk_level) {
+          const riskColor = { critical: '#c0392b', high: '#d35400', medium: '#d4a017' }[r.approval.risk_level] || '#555';
+          html += `<p><strong>Risk level:</strong> <span style="color:${riskColor};font-weight:700">${esc(r.approval.risk_level.toUpperCase())}</span>`;
+          if (r.approval.approvers && r.approval.approvers.length) {
+            html += ` — Approvers: ${esc(r.approval.approvers.join(', '))}`;
+          }
+          if (r.approval.sla_hours) html += ` — SLA: ${esc(String(r.approval.sla_hours))}h`;
+          html += `</p>`;
+        }
+
         if (r.path_in_path === true)  html += `<p class="path-ok">&#10003; In path: src via ${esc(r.path_src_iface||'?')}, dst via ${esc(r.path_dst_iface||'?')}</p>`;
         if (r.path_in_path === false) html += `<p class="path-warn">&#9888; May not be in path — proceed with caution</p>`;
 
         if ((r.verdict === 'NEW_RULE_NEEDED' || r.verdict === 'MODIFIABLE') && r.fortios_cli) {
           html += `<h4>Option A — Recommended action</h4><pre>${esc(r.fortios_cli)}</pre>`;
         }
-        if (r.alternative && r.alternative.group_cli) {
-          html += `<h4>Option B — Extend group ${esc(r.alternative.group_name || '')}</h4>` +
-            `<pre>${esc(r.alternative.group_cli)}</pre>`;
+        if (r.alternative && (r.alternative.group_cli || r.alternative.direct_cli)) {
+          const altCli = r.alternative.group_cli || r.alternative.direct_cli;
+          html += `<h4>Option B — ${esc(r.alternative.summary || 'Extend existing rule')}</h4>` +
+            `<pre>${esc(altCli)}</pre>`;
           if (r.alternative.affected_count > 0) {
             html += `<p class="warn-note">&#9888; Affects ${r.alternative.affected_count} other rule(s).</p>`;
           }

@@ -504,10 +504,13 @@ def rr_analyze():
 
     all_results = error_results + analysis_results
 
-    return jsonify(
-        {
-            "results": all_results,
-            "metadata": metadata,
-            "zone_available": zone_script_available(),
-        }
-    )
+    try:
+        return jsonify(
+            {
+                "results": all_results,
+                "metadata": metadata,
+                "zone_available": zone_script_available(),
+            }
+        )
+    except Exception as exc:
+        return internal_api_error("rule_review", exc)
