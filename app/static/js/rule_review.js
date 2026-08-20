@@ -870,6 +870,14 @@ function downloadHtmlReport() {
         // Path check
         if (r.path_in_path === true)  html += `<p class="path-ok">&#10003; In path: src via ${esc(r.path_src_iface||'?')}, dst via ${esc(r.path_dst_iface||'?')}</p>`;
         if (r.path_in_path === false) html += `<p class="path-warn">&#9888; May not be in path — proceed with caution</p>`;
+        if (r.path_src_iface || r.path_src_route || r.path_dst_iface || r.path_dst_route) {
+          html += `<table class="report-table" style="margin:.25rem 0 .5rem"><tbody>`;
+          if (r.path_src_iface) html += `<tr><th>Src Interface</th><td>${esc(r.path_src_iface)}</td></tr>`;
+          if (r.path_src_route) html += `<tr><th>Src Route</th><td>${esc(r.path_src_route.network)} via ${esc(r.path_src_route.gateway||'direct')} (${esc(r.path_src_route.interface||'?')})</td></tr>`;
+          if (r.path_dst_iface) html += `<tr><th>Dst Interface</th><td>${esc(r.path_dst_iface)}</td></tr>`;
+          if (r.path_dst_route) html += `<tr><th>Dst Route</th><td>${esc(r.path_dst_route.network)} via ${esc(r.path_dst_route.gateway||'direct')} (${esc(r.path_dst_route.interface||'?')})</td></tr>`;
+          html += `</tbody></table>`;
+        }
 
         // Warnings: path notes + permissiveness
         const warnings = [...(r.path_notes || []), ...(r.permissiveness_warnings || [])];
