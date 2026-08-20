@@ -1568,10 +1568,12 @@ a:hover { text-decoration: underline; }
 .verdict-ALLOWED  { color: #22c55e; font-weight: 700; }
 .verdict-BLOCKED  { color: #ef4444; font-weight: 700; }
 .verdict-UNKNOWN  { color: var(--text-muted); font-weight: 700; }
+.verdict-ERROR    { color: #7f8c8d; font-weight: 700; }
 
 [data-theme="light"] .verdict-ALLOWED { color: #198754; }
 [data-theme="light"] .verdict-BLOCKED { color: #dc3545; }
 [data-theme="light"] .verdict-UNKNOWN { color: #6c757d; }
+[data-theme="light"] .verdict-ERROR   { color: #6c757d; }
 
 /* ── Result cards (zone-script card style) ──────────────────────────────  */
 .rr-result-card {
@@ -1761,6 +1763,7 @@ a:hover { text-decoration: underline; }
 .chip-blocked { color: var(--danger);  }
 .chip-warn    { color: var(--warning); }
 .chip-unknown { color: var(--text-muted); }
+.chip-error   { color: #7f8c8d; }
 
 /* ── Policy Viewer — object / group expansion ──────────────────────────── */
 .pv-obj {

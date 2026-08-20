@@ -13,7 +13,7 @@ import logging
 import os
 import threading
 import time as _time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ def _run_job(app):
                 {
                     "firewalls_total": firewalls_total,
                     "rules_total": rules_total,
-                    "last_updated": datetime.now(UTC).isoformat(),
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
                     "status": "ok",
                     "error": None,
                 }
@@ -140,7 +140,7 @@ def _run_job(app):
             logger.warning("summary_history: record_today failed: %s", exc)
 
     except Exception as exc:
-        logger.exception("summary_job: unhandled error")
+        logger.exception("summary_job: unhandled error: %s", exc)
         with _lock:
             _store["status"] = "error"
             _store["error"] = str(exc)

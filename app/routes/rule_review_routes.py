@@ -15,11 +15,10 @@ import csv
 import io
 
 from flask import Blueprint, current_app, jsonify, render_template, request, session
-
-from app import registry
-from app.decorators import check_adom_access, tab_required
-from app.fmg_client import FMGError
+from app.decorators import tab_required, check_adom_access
 from app.fmg_helpers import make_client
+from app.fmg_client import FMGError
+from app import registry
 from app.rule_review import analyze_flows, zone_script_available
 from app.security import internal_api_error, upstream_api_error
 
@@ -45,7 +44,6 @@ def rule_review_page():
 def rr_adoms():
     try:
         from flask import session as _session
-
         from app.groups import get_allowed_adoms
 
         allowed = get_allowed_adoms(
@@ -92,6 +90,56 @@ def rr_packages(adom: str):
         return upstream_api_error("rule_review", exc)
     except Exception as exc:
         return internal_api_error("rule_review", exc)
+
+
+# ── API: device list ──────────────────────────────────────────────────────────
+
+
+@bp.route("/api/rule-review/adoms/<adom>/devices")
+@tab_required("rule_review")
+def rr_devices(adom: str):
+    if err := check_adom_access(adom):
+        return err
+    try:
+        with make_client() as client:
+            raw = client.get_devices(adom)
+        devices = sorted(
+            [
+                {"name": d["name"], "ip": d.get("ip", "")}
+                for d in raw
+                if isinstance(d, dict) and d.get("name")
+            ],
+            key=lambda d: d["name"].lower(),
+        )
+        return jsonify(devices)
+    except FMGError as exc:
+        return upstream_api_error("rule_review", exc)
+    except Exception:
+        return jsonify([])
+
+
+# ── API: VDOM list ────────────────────────────────────────────────────────────
+
+
+@bp.route("/api/rule-review/adoms/<adom>/devices/<device>/vdoms")
+@tab_required("rule_review")
+def rr_device_vdoms(adom: str, device: str):
+    if err := check_adom_access(adom):
+        return err
+    try:
+        with make_client() as client:
+            raw = client.get_device_vdoms(adom, device)
+        names = sorted(
+            {d["name"] for d in raw if isinstance(d, dict) and d.get("name")},
+            key=str.lower,
+        )
+        if not names or names == ["root"]:
+            return jsonify(["root"])
+        return jsonify(names)
+    except FMGError as exc:
+        return upstream_api_error("rule_review", exc)
+    except Exception:
+        return jsonify(["root"])
 
 
 # ── API: parse import file ────────────────────────────────────────────────────
@@ -249,29 +297,136 @@ def rr_analyze():
     Request body::
         {
             "flows": [{"src": "...", "dst": "...", "service": "...", "comment": "..."}, ...],
-            "packages": [{"adom": "...", "name": "...", "path": "...", "device": "..."}, ...]
+            "selections": [{"adom": "...", "device": "...", "vdoms": ["root", ...]}, ...],
+            "metadata": {"change_number": "...", "owner": "...", "justification": "..."}
         }
     """
     data = request.get_json(silent=True) or {}
     flows = data.get("flows", [])
-    packages = data.get("packages", [])
+    selections = data.get("selections")
+    metadata = data.get("metadata", {})
 
     if not flows:
         return jsonify({"error": "No flows provided"}), 400
-    if not packages:
-        return jsonify({"error": "No policy packages selected"}), 400
+    if selections is None:
+        return jsonify(
+            {"error": "No selections provided — use 'selections' key (not 'packages')"}
+        ), 400
+    if not selections:
+        return jsonify({"error": "No firewalls selected"}), 400
 
-    # Collect unique ADOMs to minimise API calls
-    adoms = list(dict.fromkeys(p["adom"] for p in packages if p.get("adom")))
+    if not isinstance(selections, list) or not all(
+        isinstance(s, dict) for s in selections
+    ):
+        return jsonify(
+            {
+                "error": "selections must be a list of objects with adom, device, and vdoms fields"
+            }
+        ), 400
 
-    # Enforce ADOM access for every ADOM referenced
+    for s in selections:
+        if not s.get("adom") or not s.get("device"):
+            return jsonify(
+                {
+                    "error": "each selection must have non-empty 'adom' and 'device' fields"
+                }
+            ), 400
+
+    # Collect unique ADOMs
+    adoms = list(dict.fromkeys(s["adom"] for s in selections if s.get("adom")))
+
     for adom in adoms:
         if err := check_adom_access(adom):
             return err
 
+    # Pre-collected error results for device/VDOM with no installed package
+    error_results: list[dict] = []
+
     try:
         with make_client() as client:
-            # Fetch policies for each package
+            # Resolve selections → packages using package scope member data
+            packages: list[dict] = []
+            pkg_cache: dict[
+                str, list
+            ] = {}  # adom → all packages (avoid redundant calls)
+
+            for sel in selections:
+                adom = sel["adom"]
+                device = sel["device"]
+                if adom not in pkg_cache:
+                    pkg_cache[adom] = client.get_policy_packages(adom)
+                all_pkgs = pkg_cache[adom]
+
+                for vdom in sel.get("vdoms") or ["root"]:
+                    matched_pkg = None
+                    for pkg in all_pkgs:
+                        scope = pkg.get("scope member") or pkg.get("scope_member") or []
+                        for m in scope:
+                            if (
+                                isinstance(m, dict)
+                                and m.get("name", "").lower() == device.lower()
+                                and (not m.get("vdom") or m.get("vdom") == vdom)
+                            ):
+                                matched_pkg = pkg
+                                break
+                        if matched_pkg:
+                            break
+
+                    if matched_pkg:
+                        packages.append(
+                            {
+                                "adom": adom,
+                                "name": matched_pkg["name"],
+                                "path": matched_pkg.get("path", matched_pkg["name"]),
+                                "device": device,
+                                "vdom": vdom,
+                            }
+                        )
+                    else:
+                        msg = (
+                            f"No policy package found for {device} / VDOM: {vdom}"
+                            f' in ADOM "{adom}"'
+                        )
+                        for flow in flows:
+                            error_results.append(
+                                {
+                                    "src": flow.get("src", ""),
+                                    "dst": flow.get("dst", ""),
+                                    "service": flow.get("service", ""),
+                                    "adom": adom,
+                                    "pkg_name": f"{device}/{vdom}",
+                                    "pkg_path": "",
+                                    "device": device,
+                                    "vdom": vdom,
+                                    "verdict": "ERROR",
+                                    "error": msg,
+                                    "matching_rules": [],
+                                    "modifiable_rules": [],
+                                    "notes": [msg],
+                                    "fortios_cli": "",
+                                    "object_plans": [],
+                                    "approval": {},
+                                    "alternative": None,
+                                    "permissiveness_warnings": [],
+                                    "zone_available": False,
+                                    "zone_verdict": "UNAVAILABLE",
+                                    "zone_src": [],
+                                    "zone_dst": [],
+                                    "zone_governing": [],
+                                    "zone_all_policies": [],
+                                    "path_in_path": None,
+                                    "path_confidence": "low",
+                                    "path_src_iface": None,
+                                    "path_dst_iface": None,
+                                    "path_src_route": None,
+                                    "path_dst_route": None,
+                                    "path_notes": [],
+                                    "path_src_reachable": False,
+                                    "path_dst_reachable": False,
+                                }
+                            )
+
+            # Fetch policies for each resolved package
             policies_by_pkg: dict[str, list] = {}
             for pkg in packages:
                 adom = pkg["adom"]
@@ -297,25 +452,20 @@ def rr_analyze():
                 svc_objects.extend(client.get_service_objects(adom))
                 svc_groups.extend(client.get_service_groups(adom))
 
-            # Fetch routing + interface data for path-relevance check.
-            # Resolve devices from package scope members; fall back to pkg["device"] if set.
+            # Fetch routing + interface data
             routing_by_device: dict[str, dict] = {}
             for pkg in packages:
                 adom = pkg["adom"]
                 path = pkg["path"]
                 device = pkg.get("device", "")
-
-                # Try to enumerate scope members of the package first
                 scope = client.get_pkg_scope_members(adom, path)
                 device_names = (
                     [m.get("name", m) if isinstance(m, dict) else str(m) for m in scope]
                     if scope
                     else []
                 )
-
                 if not device_names and device:
                     device_names = [device]
-
                 for dev_name in device_names:
                     if dev_name in routing_by_device:
                         continue
@@ -326,7 +476,6 @@ def rr_analyze():
                             "interfaces": ifaces,
                             "routes": routes,
                         }
-                        # Back-fill pkg["device"] so the engine can look it up
                         if not pkg.get("device"):
                             pkg["device"] = dev_name
                     except Exception:
@@ -337,15 +486,25 @@ def rr_analyze():
     except Exception as exc:
         return internal_api_error("rule_review", exc)
 
-    results = analyze_flows(
-        requested_flows=flows,
-        packages=packages,
-        policies_by_pkg=policies_by_pkg,
-        addr_objects=addr_objects,
-        addr_groups=addr_groups,
-        svc_objects=svc_objects,
-        svc_groups=svc_groups,
-        routing_by_device=routing_by_device,
-    )
+    analysis_results = []
+    if packages:
+        analysis_results = analyze_flows(
+            requested_flows=flows,
+            packages=packages,
+            policies_by_pkg=policies_by_pkg,
+            addr_objects=addr_objects,
+            addr_groups=addr_groups,
+            svc_objects=svc_objects,
+            svc_groups=svc_groups,
+            routing_by_device=routing_by_device,
+        )
 
-    return jsonify({"results": results, "zone_available": zone_script_available()})
+    all_results = error_results + analysis_results
+
+    return jsonify(
+        {
+            "results": all_results,
+            "metadata": metadata,
+            "zone_available": zone_script_available(),
+        }
+    )

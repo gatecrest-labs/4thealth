@@ -40,27 +40,25 @@ External API tokens (JSON):
 import os
 import time
 
-from flask import Blueprint, jsonify, render_template, request, session
-
-from app import config_diff_scheduler as _sched
-from app import device_review_scheduler as _dr_sched
+from flask import Blueprint, render_template, session, jsonify, request
+from app.decorators import admin_required as _admin_required
+from app.groups import list_groups, get_group, create_group, update_group, delete_group
 from app import registry
-from app import smtp_client as _smtp
-from app.api_tokens import create_token, list_tokens, revoke_token
+from app.auth import list_users
 from app.app_logger import (
     app_log,
-    clear_log_entries,
     get_log_entries,
     get_log_level,
     get_log_levels,
     set_log_level,
+    clear_log_entries,
 )
-from app.app_settings import get_all as get_all_settings
-from app.app_settings import set_setting
-from app.auth import list_users
-from app.decorators import admin_required as _admin_required
+from app.app_settings import get_all as get_all_settings, set_setting
+from app.api_tokens import create_token, list_tokens, revoke_token
+from app import smtp_client as _smtp
+from app import config_diff_scheduler as _sched
+from app import device_review_scheduler as _dr_sched
 from app.device_review import CHECKS_META as _DR_CHECKS_META
-from app.groups import create_group, delete_group, get_group, list_groups, update_group
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -192,7 +190,7 @@ def api_map_regions_get():
 @_admin_required
 def api_map_regions_put():
     """Update region colours and state assignments."""
-    from app.map_regions import is_valid_color, load, save, validate_regions
+    from app.map_regions import load, save, is_valid_color, validate_regions
 
     data = request.get_json(silent=True) or {}
     current = load()

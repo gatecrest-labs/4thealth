@@ -2,22 +2,20 @@ import threading
 import time
 from collections import defaultdict
 from urllib.parse import urlparse
-
 from flask import (
     Blueprint,
     current_app,
-    flash,
-    redirect,
     render_template,
     request,
-    session,
+    redirect,
     url_for,
+    session,
+    flash,
 )
-
-from app import registry
-from app.app_logger import app_log
 from app.auth import authenticate
 from app.groups import get_allowed_tabs
+from app.app_logger import app_log
+from app import registry
 
 # ---------------------------------------------------------------------------
 # In-memory sliding-window rate limiter for /login

@@ -12,6 +12,7 @@ import secrets
 import threading
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from app.atomic_io import atomic_write_json
 
@@ -78,7 +79,7 @@ def revoke_token(token_id: str) -> bool:
     return True
 
 
-def validate_token(raw: str) -> dict | None:
+def validate_token(raw: str) -> Optional[dict]:
     """Validate a bearer token. Returns the token record (without hash) or None."""
     if not raw:
         return None

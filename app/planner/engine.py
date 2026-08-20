@@ -24,6 +24,7 @@ from app.planner.matching import (
 )
 from app.planner.models import GroupAppendAlternative, InsertionPlan, ObjectPlan
 
+
 # ---------------------------------------------------------------------------
 # Object planning helpers
 # ---------------------------------------------------------------------------

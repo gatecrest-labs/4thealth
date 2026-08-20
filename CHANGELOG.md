@@ -10,6 +10,19 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 ## [Unreleased]
 
 ### Added
+- Rule Validation: firewall + VDOM selector in Step 2 (replaces policy-package picker); backend resolves device/VDOM → package server-side
+- Rule Validation: Change Request Details block (change number, owner, justification) in Step 1; used for export file naming
+- Rule Validation: FortiGate address and service group names accepted as flow src/dst/service — unresolved names return targeted ERROR results
+- Rule Validation: HTML report export (`<change_number>-report.html`) — self-contained printable document with change header, verdicts, and CLI blocks
+- Rule Validation: CLI config export (`<change_number>-config.txt`) — combined FortiOS CLI for all firewalls with actionable results
+- Rule Validation: metadata banner in Step 3 results showing change number, owner, and justification
+- Rule Validation: VDOM picker (multi-select checkboxes) shown when device has multiple VDOMs; hidden and auto-set to root for single-VDOM devices
+
+### Changed
+- Rule Validation: `rr_analyze` API now requires `selections` key (list of `{adom, device, vdoms}`) instead of `packages`; responds with `metadata` sibling alongside `results`
+- Rule Validation: result cards and detail modal show device/VDOM instead of package path
+
+### Added
 - **Rule Validation — Object planning:** each flow result now includes `object_plans` — a list of proposed FortiGate address/service objects with `reuse` vs. `create` decisions, standards-based naming (from `app/planner/data/naming.yaml`), and ready-to-paste CLI blocks displayed below the verdict.
 - **Rule Validation — Risk & approval chain:** each result includes an `approval` block: `risk_level` (critical / high / medium), required approvers, peer-review and security-review flags, change window, and SLA hours — derived from `app/planner/data/review_requirements.yaml` using zone-pair domain classification.
 - **Rule Validation — GroupAppendAlternative:** when a new rule would otherwise be needed, the engine scans existing policy packages for near-miss rules (rules that match on all dimensions except one address side). When found, an `alternative` block is returned with CLI to append to an existing address group or directly to the rule's address list — a smaller, lower-risk change than creating a new policy. Blast-radius count (how many other rules reference the same group) is shown.

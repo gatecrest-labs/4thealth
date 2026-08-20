@@ -15,8 +15,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.app_logger import app_log
 from app.atomic_io import atomic_write_json
+from app.app_logger import app_log
 
 _JOBS_PATH = Path(__file__).parent.parent / "config_diff_jobs.json"
 _lock = threading.Lock()
@@ -79,10 +79,7 @@ def create_job(data: dict) -> dict:
         "format": data.get("format", "pdf"),
         "email": data["email"],
         "enabled": bool(data.get("enabled", True)),
-        "created_at": datetime.datetime.now(datetime.UTC)
-        .replace(tzinfo=None)
-        .isoformat()
-        + "Z",
+        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
         "runs": [],
     }
     with _lock:
@@ -152,9 +149,7 @@ def _prune_runs(job_id: str, retention_days: int | None = None) -> None:
         if retention_days is not None
         else load_smtp_config().get("run_history_days", 30)
     )
-    cutoff = datetime.datetime.now(datetime.UTC).replace(
-        tzinfo=None
-    ) - datetime.timedelta(days=days)
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=days)
     with _lock:
         jobs = _load()
         for j in jobs:
@@ -184,7 +179,7 @@ def _try_acquire_job_lock(job_id: str):
     """Return an open file object with an exclusive lock, or None if already locked."""
     lock_path = Path(tempfile.gettempdir()) / f"4thealth_cdiff_{job_id}.lock"
     try:
-        fh = open(lock_path, "w")  # noqa: SIM115 -- intentionally returned open as an advisory lock handle for the caller to close
+        fh = open(lock_path, "w")
         fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return fh
     except OSError:
@@ -233,18 +228,13 @@ def _execute_job(job_id: str) -> None:
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
         record: dict[str, Any] = {
-            "ran_at": datetime.datetime.now(datetime.UTC)
-            .replace(tzinfo=None)
-            .isoformat()
-            + "Z",
+            "ran_at": datetime.datetime.utcnow().isoformat() + "Z",
             "status": "ok",
             "devices_total": len(results),
             "devices_with_changes": ok_count,
         }
 
-        generated_at = (
-            datetime.datetime.now(datetime.UTC).replace(tzinfo=None).isoformat() + "Z"
-        )
+        generated_at = datetime.datetime.utcnow().isoformat() + "Z"
         subject = f"4THealth Config-Delta — {adom} — {generated_at[:10]}"
         body_html = _build_summary_html(adom, results)
         attachment = _build_attachment(adom, fmt, results, generated_at)
@@ -263,10 +253,7 @@ def _execute_job(job_id: str) -> None:
 
     except Exception as exc:
         record = {
-            "ran_at": datetime.datetime.now(datetime.UTC)
-            .replace(tzinfo=None)
-            .isoformat()
-            + "Z",
+            "ran_at": datetime.datetime.utcnow().isoformat() + "Z",
             "status": "error",
             "error": str(exc),
         }

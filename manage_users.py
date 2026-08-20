@@ -6,9 +6,8 @@ import sys
 
 
 def cmd_add(args):
-    import getpass
-
     from app.auth import add_user
+    import getpass
 
     password = args.password or getpass.getpass(f"Password for {args.username}: ")
     if not password:

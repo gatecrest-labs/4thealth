@@ -13,6 +13,115 @@ more FortiGate policy packages, then determines:
 from __future__ import annotations
 
 import ipaddress
+import re as _re
+from typing import Any, Optional
+
+
+# ── Group name helpers ────────────────────────────────────────────────────────
+
+
+def _looks_like_fgt_name(val: str) -> bool:
+    """Return True if val looks like a FortiGate object/group name (not an IP, CIDR, or port spec)."""
+    if not val or val.lower() == "any":
+        return False
+    if _re.match(r"^\d{1,3}(\.\d{1,3}){3}(/\d+)?$", val):
+        return False
+    if _re.match(r"^(tcp|udp|icmp|ip)/\d+", val, _re.I):
+        return False
+    if val.isdigit():
+        return False
+    return bool(_re.match(r"^[A-Za-z][A-Za-z0-9_\-\.]*$", val))
+
+
+def _expand_addr_name(
+    name: str, addr_objects: list, addr_groups: list
+) -> list[str] | None:
+    """Resolve a FortiGate address object or group name to a list of CIDR strings.
+
+    Returns None if the name is not found in either list.
+    Returns an empty list if the name is found but has no resolvable subnets.
+    """
+    norm = name.strip().lower()
+
+    def _obj_to_cidr(obj: dict) -> str | None:
+        subnet = obj.get("subnet") or ""
+        if subnet:
+            parts = str(subnet).split()
+            return f"{parts[0]}/{parts[1]}" if len(parts) == 2 else str(subnet)
+        fqdn = obj.get("fqdn") or ""
+        return fqdn if fqdn else None
+
+    obj_index = {
+        o["name"].lower(): o
+        for o in addr_objects
+        if isinstance(o, dict) and o.get("name")
+    }
+
+    # Try addr_groups first
+    for grp in addr_groups:
+        if not isinstance(grp, dict) or grp.get("name", "").lower() != norm:
+            continue
+        cidrs = []
+        for member in grp.get("member") or []:
+            m_name = (
+                member.get("name", "") if isinstance(member, dict) else str(member)
+            ).lower()
+            if m_name in obj_index:
+                cidr = _obj_to_cidr(obj_index[m_name])
+                if cidr:
+                    cidrs.append(cidr)
+        return cidrs  # found group (may be empty list)
+
+    # Try addr_objects directly
+    if norm in obj_index:
+        cidr = _obj_to_cidr(obj_index[norm])
+        return [cidr] if cidr else []
+
+    return None  # not found
+
+
+def _expand_svc_name(
+    name: str, svc_objects: list, svc_groups: list
+) -> list[str] | None:
+    """Resolve a FortiGate service object or group name to a list of port-spec strings.
+
+    Returns None if not found. Returns [] if found but no port ranges extracted.
+    """
+    norm = name.strip().lower()
+
+    def _obj_to_specs(obj: dict) -> list[str]:
+        specs = []
+        tcp = obj.get("tcp-portrange") or ""
+        udp = obj.get("udp-portrange") or ""
+        for proto, raw in (("tcp", tcp), ("udp", udp)):
+            first_range = str(raw).split()[0].split(":")[0] if raw else ""
+            if first_range:
+                specs.append(f"{proto}/{first_range}")
+        return specs
+
+    svc_index = {
+        o["name"].lower(): o
+        for o in svc_objects
+        if isinstance(o, dict) and o.get("name")
+    }
+
+    for grp in svc_groups:
+        if not isinstance(grp, dict) or grp.get("name", "").lower() != norm:
+            continue
+        specs = []
+        for member in grp.get("member") or []:
+            m_name = (
+                member.get("name", "") if isinstance(member, dict) else str(member)
+            ).lower()
+            if m_name in svc_index:
+                specs.extend(_obj_to_specs(svc_index[m_name]))
+        return specs
+
+    if norm in svc_index:
+        return _obj_to_specs(svc_index[norm])
+
+    return None
+
 
 # ── Zone policy integration ───────────────────────────────────────────────────
 # Uses app.zone_db — the embedded segmentation policy engine that reads
@@ -34,6 +143,51 @@ def _zone_unavailable() -> dict:
         "dst_zones": [],
         "governing": [],
         "all_policies": [],
+    }
+
+
+def _group_error_result(flow: dict, field: str, name: str, adom: str) -> dict:
+    """Return an ERROR result for an unresolved address or service group name."""
+    field_label = {"src": "Source", "dst": "Destination", "service": "Service"}[field]
+    obj_type = "service group" if field == "service" else "address group"
+    msg = (
+        f'{field_label} group "{name}" not found in ADOM "{adom}" — '
+        f"check the Rule Review tab for valid {obj_type} names"
+    )
+    return {
+        "src": flow.get("src", ""),
+        "dst": flow.get("dst", ""),
+        "service": flow.get("service", ""),
+        "adom": adom,
+        "pkg_name": "",
+        "pkg_path": "",
+        "device": "",
+        "vdom": "root",
+        "verdict": "ERROR",
+        "error": msg,
+        "matching_rules": [],
+        "modifiable_rules": [],
+        "notes": [msg],
+        "fortios_cli": "",
+        "object_plans": [],
+        "approval": {},
+        "alternative": None,
+        "permissiveness_warnings": [],
+        "zone_available": False,
+        "zone_verdict": "UNAVAILABLE",
+        "zone_src": [],
+        "zone_dst": [],
+        "zone_governing": [],
+        "zone_all_policies": [],
+        "path_in_path": None,
+        "path_confidence": "low",
+        "path_src_iface": None,
+        "path_dst_iface": None,
+        "path_src_route": None,
+        "path_dst_route": None,
+        "path_notes": [],
+        "path_src_reachable": False,
+        "path_dst_reachable": False,
     }
 
 
@@ -206,8 +360,8 @@ def check_path_relevance(
                 best_name = iface_name
         return best_name, best_prefix
 
-    src_iface, _src_prefix = best_iface_match(src)
-    dst_iface, _dst_prefix = best_iface_match(dst)
+    src_iface, src_prefix = best_iface_match(src)
+    dst_iface, dst_prefix = best_iface_match(dst)
 
     if src_iface:
         result["src_iface"] = src_iface
@@ -217,7 +371,7 @@ def check_path_relevance(
         result["dst_reachable"] = True
 
     # Route table lookup
-    def best_route(addr: str) -> dict | None:
+    def best_route(addr: str) -> Optional[dict]:
         addr_part = addr.split("/")[0]
         try:
             target_ip = ipaddress.ip_address(addr_part)
@@ -316,8 +470,8 @@ def check_path_relevance(
 
 # ── Planner-based analysis ────────────────────────────────────────────────────
 
-from app.planner.engine import plan_flow
-from app.planner.fetch import build_snapshot
+from app.planner.engine import plan_flow  # noqa: E402
+from app.planner.fetch import build_snapshot  # noqa: E402
 
 
 def analyze_flows(
@@ -345,7 +499,67 @@ def analyze_flows(
         svc_raw = flow.get("service", "").strip()
         comment = flow.get("comment", "")
 
-        # Zone verdict — once per flow, shared across all packages
+        # ── Group name expansion ──────────────────────────────────────────────
+        srcs: list[str] = [src_raw]
+        dsts: list[str] = [dst_raw]
+        svcs: list[str] = [svc_raw] if svc_raw else [""]
+        flow_warnings: list[str] = []  # propagated to every result for this flow
+
+        if _looks_like_fgt_name(src_raw):
+            expanded = _expand_addr_name(src_raw, addr_objects, addr_groups)
+            if expanded is None:
+                adom = packages[0]["adom"] if packages else "unknown"
+                results.append(_group_error_result(flow, "src", src_raw, adom))
+                continue
+            srcs = expanded or [src_raw]
+            # Warn if any group members could not be resolved
+            _norm = src_raw.strip().lower()
+            for _grp in addr_groups:
+                if isinstance(_grp, dict) and _grp.get("name", "").lower() == _norm:
+                    _total = len(_grp.get("member") or [])
+                    if _total > len(expanded):
+                        flow_warnings.append(
+                            f'Address group "{src_raw}" has {_total - len(expanded)}'
+                            f" unresolvable member(s) (nested groups or IP ranges);"
+                            f" analysis may be incomplete."
+                        )
+                    break
+
+        if _looks_like_fgt_name(dst_raw):
+            expanded = _expand_addr_name(dst_raw, addr_objects, addr_groups)
+            if expanded is None:
+                adom = packages[0]["adom"] if packages else "unknown"
+                results.append(_group_error_result(flow, "dst", dst_raw, adom))
+                continue
+            dsts = expanded or [dst_raw]
+            # Warn if any group members could not be resolved
+            _norm = dst_raw.strip().lower()
+            for _grp in addr_groups:
+                if isinstance(_grp, dict) and _grp.get("name", "").lower() == _norm:
+                    _total = len(_grp.get("member") or [])
+                    if _total > len(expanded):
+                        flow_warnings.append(
+                            f'Address group "{dst_raw}" has {_total - len(expanded)}'
+                            f" unresolvable member(s) (nested groups or IP ranges);"
+                            f" analysis may be incomplete."
+                        )
+                    break
+
+        if svc_raw and _looks_like_fgt_name(svc_raw):
+            try:
+                from app.planner.matching import parse_service_request
+
+                parse_service_request(svc_raw)
+                # parse succeeded — engine handles it natively
+            except Exception:
+                expanded_svc = _expand_svc_name(svc_raw, svc_objects, svc_groups)
+                if expanded_svc is None:
+                    adom = packages[0]["adom"] if packages else "unknown"
+                    results.append(_group_error_result(flow, "service", svc_raw, adom))
+                    continue
+                svcs = expanded_svc or [svc_raw]
+
+        # ── Zone verdict (once per original flow) ────────────────────────────
         zone_result = query_zone_policy(src_raw, dst_raw, svc_raw)
 
         # Build zone_domains from zone_db for risk classification
@@ -361,61 +575,88 @@ def analyze_flows(
         except Exception:
             pass
 
-        for pkg in packages:
-            adom = pkg["adom"]
-            pkg_path = pkg["path"]
-            pkg_name = pkg["name"]
-            device = pkg.get("device", "")
-            pkg_key = f"{adom}/{pkg_path}"
-
-            # Path-relevance check for this device
-            dev_key = device or pkg_name
-            if dev_key in routing:
-                path_check = check_path_relevance(
-                    src_raw,
-                    dst_raw,
-                    routing[dev_key].get("interfaces", []),
-                    routing[dev_key].get("routes", []),
+        # ── Build snapshot cache once per package (invariant per pkg_key) ───────
+        snapshot_cache: dict[str, Any] = {}
+        for _pkg in packages:
+            _pkg_adom = _pkg["adom"]
+            _pkg_path = _pkg["path"]
+            _pkg_name = _pkg["name"]
+            _pkg_device = _pkg.get("device", "")
+            _pkg_key = f"{_pkg_adom}/{_pkg_path}"
+            _pkg_dev_key = _pkg_device or _pkg_name
+            if _pkg_key not in snapshot_cache:
+                snapshot_cache[_pkg_key] = build_snapshot(
+                    adom=_pkg_adom,
+                    device=_pkg_dev_key,
+                    addr_objects=list(addr_objects),
+                    addr_groups=list(addr_groups),
+                    svc_objects=list(svc_objects),
+                    svc_groups=list(svc_groups),
+                    policies_by_package={_pkg_key: policies_by_pkg.get(_pkg_key, [])},
+                    interfaces=routing.get(_pkg_dev_key, {}).get("interfaces", []),
+                    routing_table=routing.get(_pkg_dev_key, {}).get("routes", []),
                 )
-            else:
-                path_check = {
-                    "in_path": None,
-                    "confidence": "low",
-                    "src_reachable": False,
-                    "dst_reachable": False,
-                    "src_iface": None,
-                    "dst_iface": None,
-                    "src_route": None,
-                    "dst_route": None,
-                    "notes": ["Routing data not available for this device."],
-                }
 
-            snapshot = build_snapshot(
-                adom=adom,
-                device=device or pkg_name,
-                addr_objects=list(addr_objects),
-                addr_groups=list(addr_groups),
-                svc_objects=list(svc_objects),
-                svc_groups=list(svc_groups),
-                policies_by_package={pkg_key: policies_by_pkg.get(pkg_key, [])},
-                interfaces=routing.get(dev_key, {}).get("interfaces", []),
-                routing_table=routing.get(dev_key, {}).get("routes", []),
-            )
+        # ── Cartesian guard — cap src × dst × svc explosion ──────────────────
+        COMBO_LIMIT = 20
+        combinations = [(s, d, v) for s in srcs for d in dsts for v in svcs]
+        truncated = len(combinations) > COMBO_LIMIT
+        if truncated:
+            combinations = combinations[:COMBO_LIMIT]
 
-            row = plan_flow(
-                src=src_raw,
-                dst=dst_raw,
-                service=svc_raw,
-                snapshot=snapshot,
-                zone_verdict=zone_result,
-                path_check=path_check,
-                pkg_key=pkg_key,
-                pkg_name=pkg_name,
-                pkg_path=pkg_path,
-                ticket_id=flow.get("ticket_id", ""),
-                zone_domains=zone_domains,
-            )
-            row["comment"] = comment
-            results.append(row)
+        # ── Run plan_flow for each expanded src × dst × svc combination ──────
+        for src, dst, svc in combinations:
+            for pkg in packages:
+                adom = pkg["adom"]
+                pkg_path = pkg["path"]
+                pkg_name = pkg["name"]
+                device = pkg.get("device", "")
+                vdom = pkg.get("vdom", "root")
+                pkg_key = f"{adom}/{pkg_path}"
+
+                dev_key = device or pkg_name
+                if dev_key in routing:
+                    path_check = check_path_relevance(
+                        src,
+                        dst,
+                        routing[dev_key].get("interfaces", []),
+                        routing[dev_key].get("routes", []),
+                    )
+                else:
+                    path_check = {
+                        "in_path": None,
+                        "confidence": "low",
+                        "src_reachable": False,
+                        "dst_reachable": False,
+                        "src_iface": None,
+                        "dst_iface": None,
+                        "src_route": None,
+                        "dst_route": None,
+                        "notes": ["Routing data not available for this device."],
+                    }
+
+                row = plan_flow(
+                    src=src,
+                    dst=dst,
+                    service=svc,
+                    snapshot=snapshot_cache[pkg_key],
+                    zone_verdict=zone_result,
+                    path_check=path_check,
+                    pkg_key=pkg_key,
+                    pkg_name=pkg_name,
+                    pkg_path=pkg_path,
+                    ticket_id=flow.get("ticket_id", ""),
+                    zone_domains=zone_domains,
+                )
+                row["comment"] = comment
+                row["vdom"] = vdom
+                if flow_warnings:
+                    row["permissiveness_warnings"].extend(flow_warnings)
+                if truncated:
+                    row["permissiveness_warnings"].append(
+                        f"Group expansion produced >{COMBO_LIMIT} src×dst×service"
+                        f" combinations; truncated to {COMBO_LIMIT}."
+                    )
+                results.append(row)
 
     return results

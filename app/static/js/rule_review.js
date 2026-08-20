@@ -7,10 +7,10 @@ function esc(s) {
 }
 
 /* ── State ─────────────────────────────────────────────────────────────────── */
-let flows     = [];   // [{src, dst, service, comment}, ...]
-let packages  = [];   // [{adom, name, path}, ...]
-let results   = [];   // analysis results from server
-let pkgPaths  = {};   // package display name → path
+let flows      = [];   // [{src, dst, service, comment}, ...]
+let selections = [];   // [{adom, device, vdoms}]
+let results    = [];   // analysis results from server
+let metadata   = {};   // {change_number, owner, justification}
 
 /* ── ADOM loader ────────────────────────────────────────────────────────────── */
 async function loadAdoms() {
@@ -28,28 +28,55 @@ async function loadAdoms() {
   } catch (_) {}
 }
 
-async function loadPackages(adom) {
-  const sel = document.getElementById('rrPackage');
+async function loadDevices(adom) {
+  const sel = document.getElementById('rrDevice');
   sel.innerHTML = '<option value="">Loading…</option>';
   sel.disabled = true;
-  pkgPaths = {};
-  document.getElementById('rrAddPkgBtn').disabled = true;
+  document.getElementById('rrAddDevBtn').disabled = true;
+  document.getElementById('rrVdomRow').style.display = 'none';
   try {
-    const resp = await fetch(`/api/rule-review/adoms/${encodeURIComponent(adom)}/packages`);
+    const resp = await fetch(`/api/rule-review/adoms/${encodeURIComponent(adom)}/devices`);
     if (resp.status === 401) { location.href = '/login'; return; }
-    const pkgs = await resp.json();
-    sel.innerHTML = '<option value="">— select package —</option>';
-    if (Array.isArray(pkgs)) {
-      pkgs.forEach(p => {
-        pkgPaths[p.name] = p.path || p.name;
+    const devices = await resp.json();
+    sel.innerHTML = '<option value="">— select firewall —</option>';
+    if (Array.isArray(devices)) {
+      devices.forEach(d => {
         const opt = document.createElement('option');
-        opt.value = p.name; opt.textContent = p.name;
+        opt.value = d.name;
+        opt.textContent = d.ip ? `${d.name} (${d.ip})` : d.name;
         sel.appendChild(opt);
       });
     }
     sel.disabled = false;
   } catch (_) {
     sel.innerHTML = '<option value="">Failed to load</option>';
+  }
+}
+
+async function loadVdoms(adom, device) {
+  const vdomRow    = document.getElementById('rrVdomRow');
+  const vdomChecks = document.getElementById('rrVdomChecks');
+  document.getElementById('rrAddDevBtn').disabled = true;
+  vdomRow.style.display = 'none';
+  vdomChecks.innerHTML  = '';
+  try {
+    const resp = await fetch(
+      `/api/rule-review/adoms/${encodeURIComponent(adom)}/devices/${encodeURIComponent(device)}/vdoms`
+    );
+    if (resp.status === 401) { location.href = '/login'; return; }
+    const vdoms = await resp.json();
+    if (Array.isArray(vdoms) && !(vdoms.length === 1 && vdoms[0] === 'root')) {
+      vdoms.forEach(v => {
+        const label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;gap:.3rem;font-size:.85rem;cursor:pointer';
+        label.innerHTML = `<input type="checkbox" value="${esc(v)}" checked> ${esc(v)}`;
+        vdomChecks.appendChild(label);
+      });
+      vdomRow.style.display = '';
+    }
+    document.getElementById('rrAddDevBtn').disabled = false;
+  } catch (_) {
+    document.getElementById('rrAddDevBtn').disabled = false;
   }
 }
 
@@ -113,34 +140,64 @@ function clearFlowInputs() {
   });
 }
 
-/* ── Package management ─────────────────────────────────────────────────────── */
-function renderPackages() {
-  const tbody = document.getElementById('rrPkgTbody');
-  const wrap  = document.getElementById('rrPkgTableWrap');
-  if (!packages.length) { wrap.style.display = 'none'; tbody.innerHTML = ''; updateReviewBtn(); return; }
+/* ── Change Request metadata ────────────────────────────────────────────── */
+function getMetadata() {
+  return {
+    change_number: (document.getElementById('rrChangeNumber').value || '').trim(),
+    owner:         (document.getElementById('rrOwner').value || '').trim(),
+    justification: (document.getElementById('rrJustification').value || '').trim(),
+  };
+}
+
+function getFilePrefix() {
+  const cn = (document.getElementById('rrChangeNumber').value || '').trim();
+  if (cn) return cn;
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `rule-analysis-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+/* ── Selection (firewall/VDOM) management ───────────────────────────────── */
+function renderSelections() {
+  const tbody = document.getElementById('rrSelectTbody');
+  const wrap  = document.getElementById('rrSelectTableWrap');
+  if (!selections.length) { wrap.style.display = 'none'; tbody.innerHTML = ''; updateReviewBtn(); return; }
   wrap.style.display = '';
-  tbody.innerHTML = packages.map((p, i) => `
+  tbody.innerHTML = selections.map((s, i) => `
     <tr>
       <td style="color:var(--text-muted);font-size:.8rem">${i + 1}</td>
-      <td>${esc(p.adom)}</td>
-      <td>${esc(p.name)}</td>
-      <td><button class="btn btn-sm btn-ghost rr-remove-btn" data-type="pkg" data-idx="${i}" title="Remove">&#10005;</button></td>
+      <td>${esc(s.device)}</td>
+      <td><span class="text-muted" style="font-size:.85rem">${esc(s.vdoms.join(', '))}</span></td>
+      <td>${esc(s.adom)}</td>
+      <td><button class="btn btn-sm btn-ghost rr-remove-btn" data-type="sel" data-idx="${i}" title="Remove">&#10005;</button></td>
     </tr>`).join('');
   updateReviewBtn();
 }
 
-function addPackage() {
-  const adom    = document.getElementById('rrAdom').value;
-  const pkgName = document.getElementById('rrPackage').value;
-  if (!adom || !pkgName) return;
-  const path = pkgPaths[pkgName] || pkgName;
-  if (packages.some(p => p.adom === adom && p.path === path)) return;
-  packages.push({ adom, name: pkgName, path });
-  renderPackages();
+function addSelection() {
+  const adom   = document.getElementById('rrAdom').value;
+  const device = document.getElementById('rrDevice').value;
+  if (!adom || !device) return;
+
+  const vdomRow  = document.getElementById('rrVdomRow');
+  let vdoms;
+  if (vdomRow.style.display === 'none') {
+    vdoms = ['root'];
+  } else {
+    const checks = document.querySelectorAll('#rrVdomChecks input[type=checkbox]:checked');
+    vdoms = Array.from(checks).map(c => c.value);
+    if (!vdoms.length) vdoms = ['root'];
+  }
+
+  // Dedup: skip same adom+device+vdoms combo
+  const key = `${adom}|${device}|${vdoms.sort().join(',')}`;
+  if (selections.some(s => `${s.adom}|${s.device}|${s.vdoms.slice().sort().join(',')}` === key)) return;
+  selections.push({ adom, device, vdoms });
+  renderSelections();
 }
 
 function updateReviewBtn() {
-  document.getElementById('rrReviewBtn').disabled = !(flows.length && packages.length);
+  document.getElementById('rrReviewBtn').disabled = !(flows.length && selections.length);
 }
 
 /* ── CSV / XLSX import ──────────────────────────────────────────────────────── */
@@ -179,19 +236,20 @@ async function runReview() {
     const resp = await fetch('/api/rule-review/analyze', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ flows, packages }),
+      body:    JSON.stringify({ flows, selections, metadata: getMetadata() }),
     });
     const data = await resp.json();
     if (!resp.ok) { showError(data.error || 'Analysis failed.'); return; }
 
-    results = data.results || [];
+    results  = data.results  || [];
+    metadata = data.metadata || {};
     renderResults(data.zone_available);
     document.getElementById('rrResults').style.display = '';
     document.getElementById('rrStatusLine').textContent = `Last run: ${new Date().toLocaleString()}`;
   } catch (e) {
     showError(e.message);
   } finally {
-    document.getElementById('rrReviewBtn').disabled = !(flows.length && packages.length);
+    document.getElementById('rrReviewBtn').disabled = !(flows.length && selections.length);
     document.getElementById('rrRunning').style.display = 'none';
   }
 }
@@ -208,11 +266,13 @@ const VERDICT_LABEL = {
   EXPLICITLY_DENIED: 'EXPLICITLY DENIED',
   MODIFIABLE:        'MODIFIABLE',
   NEW_RULE_NEEDED:   'NEW RULE NEEDED',
+  ERROR:             'Error',
 };
 
 function verdictClass(v) {
   return { PERMITTED: 'ALLOWED', EXPLICITLY_DENIED: 'BLOCKED',
-           MODIFIABLE: 'UNKNOWN', NEW_RULE_NEEDED: 'UNKNOWN' }[v] || 'UNKNOWN';
+           MODIFIABLE: 'UNKNOWN', NEW_RULE_NEEDED: 'UNKNOWN',
+           ERROR: 'ERROR' }[v] || 'UNKNOWN';
 }
 
 function zoneClass(v) {
@@ -256,8 +316,21 @@ function renderResults(zoneAvail) {
   const container = document.getElementById('rrResultCards');
   container.innerHTML = '';
 
+  // Metadata banner (shown only if any field is populated)
+  const metaBanner = document.getElementById('rrMetaBanner');
+  if (metadata.change_number || metadata.owner || metadata.justification) {
+    const parts = [];
+    if (metadata.change_number) parts.push(`<strong>${esc(metadata.change_number)}</strong>`);
+    if (metadata.owner)         parts.push(`Owner: ${esc(metadata.owner)}`);
+    if (metadata.justification) parts.push(`<em>${esc(metadata.justification)}</em>`);
+    metaBanner.innerHTML = parts.join(' &nbsp;|&nbsp; ');
+    metaBanner.style.display = '';
+  } else {
+    metaBanner.style.display = 'none';
+  }
+
   // Summary counts
-  const vc = { PERMITTED: 0, EXPLICITLY_DENIED: 0, MODIFIABLE: 0, NEW_RULE_NEEDED: 0 };
+  const vc = { PERMITTED: 0, EXPLICITLY_DENIED: 0, MODIFIABLE: 0, NEW_RULE_NEEDED: 0, ERROR: 0 };
   const zc = { ALLOWED: 0, BLOCKED: 0, UNKNOWN: 0 };
   results.forEach(r => {
     if (vc[r.verdict] !== undefined) vc[r.verdict]++;
@@ -270,6 +343,7 @@ function renderResults(zoneAvail) {
   if (vc.NEW_RULE_NEEDED)   barHtml += `<span class="rr-summary-chip chip-unknown">${vc.NEW_RULE_NEEDED} New Rule Needed</span>`;
   if (vc.MODIFIABLE)        barHtml += `<span class="rr-summary-chip chip-warn">${vc.MODIFIABLE} Modifiable</span>`;
   if (vc.EXPLICITLY_DENIED) barHtml += `<span class="rr-summary-chip chip-blocked">${vc.EXPLICITLY_DENIED} Explicitly Denied</span>`;
+  if (vc.ERROR)             barHtml += `<span class="rr-summary-chip chip-error">${vc.ERROR} Error</span>`;
   if (zoneAvail) {
     if (zc.BLOCKED)  barHtml += `<span class="rr-summary-chip chip-blocked">Zone: ${zc.BLOCKED} Blocked</span>`;
     if (zc.UNKNOWN)  barHtml += `<span class="rr-summary-chip chip-warn">Zone: ${zc.UNKNOWN} No Rule</span>`;
@@ -392,7 +466,7 @@ function renderResults(zoneAvail) {
           <span class="rr-arrow">→</span>
           <code>${esc(r.dst)}</code>
           ${svcBadge}
-          <span class="rr-pkg-label">${esc(r.adom)} / ${esc(r.pkg_name)}</span>
+          <span class="rr-pkg-label">${r.device ? esc(r.device) + (r.vdom ? ' / ' + esc(r.vdom) : '') : esc(r.adom) + ' / ' + esc(r.pkg_name)}</span>
         </div>
         <div class="rr-card-badges">
           ${pathBadge}
@@ -428,6 +502,7 @@ function renderResults(zoneAvail) {
   } else {
     cliPanel.style.display = 'none';
   }
+  document.getElementById('rrExportToolbar').style.display = results.length ? '' : 'none';
 }
 
 /* ── Detail modal ───────────────────────────────────────────────────────────── */
@@ -446,8 +521,8 @@ function showDetail(idx) {
       <div class="rr-detail-row"><span class="rr-detail-label">Destination</span><code>${esc(r.dst)}</code></div>
       <div class="rr-detail-row"><span class="rr-detail-label">Service</span>${esc(r.service) || '<em>any</em>'}</div>
       <div class="rr-detail-row"><span class="rr-detail-label">ADOM</span>${esc(r.adom)}</div>
-      <div class="rr-detail-row"><span class="rr-detail-label">Package</span>${esc(r.pkg_name)}</div>
       ${r.device ? `<div class="rr-detail-row"><span class="rr-detail-label">Device</span>${esc(r.device)}</div>` : ''}
+      ${r.vdom ? `<div class="rr-detail-row"><span class="rr-detail-label">VDOM</span>${esc(r.vdom)}</div>` : `<div class="rr-detail-row"><span class="rr-detail-label">Package</span>${esc(r.pkg_name)}</div>`}
       <div class="rr-detail-row"><span class="rr-detail-label">FGT Verdict</span>
         <span class="verdict-${vClass}" style="font-weight:700">${esc(vLabel)}</span></div>
     </div>`;
@@ -554,7 +629,7 @@ function showDetail(idx) {
   html += renderPermissivenessWarnings(r.permissiveness_warnings);
 
   document.getElementById('rrModalTitle').textContent =
-    `${r.src} → ${r.dst}${r.service ? ' : ' + r.service : ''} — ${r.pkg_name}`;
+    `${r.src} → ${r.dst}${r.service ? ' : ' + r.service : ''} — ${r.device || r.pkg_name}`;
   document.getElementById('rrModalBody').innerHTML = html;
   document.getElementById('rrDetailModal').style.display = '';
 }
@@ -632,17 +707,25 @@ function renderPermissivenessWarnings(warnings) {
 
 /* ── Clear all ──────────────────────────────────────────────────────────────── */
 function clearAll() {
-  flows    = [];
-  packages = [];
-  results  = [];
+  flows      = [];
+  selections = [];
+  results    = [];
+  metadata   = {};
   renderFlows();
-  renderPackages();
-  document.getElementById('rrResults').style.display  = 'none';
-  document.getElementById('rrCliPanel').style.display = 'none';
-  document.getElementById('rrError').style.display    = 'none';
+  renderSelections();
+  document.getElementById('rrResults').style.display    = 'none';
+  document.getElementById('rrCliPanel').style.display   = 'none';
+  document.getElementById('rrExportToolbar').style.display = 'none';
+  document.getElementById('rrError').style.display      = 'none';
+  document.getElementById('rrMetaBanner').style.display = 'none';
   document.getElementById('rrStatusLine').textContent = '';
   document.getElementById('rrZoneStatus').style.display = 'none';
   clearFlowInputs();
+  document.getElementById('rrChangeNumber').value = '';
+  document.getElementById('rrOwner').value = '';
+  document.getElementById('rrJustification').value = '';
+  document.getElementById('rrMetaBody').style.display = 'none';
+  document.getElementById('rrMetaArrow').innerHTML = '&#9654;';
 }
 
 /* ── CLI copy / download ────────────────────────────────────────────────────── */
@@ -661,19 +744,210 @@ function downloadCli() {
   URL.revokeObjectURL(a.href);
 }
 
+function downloadHtmlReport() {
+  const prefix = getFilePrefix();
+  const now    = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  const user   = (typeof window._username !== 'undefined') ? window._username : '';
+
+  const VERDICT_CSS = {
+    PERMITTED:         'color:#1a7f3c;font-weight:700',
+    EXPLICITLY_DENIED: 'color:#c0392b;font-weight:700',
+    MODIFIABLE:        'color:#1a6fa0;font-weight:700',
+    NEW_RULE_NEEDED:   'color:#d35400;font-weight:700',
+    ERROR:             'color:#7f8c8d;font-weight:700',
+  };
+
+  function flowSections() {
+    const groups = new Map();
+    results.forEach(r => {
+      const key = `${r.src}||${r.dst}||${r.service}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
+    });
+
+    let html = '';
+    let flowIdx = 1;
+    groups.forEach((fwResults, key) => {
+      const [src, dst, svc] = key.split('||');
+      html += `<section class="flow-section">
+        <h2>Flow ${flowIdx++}: ${esc(src)} &rarr; ${esc(dst)}${svc ? ' &nbsp;<code>' + esc(svc) + '</code>' : ''}</h2>`;
+
+      fwResults.forEach(r => {
+        const vstyle = VERDICT_CSS[r.verdict] || 'color:#555;font-weight:700';
+        const label  = verdictLabel(r.verdict);
+        const devLabel = r.device ? `${esc(r.device)}${r.vdom ? ' / ' + esc(r.vdom) : ''}` : esc(r.pkg_name);
+        html += `<details open class="fw-result">
+          <summary><span style="${vstyle}">[${esc(label)}]</span> ${devLabel}</summary>`;
+
+        if (r.verdict === 'ERROR') {
+          html += `<p class="error-msg">&#9888; ${esc(r.error || r.notes?.[0] || 'Error')}</p>`;
+        }
+
+        if (r.matching_rules && r.matching_rules.length) {
+          html += `<p><strong>Matched rule${r.matching_rules.length > 1 ? 's' : ''}:</strong> ` +
+            r.matching_rules.map(m => `#${esc(m.id)} ${esc(m.name || '')} [${esc(m.action)}]`).join(', ') +
+            `</p>`;
+        }
+
+        if (r.path_in_path === true)  html += `<p class="path-ok">&#10003; In path: src via ${esc(r.path_src_iface||'?')}, dst via ${esc(r.path_dst_iface||'?')}</p>`;
+        if (r.path_in_path === false) html += `<p class="path-warn">&#9888; May not be in path — proceed with caution</p>`;
+
+        if ((r.verdict === 'NEW_RULE_NEEDED' || r.verdict === 'MODIFIABLE') && r.fortios_cli) {
+          html += `<h4>Option A — Recommended action</h4><pre>${esc(r.fortios_cli)}</pre>`;
+        }
+        if (r.alternative && r.alternative.group_cli) {
+          html += `<h4>Option B — Extend group ${esc(r.alternative.group_name || '')}</h4>` +
+            `<pre>${esc(r.alternative.group_cli)}</pre>`;
+          if (r.alternative.affected_count > 0) {
+            html += `<p class="warn-note">&#9888; Affects ${r.alternative.affected_count} other rule(s).</p>`;
+          }
+        }
+
+        html += `</details>`;
+      });
+      html += `</section>`;
+    });
+    return html;
+  }
+
+  const metaRows = [
+    metadata.change_number ? `<tr><td>Change</td><td>${esc(metadata.change_number)}</td></tr>` : '',
+    metadata.owner         ? `<tr><td>Owner</td><td>${esc(metadata.owner)}</td></tr>` : '',
+    `<tr><td>Generated</td><td>${esc(now)}</td></tr>`,
+    user                   ? `<tr><td>Generated by</td><td>${esc(user)}</td></tr>` : '',
+    metadata.justification ? `<tr><td>Justification</td><td>${esc(metadata.justification)}</td></tr>` : '',
+  ].filter(Boolean).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rule Validation Report${metadata.change_number ? ' — ' + esc(metadata.change_number) : ''}</title>
+<style>
+  body{font-family:Segoe UI,Arial,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem;color:#222;font-size:.95rem}
+  h1{margin-bottom:.25rem;color:#1a2a40;font-size:1.4rem}
+  h2{margin:1.5rem 0 .5rem;font-size:1.1rem;border-bottom:2px solid #ddd;padding-bottom:.25rem}
+  h4{margin:.75rem 0 .25rem;font-size:.92rem;color:#333}
+  table.meta{border-collapse:collapse;margin-bottom:1.5rem;font-size:.88rem}
+  table.meta td{padding:.25rem .75rem .25rem 0;vertical-align:top}
+  table.meta td:first-child{font-weight:600;color:#555;white-space:nowrap;padding-right:1rem}
+  details.fw-result{margin:.5rem 0;border:1px solid #ddd;border-radius:4px;padding:.5rem .75rem}
+  details.fw-result summary{cursor:pointer;font-size:.93rem;user-select:none}
+  pre{background:#f5f5f5;padding:.6rem .85rem;border-radius:4px;font-size:.8rem;white-space:pre-wrap;overflow-x:auto;margin:.35rem 0 .5rem}
+  .path-ok{color:#1a7f3c;margin:.25rem 0}
+  .path-warn{color:#d35400;margin:.25rem 0}
+  .error-msg{color:#c0392b;margin:.25rem 0}
+  .warn-note{color:#d35400;margin:.25rem 0;font-size:.85rem}
+  footer{margin-top:3rem;font-size:.78rem;color:#888;text-align:center;border-top:1px solid #eee;padding-top:.75rem}
+  @media print{details{display:block!important}details>*{display:block!important}}
+</style>
+</head>
+<body>
+<h1>Rule Validation Report</h1>
+<table class="meta">${metaRows}</table>
+${flowSections()}
+<footer>Generated by 4THealth Rule Validation</footer>
+</body>
+</html>`;
+
+  const a  = document.createElement('a');
+  const bl = new Blob([html], { type: 'text/html' });
+  a.href     = URL.createObjectURL(bl);
+  a.download = `${prefix}-report.html`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadCliConfig() {
+  const prefix = getFilePrefix();
+  const now    = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  const actionable = results.filter(r =>
+    r.verdict === 'NEW_RULE_NEEDED' || r.verdict === 'MODIFIABLE'
+  );
+  const permitted = results.filter(r =>
+    r.verdict === 'PERMITTED' || r.verdict === 'EXPLICITLY_DENIED'
+  );
+
+  const header = [
+    '# ================================================================',
+    `# Rule Validation CLI Configuration`,
+    `# Change:    ${metadata.change_number || '(none)'}`,
+    `# Owner:     ${metadata.owner || '(none)'}`,
+    `# Generated: ${now}`,
+    '# ================================================================',
+  ];
+
+  if (permitted.length) {
+    header.push('# Firewalls with no changes required:');
+    const seen = new Set();
+    permitted.forEach(r => {
+      const k = r.device ? `${r.device}${r.vdom ? ' / ' + r.vdom : ''}` : r.pkg_name;
+      if (!seen.has(k)) { seen.add(k); header.push(`#   ${k} — ${r.verdict}`); }
+    });
+    header.push('# ================================================================');
+  }
+
+  const byDevice = new Map();
+  actionable.forEach(r => {
+    const k = r.device ? `${r.device}||${r.vdom || 'root'}` : r.pkg_name;
+    if (!byDevice.has(k)) byDevice.set(k, []);
+    byDevice.get(k).push(r);
+  });
+
+  const sections = [];
+  byDevice.forEach((rList, key) => {
+    const [dev, vdom] = key.split('||');
+    sections.push('');
+    sections.push('# ----------------------------------------------------------------');
+    sections.push(`# Device: ${dev}${vdom ? ' / VDOM: ' + vdom : ''}`);
+    sections.push('# ----------------------------------------------------------------');
+    rList.forEach(r => {
+      sections.push('');
+      sections.push(`# Flow: ${r.src} -> ${r.dst}${r.service ? '  ' + r.service : ''}`);
+      sections.push(`# Verdict: ${r.verdict}`);
+      if (r.fortios_cli) {
+        sections.push('# --- Recommended ---');
+        sections.push(r.fortios_cli);
+      }
+      if (r.alternative && r.alternative.group_cli) {
+        sections.push(`# --- Alternative: extend group ${r.alternative.group_name || ''} ---`);
+        sections.push(r.alternative.group_cli);
+      }
+    });
+  });
+
+  if (!sections.length && !actionable.length) {
+    sections.push('');
+    sections.push('# No changes required — all flows are already permitted or denied.');
+  }
+
+  const text = [...header, ...sections].join('\n') + '\n';
+  const a  = document.createElement('a');
+  const bl = new Blob([text], { type: 'text/plain' });
+  a.href     = URL.createObjectURL(bl);
+  a.download = `${prefix}-config.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 /* ── Event wiring ───────────────────────────────────────────────────────────── */
 document.getElementById('rrAdom').addEventListener('change', function () {
-  if (this.value) loadPackages(this.value);
-  else {
-    const sel = document.getElementById('rrPackage');
-    sel.innerHTML = '<option value="">— select package —</option>';
-    sel.disabled = true;
-    document.getElementById('rrAddPkgBtn').disabled = true;
-  }
+  const devSel = document.getElementById('rrDevice');
+  devSel.innerHTML = '<option value="">— select firewall —</option>';
+  devSel.disabled = true;
+  document.getElementById('rrAddDevBtn').disabled = true;
+  document.getElementById('rrVdomRow').style.display = 'none';
+  if (this.value) loadDevices(this.value);
 });
 
-document.getElementById('rrPackage').addEventListener('change', function () {
-  document.getElementById('rrAddPkgBtn').disabled = !this.value;
+document.getElementById('rrDevice').addEventListener('change', function () {
+  const adom = document.getElementById('rrAdom').value;
+  if (this.value && adom) loadVdoms(adom, this.value);
+  else {
+    document.getElementById('rrVdomRow').style.display = 'none';
+    document.getElementById('rrAddDevBtn').disabled = true;
+  }
 });
 
 document.getElementById('rrAddFlowBtn').addEventListener('click', () => {
@@ -689,11 +963,20 @@ document.getElementById('rrComment').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('rrAddFlowBtn').click();
 });
 
-document.getElementById('rrAddPkgBtn').addEventListener('click', addPackage);
+document.getElementById('rrAddDevBtn').addEventListener('click', addSelection);
 document.getElementById('rrReviewBtn').addEventListener('click', runReview);
 document.getElementById('rrClearBtn').addEventListener('click', clearAll);
+document.getElementById('rrMetaToggle').addEventListener('click', () => {
+  const body  = document.getElementById('rrMetaBody');
+  const arrow = document.getElementById('rrMetaArrow');
+  const open  = body.style.display !== 'none';
+  body.style.display  = open ? 'none' : '';
+  arrow.innerHTML = open ? '&#9654;' : '&#9660;';
+});
 document.getElementById('rrCopyCliBtn').addEventListener('click', copyCli);
 document.getElementById('rrDownloadCliBtn').addEventListener('click', downloadCli);
+document.getElementById('rrHtmlReportBtn').addEventListener('click', downloadHtmlReport);
+document.getElementById('rrCliConfigBtn').addEventListener('click', downloadCliConfig);
 
 document.getElementById('rrModalClose').addEventListener('click', () => {
   document.getElementById('rrDetailModal').style.display = 'none';
@@ -710,11 +993,11 @@ document.getElementById('rrFlowTbody').addEventListener('click', e => {
   renderFlows();
 });
 
-document.getElementById('rrPkgTbody').addEventListener('click', e => {
+document.getElementById('rrSelectTbody').addEventListener('click', e => {
   const btn = e.target.closest('.rr-remove-btn');
-  if (!btn || btn.dataset.type !== 'pkg') return;
-  packages.splice(parseInt(btn.dataset.idx, 10), 1);
-  renderPackages();
+  if (!btn || btn.dataset.type !== 'sel') return;
+  selections.splice(parseInt(btn.dataset.idx, 10), 1);
+  renderSelections();
 });
 
 document.getElementById('rrResultCards').addEventListener('click', e => {

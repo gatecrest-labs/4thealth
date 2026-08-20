@@ -1,7 +1,6 @@
 from flask import Blueprint, render_template, session
-
-from app import registry
 from app.decorators import tab_required
+from app import registry
 
 bp = Blueprint("dashboard", __name__)
 
