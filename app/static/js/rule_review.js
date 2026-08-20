@@ -5,6 +5,9 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+function getCSRF() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
 
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let flows      = [];   // [{src, dst, service, comment}, ...]
@@ -207,7 +210,7 @@ async function handleImport(file) {
   const fd = new FormData();
   fd.append('file', file);
   try {
-    const resp = await fetch('/api/rule-review/parse-import', { method: 'POST', body: fd });
+    const resp = await fetch('/api/rule-review/parse-import', { method: 'POST', headers: { 'X-CSRF-Token': getCSRF() }, body: fd });
     const data = await resp.json();
     if (!resp.ok) { statusEl.textContent = data.error || 'Import failed'; return; }
     const imported = data.rows || [];
@@ -235,7 +238,7 @@ async function runReview() {
   try {
     const resp = await fetch('/api/rule-review/analyze', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
       body:    JSON.stringify({ flows, selections, metadata: getMetadata() }),
     });
     const data = await resp.json();
