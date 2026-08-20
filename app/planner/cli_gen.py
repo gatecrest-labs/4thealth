@@ -118,6 +118,12 @@ def policy_addr_append_cli(policy_id: int, key: str, members: list[str]) -> str:
     return f"config firewall policy\n    edit {policy_id}\n{appends}\n    next\nend"
 
 
+def policy_svc_append_cli(policy_id: int, service_names: list[str]) -> str:
+    """CLI to append service object(s) directly to a policy's service list."""
+    appends = "\n".join(f'        append service "{s}"' for s in service_names)
+    return f"config firewall policy\n    edit {policy_id}\n{appends}\n    next\nend"
+
+
 def addrgrp_create_cli(
     name: str, members: list[str], warn_replace: bool = False
 ) -> str:

@@ -123,6 +123,85 @@ def _expand_svc_name(
     return None
 
 
+# ── FQDN helpers ──────────────────────────────────────────────────────────────
+
+
+def _looks_like_fqdn(val: str) -> bool:
+    """Return True if val looks like a fully-qualified domain name (not an IP or CIDR)."""
+    if not val or "." not in val:
+        return False
+    parts = val.rstrip(".").split(".")
+    if len(parts) < 2:
+        return False
+    tld = parts[-1]
+    if not _re.match(r"^[A-Za-z]{2,6}$", tld):
+        return False
+    return any(parts[:-1])
+
+
+def _resolve_fqdn(fqdn: str, timeout: float = 3.0) -> list[str]:
+    """Resolve an FQDN to a list of IPv4 address strings.
+
+    Returns an empty list on failure or timeout.
+    """
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FuturesTimeout
+
+    def _lookup() -> list[str]:
+        try:
+            results = socket.getaddrinfo(fqdn, None, socket.AF_INET)
+            return list(dict.fromkeys(r[4][0] for r in results if r[4]))
+        except (socket.gaierror, OSError):
+            return []
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        fut = pool.submit(_lookup)
+        try:
+            return fut.result(timeout=timeout)
+        except FuturesTimeout:
+            return []
+
+
+def _flow_error_result(flow: dict, adom: str, msg: str) -> dict:
+    """Return a generic ERROR result dict for a flow with a custom message."""
+    return {
+        "src": flow.get("src", ""),
+        "dst": flow.get("dst", ""),
+        "service": flow.get("service", ""),
+        "adom": adom,
+        "pkg_name": "",
+        "pkg_path": "",
+        "device": "",
+        "vdom": "root",
+        "verdict": "ERROR",
+        "error": msg,
+        "matching_rules": [],
+        "modifiable_rules": [],
+        "notes": [msg],
+        "fortios_cli": "",
+        "object_plans": [],
+        "approval": {},
+        "alternative": None,
+        "permissiveness_warnings": [],
+        "zone_available": False,
+        "zone_verdict": "UNAVAILABLE",
+        "zone_src": [],
+        "zone_dst": [],
+        "zone_governing": [],
+        "zone_all_policies": [],
+        "path_in_path": None,
+        "path_confidence": "low",
+        "path_src_iface": None,
+        "path_dst_iface": None,
+        "path_src_route": None,
+        "path_dst_route": None,
+        "path_notes": [],
+        "path_src_reachable": False,
+        "path_dst_reachable": False,
+    }
+
+
 # ── Zone policy integration ───────────────────────────────────────────────────
 # Uses app.zone_db — the embedded segmentation policy engine that reads
 # policy_db.json directly from the project root. No external service required.
@@ -508,42 +587,84 @@ def analyze_flows(
         if _looks_like_fgt_name(src_raw):
             expanded = _expand_addr_name(src_raw, addr_objects, addr_groups)
             if expanded is None:
-                adom = packages[0]["adom"] if packages else "unknown"
-                results.append(_group_error_result(flow, "src", src_raw, adom))
-                continue
-            srcs = expanded or [src_raw]
-            # Warn if any group members could not be resolved
-            _norm = src_raw.strip().lower()
-            for _grp in addr_groups:
-                if isinstance(_grp, dict) and _grp.get("name", "").lower() == _norm:
-                    _total = len(_grp.get("member") or [])
-                    if _total > len(expanded):
+                if _looks_like_fqdn(src_raw):
+                    resolved = _resolve_fqdn(src_raw)
+                    if resolved:
+                        srcs = resolved
                         flow_warnings.append(
-                            f'Address group "{src_raw}" has {_total - len(expanded)}'
-                            f" unresolvable member(s) (nested groups or IP ranges);"
-                            f" analysis may be incomplete."
+                            f'"{src_raw}" resolved via DNS to {", ".join(resolved)}; '
+                            f"analysis uses these IPs (runtime resolution may differ)."
                         )
-                    break
+                    else:
+                        adom = packages[0]["adom"] if packages else "unknown"
+                        results.append(
+                            _flow_error_result(
+                                flow,
+                                adom,
+                                f'FQDN source "{src_raw}" was not found in ADOM "{adom}" '
+                                f"and could not be resolved via DNS — verify the hostname is correct",
+                            )
+                        )
+                        continue
+                else:
+                    adom = packages[0]["adom"] if packages else "unknown"
+                    results.append(_group_error_result(flow, "src", src_raw, adom))
+                    continue
+            else:
+                srcs = expanded or [src_raw]
+                # Warn if any group members could not be resolved
+                _norm = src_raw.strip().lower()
+                for _grp in addr_groups:
+                    if isinstance(_grp, dict) and _grp.get("name", "").lower() == _norm:
+                        _total = len(_grp.get("member") or [])
+                        if _total > len(expanded):
+                            flow_warnings.append(
+                                f'Address group "{src_raw}" has {_total - len(expanded)}'
+                                f" unresolvable member(s) (nested groups or IP ranges);"
+                                f" analysis may be incomplete."
+                            )
+                        break
 
         if _looks_like_fgt_name(dst_raw):
             expanded = _expand_addr_name(dst_raw, addr_objects, addr_groups)
             if expanded is None:
-                adom = packages[0]["adom"] if packages else "unknown"
-                results.append(_group_error_result(flow, "dst", dst_raw, adom))
-                continue
-            dsts = expanded or [dst_raw]
-            # Warn if any group members could not be resolved
-            _norm = dst_raw.strip().lower()
-            for _grp in addr_groups:
-                if isinstance(_grp, dict) and _grp.get("name", "").lower() == _norm:
-                    _total = len(_grp.get("member") or [])
-                    if _total > len(expanded):
+                if _looks_like_fqdn(dst_raw):
+                    resolved = _resolve_fqdn(dst_raw)
+                    if resolved:
+                        dsts = resolved
                         flow_warnings.append(
-                            f'Address group "{dst_raw}" has {_total - len(expanded)}'
-                            f" unresolvable member(s) (nested groups or IP ranges);"
-                            f" analysis may be incomplete."
+                            f'"{dst_raw}" resolved via DNS to {", ".join(resolved)}; '
+                            f"analysis uses these IPs (runtime resolution may differ)."
                         )
-                    break
+                    else:
+                        adom = packages[0]["adom"] if packages else "unknown"
+                        results.append(
+                            _flow_error_result(
+                                flow,
+                                adom,
+                                f'FQDN destination "{dst_raw}" was not found in ADOM "{adom}" '
+                                f"and could not be resolved via DNS — verify the hostname is correct",
+                            )
+                        )
+                        continue
+                else:
+                    adom = packages[0]["adom"] if packages else "unknown"
+                    results.append(_group_error_result(flow, "dst", dst_raw, adom))
+                    continue
+            else:
+                dsts = expanded or [dst_raw]
+                # Warn if any group members could not be resolved
+                _norm = dst_raw.strip().lower()
+                for _grp in addr_groups:
+                    if isinstance(_grp, dict) and _grp.get("name", "").lower() == _norm:
+                        _total = len(_grp.get("member") or [])
+                        if _total > len(expanded):
+                            flow_warnings.append(
+                                f'Address group "{dst_raw}" has {_total - len(expanded)}'
+                                f" unresolvable member(s) (nested groups or IP ranges);"
+                                f" analysis may be incomplete."
+                            )
+                        break
 
         if svc_raw and _looks_like_fgt_name(svc_raw):
             try:
@@ -575,7 +696,8 @@ def analyze_flows(
         except Exception:
             pass
 
-        # ── Build snapshot cache once per package (invariant per pkg_key) ───────
+        # ── Build snapshot cache per (package, device) — devices sharing the same
+        # package each have their own interfaces and routing data. ──────────────
         snapshot_cache: dict[str, Any] = {}
         for _pkg in packages:
             _pkg_adom = _pkg["adom"]
@@ -584,8 +706,9 @@ def analyze_flows(
             _pkg_device = _pkg.get("device", "")
             _pkg_key = f"{_pkg_adom}/{_pkg_path}"
             _pkg_dev_key = _pkg_device or _pkg_name
-            if _pkg_key not in snapshot_cache:
-                snapshot_cache[_pkg_key] = build_snapshot(
+            _cache_key = f"{_pkg_key}||{_pkg_dev_key}"
+            if _cache_key not in snapshot_cache:
+                snapshot_cache[_cache_key] = build_snapshot(
                     adom=_pkg_adom,
                     device=_pkg_dev_key,
                     addr_objects=list(addr_objects),
@@ -635,11 +758,12 @@ def analyze_flows(
                         "notes": ["Routing data not available for this device."],
                     }
 
+                dev_cache_key = f"{pkg_key}||{dev_key}"
                 row = plan_flow(
                     src=src,
                     dst=dst,
                     service=svc,
-                    snapshot=snapshot_cache[pkg_key],
+                    snapshot=snapshot_cache[dev_cache_key],
                     zone_verdict=zone_result,
                     path_check=path_check,
                     pkg_key=pkg_key,
@@ -649,6 +773,7 @@ def analyze_flows(
                     zone_domains=zone_domains,
                 )
                 row["comment"] = comment
+                row["device"] = device
                 row["vdom"] = vdom
                 if flow_warnings:
                     row["permissiveness_warnings"].extend(flow_warnings)

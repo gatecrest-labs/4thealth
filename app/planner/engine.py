@@ -528,7 +528,7 @@ def plan_flow(
     # GroupAppendAlternative
     alternative_raw: GroupAppendAlternative | None = None
     alternative: dict | None = None
-    if verdict == "NEW_RULE_NEEDED":
+    if verdict in ("NEW_RULE_NEEDED", "MODIFIABLE"):
         alternative_raw = _find_alternative(
             snapshot,
             matcher,
@@ -538,7 +538,7 @@ def plan_flow(
             srcintf,
             dstintf,
         )
-    if alternative_raw is not None:
+    if alternative_raw is not None and verdict == "NEW_RULE_NEEDED":
         alt = alternative_raw
         member_names = [m.name for m in alt.members]
         alternative = {
@@ -565,6 +565,28 @@ def plan_flow(
                 + " instead of creating a new policy."
             ),
         }
+
+    # For MODIFIABLE: generate CLI to modify the near-miss rule
+    if verdict == "MODIFIABLE" and partial:
+        first = partial[0]
+        svc_gap = first.get("svc_gap", [])
+        svc_names = [o.name for o in svc_objs]
+        if svc_gap:
+            fortios_cli = cli_gen.policy_svc_append_cli(first["id"], svc_names)
+        elif alternative_raw:
+            fortios_cli = alternative_raw.group_cli or alternative_raw.direct_cli or ""
+        else:
+            new_addr_objs = [
+                o
+                for o in object_plans
+                if o.action == "create" and o.role in ("source", "destination")
+            ]
+            if new_addr_objs:
+                obj = new_addr_objs[0]
+                addr_key = "srcaddr" if obj.role == "source" else "dstaddr"
+                fortios_cli = cli_gen.policy_addr_append_cli(
+                    first["id"], addr_key, [obj.name]
+                )
 
     # Zone policy notes
     if zone_verdict.get("available"):
