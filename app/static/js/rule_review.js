@@ -241,8 +241,14 @@ async function runReview() {
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
       body:    JSON.stringify({ flows, selections, metadata: getMetadata() }),
     });
+    if (!resp.ok) {
+      let errorMsg = `Analysis failed (HTTP ${resp.status}).`;
+      try { const errData = await resp.json(); errorMsg = errData.error || errorMsg; }
+      catch (_) { /* response was not JSON — keep the generic message */ }
+      showError(errorMsg);
+      return;
+    }
     const data = await resp.json();
-    if (!resp.ok) { showError(data.error || 'Analysis failed.'); return; }
 
     results  = data.results  || [];
     metadata = data.metadata || {};
@@ -600,9 +606,10 @@ function showDetail(idx) {
     html += `<div class="rr-detail-section">
       <div class="rr-detail-section-title">Rules That Could Be Modified</div>
       <table class="data-table" style="font-size:.82rem">
-        <thead><tr><th>ID</th><th>Name</th><th>Suggestion</th></tr></thead>
+        <thead><tr><th>ID</th><th>Name</th><th>Package</th><th>Suggestion</th></tr></thead>
         <tbody>${r.modifiable_rules.map(m => `<tr>
           <td>${esc(m.id)}</td><td>${esc(m.name || '—')}</td>
+          <td style="color:var(--muted);font-size:.8rem">${esc(m.package || '—')}</td>
           <td style="color:var(--warning)">${esc(m.suggestion)}</td>
         </tr>`).join('')}</tbody>
       </table></div>`;
@@ -786,21 +793,101 @@ function downloadHtmlReport() {
           html += `<p class="error-msg">&#9888; ${esc(r.error || r.notes?.[0] || 'Error')}</p>`;
         }
 
+        // Matching rules
         if (r.matching_rules && r.matching_rules.length) {
           html += `<p><strong>Matched rule${r.matching_rules.length > 1 ? 's' : ''}:</strong> ` +
             r.matching_rules.map(m => `#${esc(m.id)} ${esc(m.name || '')} [${esc(m.action)}]`).join(', ') +
             `</p>`;
         }
 
+        // Near-miss rules (MODIFIABLE verdict) — shown as detail blocks
+        if (r.modifiable_rules && r.modifiable_rules.length) {
+          html += `<p><strong>Near-miss rule${r.modifiable_rules.length > 1 ? 's' : ''} — could be modified:</strong></p>`;
+          r.modifiable_rules.forEach(m => {
+            const pkg = m.package ? `<div class="near-miss-pkg">Package: ${esc(m.package)}</div>` : '';
+            const gap = m.svc_gap && m.svc_gap.length
+              ? `<div class="near-miss-gap">Service gap: ${esc(m.svc_gap.join(', '))}</div>` : '';
+            html += `<div class="near-miss-block"><strong>#${esc(m.id)}</strong> ${esc(m.name || 'unnamed')}${pkg}<div style="margin-top:.2rem">${esc(m.suggestion || '')}</div>${gap}</div>`;
+          });
+        }
+
+        // Zone policy
+        if (r.zone_available) {
+          const zv = r.zone_verdict || 'UNKNOWN';
+          const zvColor = zv === 'ALLOWED' ? '#1a7f3c' : zv === 'BLOCKED' ? '#c0392b' : '#d35400';
+          html += `<h4>Zone Policy: <span style="color:${zvColor}">${esc(zv)}</span></h4>`;
+          if ((r.zone_src && r.zone_src.length) || (r.zone_dst && r.zone_dst.length)) {
+            html += `<table class="report-table"><tbody>`;
+            if (r.zone_src && r.zone_src.length) html += `<tr><th>Source zones</th><td>${esc(r.zone_src.join(', '))}</td></tr>`;
+            if (r.zone_dst && r.zone_dst.length) html += `<tr><th>Dest zones</th><td>${esc(r.zone_dst.join(', '))}</td></tr>`;
+            html += `</tbody></table>`;
+          }
+          if (r.zone_governing && r.zone_governing.length) {
+            const govList = r.zone_governing.map(g => {
+              const label = typeof g === 'object' ? (g.description || g.policy_set || JSON.stringify(g)) : String(g);
+              return `<code>${esc(label)}</code>`;
+            }).join(', ');
+            html += `<p style="font-size:.82rem;color:#555;margin:.2rem 0">Governing: ${govList}</p>`;
+          }
+        }
+
+        // Policy notes (non-path)
+        const policyNotes = (r.notes || []).filter(n =>
+          !n.startsWith('⚠ PATH') && !n.startsWith('✓ PATH')
+        );
+        if (policyNotes.length) {
+          html += policyNotes.map(n => `<p style="color:#555;font-size:.88rem">${esc(n)}</p>`).join('');
+        }
+
+        // Object naming plan
+        if (r.object_plans && r.object_plans.length) {
+          html += `<h4>Object Naming</h4>
+            <table class="obj-table">
+              <thead><tr><th>Role</th><th>Type</th><th>Name</th><th></th></tr></thead>
+              <tbody>${r.object_plans.map(o => `<tr>
+                <td>${esc(o.role)}</td>
+                <td>${esc(o.obj_type)}</td>
+                <td><code>${esc(o.name)}</code></td>
+                <td style="color:${o.action === 'reuse' ? '#1a7f3c' : '#d35400'};font-size:.8rem">${esc(o.action === 'reuse' ? '(existing — reused)' : 'CREATE')}</td>
+              </tr>`).join('')}</tbody>
+            </table>`;
+        }
+
+        // Approval requirements
+        if (r.approval && r.approval.risk_level) {
+          const riskColor = { critical: '#c0392b', high: '#d35400', medium: '#d4a017' }[r.approval.risk_level] || '#555';
+          html += `<h4>Approval Requirements</h4>
+            <table class="report-table"><tbody>
+              <tr><th>Risk level</th><td><strong style="color:${riskColor}">${esc(r.approval.risk_level.toUpperCase())}</strong></td></tr>
+              ${r.approval.approvers && r.approval.approvers.length ? `<tr><th>Approvers</th><td>${r.approval.approvers.map(a => `<span class="approver-chip">${esc(a)}</span>`).join(' ')}</td></tr>` : ''}
+              ${r.approval.peer_review ? `<tr><th>Peer review</th><td>${esc(r.approval.peer_review)}</td></tr>` : ''}
+              ${r.approval.security_review ? `<tr><th>Security review</th><td>${esc(r.approval.security_review)}</td></tr>` : ''}
+              ${r.approval.change_window ? `<tr><th>Change window</th><td>${esc(r.approval.change_window)}</td></tr>` : ''}
+              ${r.approval.sla_hours ? `<tr><th>SLA</th><td>${esc(String(r.approval.sla_hours))}h</td></tr>` : ''}
+            </tbody></table>`;
+        }
+
+        // Path check
         if (r.path_in_path === true)  html += `<p class="path-ok">&#10003; In path: src via ${esc(r.path_src_iface||'?')}, dst via ${esc(r.path_dst_iface||'?')}</p>`;
         if (r.path_in_path === false) html += `<p class="path-warn">&#9888; May not be in path — proceed with caution</p>`;
 
-        if ((r.verdict === 'NEW_RULE_NEEDED' || r.verdict === 'MODIFIABLE') && r.fortios_cli) {
-          html += `<h4>Option A — Recommended action</h4><pre>${esc(r.fortios_cli)}</pre>`;
+        // Warnings: path notes + permissiveness
+        const warnings = [...(r.path_notes || []), ...(r.permissiveness_warnings || [])];
+        if (warnings.length) {
+          html += `<h4>Warnings</h4><ul>${warnings.map(w => `<li style="color:#d35400;font-size:.85rem">${esc(w)}</li>`).join('')}</ul>`;
         }
-        if (r.alternative && r.alternative.group_cli) {
-          html += `<h4>Option B — Extend group ${esc(r.alternative.group_name || '')}</h4>` +
-            `<pre>${esc(r.alternative.group_cli)}</pre>`;
+
+        // CLI options (object creation + policy)
+        if ((r.verdict === 'NEW_RULE_NEEDED' || r.verdict === 'MODIFIABLE') && r.fortios_cli) {
+          const objClis = (r.object_plans || []).filter(o => o.action === 'create' && o.cli).map(o => o.cli);
+          const optionACli = [...objClis, r.fortios_cli].join('\n');
+          html += `<h4>Option A — Recommended action</h4><pre>${esc(optionACli)}</pre>`;
+        }
+        if (r.alternative && (r.alternative.group_cli || r.alternative.direct_cli)) {
+          const altCli = r.alternative.group_cli || r.alternative.direct_cli;
+          html += `<h4>Option B — ${esc(r.alternative.summary || 'Extend existing rule')}</h4>` +
+            `<div style="font-size:.82rem;color:#777;margin-bottom:.3rem">The generated CLI contains both options — implement ONE, not both.</div>` +
+            `<pre>${esc(altCli)}</pre>`;
           if (r.alternative.affected_count > 0) {
             html += `<p class="warn-note">&#9888; Affects ${r.alternative.affected_count} other rule(s).</p>`;
           }
@@ -843,6 +930,16 @@ function downloadHtmlReport() {
   .error-msg{color:#c0392b;margin:.25rem 0}
   .warn-note{color:#d35400;margin:.25rem 0;font-size:.85rem}
   footer{margin-top:3rem;font-size:.78rem;color:#888;text-align:center;border-top:1px solid #eee;padding-top:.75rem}
+  table.report-table{border-collapse:collapse;width:100%;font-size:.88rem;margin:.4rem 0 .6rem}
+  table.report-table td,table.report-table th{padding:.3rem .65rem;border-bottom:1px solid #ddd;vertical-align:top}
+  table.report-table th{font-weight:600;color:#555;width:160px;white-space:nowrap}
+  .near-miss-block{background:#fffbea;border:1px solid #e5d58a;border-radius:4px;padding:.5rem .75rem;margin:.25rem 0;font-size:.88rem}
+  .near-miss-pkg{color:#777;font-size:.8rem;margin-top:.15rem}
+  .near-miss-gap{color:#c0392b;font-size:.8rem;margin-top:.15rem}
+  table.obj-table{border-collapse:collapse;width:100%;font-size:.85rem;margin:.35rem 0 .5rem}
+  table.obj-table td,table.obj-table th{padding:.25rem .5rem;border-bottom:1px solid #eee;vertical-align:top}
+  table.obj-table th{color:#777;font-weight:600;white-space:nowrap}
+  .approver-chip{display:inline-block;background:#e8f0fe;border-radius:999px;padding:2px 10px;font-size:.82rem;margin:2px}
   @media print{details{display:block!important}details>*{display:block!important}}
 </style>
 </head>
@@ -911,11 +1008,17 @@ function downloadCliConfig() {
       sections.push(`# Verdict: ${r.verdict}`);
       if (r.fortios_cli) {
         sections.push('# --- Recommended ---');
+        const objClis = (r.object_plans || []).filter(o => o.action === 'create' && o.cli).map(o => o.cli);
+        if (objClis.length) sections.push(objClis.join('\n'));
         sections.push(r.fortios_cli);
       }
-      if (r.alternative && r.alternative.group_cli) {
-        sections.push(`# --- Alternative: extend group ${r.alternative.group_name || ''} ---`);
-        sections.push(r.alternative.group_cli);
+      if (r.alternative && (r.alternative.group_cli || r.alternative.direct_cli)) {
+        const altCli = r.alternative.group_cli || r.alternative.direct_cli;
+        const altLabel = r.alternative.group_name
+          ? `extend group ${r.alternative.group_name}`
+          : (r.alternative.summary || 'extend existing rule');
+        sections.push(`# --- Alternative: ${altLabel} ---`);
+        sections.push(altCli);
       }
     });
   });

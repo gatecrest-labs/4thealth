@@ -22,11 +22,11 @@
   <!-- Change Request Details -->
   <div class="card rr-meta-card mb-3">
     <div class="rr-meta-header" id="rrMetaToggle" style="cursor:pointer;padding:.6rem .85rem;display:flex;align-items:center;gap:.5rem;border-bottom:1px solid var(--border-color)">
-      <span id="rrMetaArrow" style="font-size:.75rem">&#9654;</span>
+      <span id="rrMetaArrow" style="font-size:.75rem">&#9660;</span>
       <strong style="font-size:.9rem">Change Request Details</strong>
       <span class="text-muted" style="font-size:.78rem;margin-left:.25rem">(optional — used for export file naming)</span>
     </div>
-    <div id="rrMetaBody" style="display:none;padding:.75rem .85rem">
+    <div id="rrMetaBody" style="padding:.75rem .85rem">
       <div style="display:flex;gap:1rem;flex-wrap:wrap">
         <div class="form-group" style="flex:0 0 180px">
           <label for="rrChangeNumber" class="form-label" style="font-size:.82rem">Change Number
@@ -205,5 +205,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/rule_review.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/rule_review.js') }}?v=5"></script>
 {% endblock %}
