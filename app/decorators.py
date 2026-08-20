@@ -16,15 +16,13 @@ Usage::
 """
 
 from __future__ import annotations
-
-import time as _time
 from functools import wraps
+import time as _time
+from flask import session as flask_session, redirect, url_for, abort, jsonify, request
+from flask import current_app
 
-from flask import abort, current_app, jsonify, redirect, request, url_for
-from flask import session as flask_session
 
-
-def _revalidate_session() -> tuple | None:
+def _revalidate_session() -> "tuple | None":
     """Re-check that the session is still valid on every request.
 
     Returns a Flask response tuple (to be returned immediately) if the
@@ -151,7 +149,7 @@ def admin_required(f):
     return decorated
 
 
-def check_adom_access(adom: str) -> tuple | None:
+def check_adom_access(adom: str) -> "tuple | None":
     """Return a 403 JSON response tuple if the current user cannot access ``adom``.
 
     Returns None when access is permitted (caller should proceed normally).

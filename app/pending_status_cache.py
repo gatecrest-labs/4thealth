@@ -166,9 +166,7 @@ def _run_refresh(app: Flask) -> None:
                         for d in base_devices
                     ]
 
-                    ts = datetime.datetime.now(datetime.UTC).isoformat(
-                        timespec="seconds"
-                    )
+                    ts = datetime.datetime.now().isoformat(timespec="seconds")
                     with _lock:
                         _cache[adom] = {"devices": devices, "last_updated": ts}
                     logger.info(
@@ -177,7 +175,7 @@ def _run_refresh(app: Flask) -> None:
                         adom,
                     )
 
-            ts_done = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+            ts_done = datetime.datetime.now().isoformat(timespec="seconds")
             with _lock:
                 _state["status"] = "ok"
                 _state["last_updated"] = ts_done
@@ -185,7 +183,7 @@ def _run_refresh(app: Flask) -> None:
             logger.info("pending_status_cache: refresh complete")
 
     except Exception as exc:
-        logger.exception("pending_status_cache: refresh failed")
+        logger.exception("pending_status_cache: refresh failed: %s", exc)
         with _lock:
             _state["status"] = "error"
             _state["error"] = str(exc)

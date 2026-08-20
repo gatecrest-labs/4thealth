@@ -14,7 +14,38 @@
 
 <!-- ── Step 1: Flow Entry ───────────────────────────────────────────────── -->
 <div class="rr-section">
-  <div class="rr-section-title">1 — Define Flows</div>
+  <div class="rr-section-title">
+    1 — Define Flows
+    <span class="rr-help-icon" title="Enter one flow per row. Source and destination can be IPs, CIDRs, or FortiGate address group names. If a group name is not found the result will show an error with instructions.">&#9432;</span>
+  </div>
+
+  <!-- Change Request Details -->
+  <div class="card rr-meta-card mb-3">
+    <div class="rr-meta-header" id="rrMetaToggle" style="cursor:pointer;padding:.6rem .85rem;display:flex;align-items:center;gap:.5rem;border-bottom:1px solid var(--border-color)">
+      <span id="rrMetaArrow" style="font-size:.75rem">&#9654;</span>
+      <strong style="font-size:.9rem">Change Request Details</strong>
+      <span class="text-muted" style="font-size:.78rem;margin-left:.25rem">(optional — used for export file naming)</span>
+    </div>
+    <div id="rrMetaBody" style="display:none;padding:.75rem .85rem">
+      <div style="display:flex;gap:1rem;flex-wrap:wrap">
+        <div class="form-group" style="flex:0 0 180px">
+          <label for="rrChangeNumber" class="form-label" style="font-size:.82rem">Change Number
+            <span class="rr-help-icon" title="Used to name exported files, e.g. CHG-12345-report.html. Leave blank to use a timestamp.">&#9432;</span>
+          </label>
+          <input type="text" id="rrChangeNumber" class="form-control form-control-sm" placeholder="CHG-XXXXX">
+        </div>
+        <div class="form-group" style="flex:0 0 200px">
+          <label for="rrOwner" class="form-label" style="font-size:.82rem">Owner</label>
+          <input type="text" id="rrOwner" class="form-control form-control-sm" placeholder="Your name">
+        </div>
+        <div class="form-group" style="flex:1 1 280px">
+          <label for="rrJustification" class="form-label" style="font-size:.82rem">Business Justification</label>
+          <textarea id="rrJustification" class="form-control form-control-sm" rows="2"
+                    placeholder="Reason for this change request"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="rr-import-row">
     <label class="btn btn-secondary" style="cursor:pointer">
@@ -75,11 +106,14 @@
   </div>
 </div>
 
-<!-- ── Step 2: Package Selection ───────────────────────────────────────── -->
+<!-- ── Step 2: Firewall Selection ──────────────────────────────────────── -->
 <div class="rr-section">
-  <div class="rr-section-title">2 — Select Policy Packages</div>
+  <div class="rr-section-title">
+    2 — Select Firewalls
+    <span class="rr-help-icon" title="Select the firewall(s) this change request affects. If a firewall has multiple VDOMs, select which VDOMs to analyze. Firewalls with only a root VDOM are added automatically.">&#9432;</span>
+  </div>
 
-  <div class="rr-selector-row">
+  <div class="rr-selector-row" style="align-items:flex-end;flex-wrap:wrap;gap:.75rem">
     <div class="form-group" style="flex:0 0 200px">
       <label for="rrAdom">ADOM</label>
       <select id="rrAdom" class="form-select">
@@ -87,28 +121,35 @@
       </select>
     </div>
     <div class="form-group" style="flex:0 0 260px">
-      <label for="rrPackage">Policy Package</label>
-      <select id="rrPackage" class="form-select" disabled>
-        <option value="">— select package —</option>
+      <label for="rrDevice">Firewall</label>
+      <select id="rrDevice" class="form-select" disabled>
+        <option value="">— select firewall —</option>
       </select>
     </div>
     <div class="form-group" style="flex:0 0 auto;align-self:flex-end">
-      <button class="btn btn-secondary" id="rrAddPkgBtn" disabled>Add Package</button>
+      <button class="btn btn-secondary" id="rrAddDevBtn" disabled>Add Firewall</button>
     </div>
   </div>
 
-  <div id="rrPkgTableWrap" style="display:none;margin-top:.75rem">
+  <!-- VDOM checkboxes — hidden when device has only root VDOM -->
+  <div id="rrVdomRow" style="display:none;margin-top:.5rem">
+    <label style="font-size:.85rem;font-weight:500;margin-bottom:.35rem;display:block">VDOMs</label>
+    <div id="rrVdomChecks" class="d-flex flex-wrap gap-2"></div>
+  </div>
+
+  <div id="rrSelectTableWrap" style="display:none;margin-top:.75rem">
     <div class="table-wrapper">
       <table class="data-table">
         <thead>
           <tr>
             <th style="width:3rem">#</th>
+            <th>Firewall</th>
+            <th>VDOMs</th>
             <th>ADOM</th>
-            <th>Policy Package</th>
             <th style="width:3rem"></th>
           </tr>
         </thead>
-        <tbody id="rrPkgTbody"></tbody>
+        <tbody id="rrSelectTbody"></tbody>
       </table>
     </div>
   </div>
@@ -127,6 +168,8 @@
 <div id="rrResults" style="display:none;margin-top:.5rem">
   <div class="rr-section-title">3 — Review Results</div>
 
+  <div id="rrMetaBanner" class="alert alert-secondary" style="display:none;font-size:.88rem;padding:.5rem .85rem;margin-bottom:.75rem"></div>
+
   <div id="rrSummaryBar" class="rr-summary-bar" style="margin-bottom:1rem"></div>
 
   <!-- Result cards (zone-script style) -->
@@ -140,6 +183,12 @@
       <button class="btn btn-sm btn-secondary" id="rrDownloadCliBtn">&#8659; Download</button>
     </div>
     <pre id="rrCliOutput" class="rr-cli-block"></pre>
+  </div>
+
+  <!-- Export toolbar -->
+  <div class="rr-cli-toolbar" style="margin-top:1rem;display:none" id="rrExportToolbar">
+    <button class="btn btn-sm btn-secondary" id="rrHtmlReportBtn">&#8659; HTML Report</button>
+    <button class="btn btn-sm btn-secondary" id="rrCliConfigBtn">&#8659; CLI Config</button>
   </div>
 </div>
 
@@ -156,5 +205,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/rule_review.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/rule_review.js') }}?v=4"></script>
 {% endblock %}

@@ -10,8 +10,8 @@ snapshot copy so the lock is held only briefly.
 
 from __future__ import annotations
 
-import datetime
 import threading
+import datetime
 
 from flask import Flask
 
@@ -61,7 +61,7 @@ def _run_refresh(app: Flask) -> None:
             )
             with _lock:
                 _state["adoms"] = names
-                _state["last_updated"] = datetime.datetime.now(datetime.UTC).isoformat(
+                _state["last_updated"] = datetime.datetime.now().isoformat(
                     timespec="seconds"
                 )
                 _state["status"] = "ok"

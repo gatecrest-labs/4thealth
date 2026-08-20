@@ -35,10 +35,10 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template, session
+from flask import Blueprint, render_template, session, jsonify
 
 from app import registry
-from app.decorators import check_adom_access, tab_required
+from app.decorators import tab_required, check_adom_access
 from app.fmg_client import FMGError, parse_preview_diff
 from app.fmg_helpers import make_client
 from app.groups import get_allowed_adoms
@@ -113,8 +113,8 @@ def bulk_preview_adom(adom: str, max_workers: int = 10) -> list[dict]:
       {"device", "ip", "status": "ok"|"no_changes"|"error",
        "summary", "vdoms", "raw", "error"}
     """
-    from app.fmg_client import parse_preview_diff
     from app.fmg_helpers import make_client
+    from app.fmg_client import parse_preview_diff
 
     with make_client() as client:
         raw_devices = client.get_devices_with_sync_status(adom)

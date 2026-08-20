@@ -20,13 +20,12 @@ API (all JSON):
 
 import re
 import shutil
-from datetime import datetime
-
+from datetime import date
 from flask import Blueprint, jsonify, render_template, request, session
 
-import app.zone_db as zdb
+from app.decorators import tab_required, admin_required
 from app import registry
-from app.decorators import admin_required, tab_required
+import app.zone_db as zdb
 from app.security import internal_api_error
 
 bp = Blueprint("zone_policy", __name__)
@@ -159,7 +158,7 @@ def api_backup():
     try:
         backup_dir = zdb.DB_PATH.parent / "backups"
         backup_dir.mkdir(exist_ok=True)
-        today = datetime.now().astimezone().date().strftime("%Y%m%d")
+        today = date.today().strftime("%Y%m%d")
         # find next slot 001-100, wrapping back to 001 at 101
         for n in range(1, 102):
             seq = ((n - 1) % 100) + 1

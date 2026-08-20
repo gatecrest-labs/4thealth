@@ -15,10 +15,10 @@ A manual refresh is triggered by calling refresh_now(app).
 """
 
 import logging
-import os
 import threading
 import time as _time
-from datetime import UTC, datetime
+import os
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -110,12 +110,12 @@ def _run_job(app):
 
         with _lock:
             _store["devices"] = result
-            _store["last_updated"] = datetime.now(UTC).isoformat()
+            _store["last_updated"] = datetime.now(timezone.utc).isoformat()
             _store["status"] = "ok"
             _store["error"] = None
 
     except Exception as exc:
-        logger.exception("versions_cache: unhandled error")
+        logger.exception("versions_cache: unhandled error: %s", exc)
         with _lock:
             _store["status"] = "error"
             _store["error"] = str(exc)

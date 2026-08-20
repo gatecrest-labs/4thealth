@@ -29,6 +29,7 @@ import logging
 import os
 import socket
 import struct
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def _try_one_server(
     port: int,
     secret_b: bytes,
     timeout: int,
-) -> tuple | None:
+) -> Optional[tuple]:
     """Send a single RADIUS Access-Request.
 
     Returns (reply_bytes, req_auth, secret_b) on network success, or None if
@@ -123,7 +124,7 @@ def authenticate(
     group_viewer: str,
     host2: str = "",
     port2: int = 1812,
-) -> dict | None:
+) -> Optional[dict]:
     """Send a RADIUS Access-Request, trying host2 if host is unreachable.
 
     Returns a dict {'role': 'admin'|'viewer', 'ad_groups': [...]} on success,
