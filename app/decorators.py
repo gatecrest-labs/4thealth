@@ -33,6 +33,14 @@ def _revalidate_session() -> "tuple | None":
     if login_at is None:
         # Session pre-dates this feature — force re-login.
         flask_session.clear()
+        if (
+            request.path.startswith("/api/")
+            or request.path.startswith("/admin/api/")
+            or request.path.startswith("/external/api/")
+        ):
+            return jsonify(
+                {"error": "Session expired — please reload and log in again"}
+            ), 401
         return redirect(url_for("auth.login")), 302
 
     lifetime = current_app.config.get("SESSION_ABSOLUTE_LIFETIME", 36000)
