@@ -488,16 +488,19 @@ def rr_analyze():
 
     analysis_results = []
     if packages:
-        analysis_results = analyze_flows(
-            requested_flows=flows,
-            packages=packages,
-            policies_by_pkg=policies_by_pkg,
-            addr_objects=addr_objects,
-            addr_groups=addr_groups,
-            svc_objects=svc_objects,
-            svc_groups=svc_groups,
-            routing_by_device=routing_by_device,
-        )
+        try:
+            analysis_results = analyze_flows(
+                requested_flows=flows,
+                packages=packages,
+                policies_by_pkg=policies_by_pkg,
+                addr_objects=addr_objects,
+                addr_groups=addr_groups,
+                svc_objects=svc_objects,
+                svc_groups=svc_groups,
+                routing_by_device=routing_by_device,
+            )
+        except Exception as exc:
+            return internal_api_error("rule_review", exc)
 
     all_results = error_results + analysis_results
 
