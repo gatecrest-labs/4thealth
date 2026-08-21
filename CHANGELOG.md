@@ -10,6 +10,21 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 ## [Unreleased]
 
 ### Added
+- **Device Review — Device Filtering:** Devices flagged as `is_model` (pre-staged, not yet deployed to hardware) and devices with an unknown/offline `conn_status` are now automatically skipped. The device list shows a grey "Not Deployed" or "Offline" badge per device; running analysis on a skipped device returns a single `SKIPPED` result row instead of check findings. Checking in extra offline-device statuses requires only adding to `_OFFLINE_CONN_STATUSES` in `device_review_routes.py`.
+- **Device Review — CIS Binary Checks (4 new):**
+  - *Hostname Changed* — `FAIL` if hostname matches a factory default (`FortiGate`, `FortiGate-VM`, or `fgt<digits>` pattern)
+  - *Non-Default Admin Port* — `WARN` if HTTPS admin port is still 443 or HTTP port is still 80; `CONFIG_MISSING` if port data is absent
+  - *Pre-Login Banner Enabled* — `FAIL` if `pre-login-banner` is not set to `enable` in `system/global`
+  - *Timezone Set* — `CONFIG_MISSING` if no timezone is configured (empty string)
+- **Device Review — Admin MFA Check:** `FAIL` if any admin account has two-factor authentication disabled. A missing `two-factor` field is treated as disabled. Returns `CONFIG_MISSING` if admin data could not be retrieved.
+- **Device Review — VPN/IPsec Security Checks (3 new, multi-VDOM):**
+  - *VPN Weak Crypto* — `FAIL` if any phase1 or phase2 tunnel uses DES, 3DES, MD5, or weak DH groups (1, 2, 5); checks all VDOMs via `?vdom=*`
+  - *VPN Perfect Forward Secrecy* — `WARN` if any phase2 tunnel has PFS disabled
+  - *VPN IKE Version* — `FAIL` for IKEv1 aggressive mode; `WARN` for IKEv1 main mode; `PASS` for IKEv2
+- **Hygiene — Security Profile Gap Check:** New hygiene analysis check that flags `accept` rules where UTM is disabled or no security profiles are attached. Profiles checked: `ips-sensor`, `av-profile`, `webfilter-profile`, `dnsfilter-profile`, `application-list`. Deny/ipsec actions and policy-block entries are skipped.
+- **Hygiene — Unused Objects Detection:** New **Find Unused Objects** button in the Hygiene Analysis section. Scans the selected ADOM + policy package and identifies address objects, address groups, service objects, and service groups not referenced by any policy rule (BFS group-member expansion for indirect references; FortiGuard/built-in objects excluded). Results displayed in a sub-panel with CSV and JSON export.
+
+### Added
 - Rule Validation: firewall + VDOM selector in Step 2 (replaces policy-package picker); backend resolves device/VDOM → package server-side
 - Rule Validation: Change Request Details block (change number, owner, justification) in Step 1; used for export file naming
 - Rule Validation: FortiGate address and service group names accepted as flow src/dst/service — unresolved names return targeted ERROR results

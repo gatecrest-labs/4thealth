@@ -1900,11 +1900,13 @@ document.getElementById('hygieneAdom').addEventListener('change', function () {
     sel.innerHTML = '<option value="">— select package —</option>';
     sel.disabled = true;
     document.getElementById('hygieneRunBtn').disabled = true;
+    document.getElementById('findUnusedBtn').disabled = true;
   }
 });
 
 document.getElementById('hygienePackage').addEventListener('change', function () {
   document.getElementById('hygieneRunBtn').disabled = !this.value;
+  document.getElementById('findUnusedBtn').disabled = !this.value;
 });
 
 document.getElementById('hygieneRunBtn').addEventListener('click', runAnalysis);
@@ -2198,6 +2200,108 @@ document.getElementById('nlPagination').addEventListener('click', e => {
 document.getElementById('nlExportCsv').addEventListener('click', nlExportCsv);
 document.getElementById('nlExportJson').addEventListener('click', nlExportJson);
 document.getElementById('nlExportPdf').addEventListener('click', nlExportPdf);
+
+/* ── Unused Objects ────────────────────────────────────────────────────────────── */
+
+document.getElementById('findUnusedBtn')?.addEventListener('click', runFindUnused);
+document.getElementById('unusedCsvBtn')?.addEventListener('click', exportUnusedCsv);
+document.getElementById('unusedJsonBtn')?.addEventListener('click', exportUnusedJson);
+
+async function runFindUnused() {
+    const adom = document.getElementById('hygieneAdom')?.value;
+    const pkg  = document.getElementById('hygienePackage')?.value;
+    if (!adom || !pkg) return;
+
+    const btn     = document.getElementById('findUnusedBtn');
+    const spinner = document.getElementById('unusedSpinner');
+    const panel   = document.getElementById('unusedObjectsPanel');
+    const content = document.getElementById('unusedObjectsContent');
+
+    btn.disabled = true;
+    spinner.style.display = 'inline-block';
+    panel.style.display = '';
+    content.innerHTML = '<div class="text-muted py-3 text-center">Scanning objects…</div>';
+
+    try {
+        const params = new URLSearchParams({ adom, pkg });
+        const resp = await fetch(`/api/hygiene/unused-objects?${params}`);
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        renderUnusedObjects(data);
+    } catch (e) {
+        content.innerHTML = `<div class="alert alert-danger mb-0">Error: ${esc(e.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+    }
+}
+
+function renderUnusedObjects(data) {
+    const content = document.getElementById('unusedObjectsContent');
+    const totalUnused = data.unused_addresses.length + data.unused_services.length;
+
+    document.getElementById('unusedCsvBtn').style.display = totalUnused ? '' : 'none';
+    document.getElementById('unusedJsonBtn').style.display = totalUnused ? '' : 'none';
+
+    if (totalUnused === 0) {
+        content.innerHTML = '<div class="alert alert-success mb-0">No unused objects found in this package.</div>';
+        return;
+    }
+
+    const rows = [
+        ...data.unused_addresses.map(o =>
+            `<tr><td>${esc(o.name)}</td><td><span class="badge bg-primary">${esc(o.type === 'group' ? 'address group' : 'address')}</span></td></tr>`
+        ),
+        ...data.unused_services.map(o =>
+            `<tr><td>${esc(o.name)}</td><td><span class="badge bg-secondary">${esc(o.type === 'group' ? 'service group' : 'service')}</span></td></tr>`
+        ),
+    ].join('');
+
+    content.innerHTML = `
+        <p class="text-muted small mb-2">
+            ${totalUnused} unused object(s) out of ${data.total_addresses + data.total_services} total
+            &mdash; ${esc(data.checked_at)}
+        </p>
+        <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Object Name</th><th>Type</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+
+    window._unusedObjectsData = data;
+}
+
+function exportUnusedCsv() {
+    const data = window._unusedObjectsData;
+    if (!data) return;
+    const csvRows = [
+        ['Name', 'Category', 'Type'],
+        ...data.unused_addresses.map(o => [o.name, 'address', o.type]),
+        ...data.unused_services.map(o =>  [o.name, 'service', o.type]),
+    ];
+    const csv = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const pkg = (data.pkg || 'pkg').replace(/\//g, '_');
+    _downloadBlob('data:text/csv;charset=utf-8,' + encodeURIComponent(csv),
+                  `unused-objects-${data.adom}-${pkg}.csv`);
+}
+
+function exportUnusedJson() {
+    const data = window._unusedObjectsData;
+    if (!data) return;
+    _downloadBlob('data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2)),
+                  `unused-objects-${data.adom}.json`);
+}
+
+function _downloadBlob(href, filename) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
 
 /* ── Init ───────────────────────────────────────────────────────────────────── */
 captureCheckLabels();

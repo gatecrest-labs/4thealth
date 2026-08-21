@@ -38,6 +38,8 @@ function resultBadgeHtml(result) {
       return `<span style="${base};color:#166534;border-color:#86efac;background:#dcfce7">PASS</span>`;
     case 'INFO':
       return `<span style="${base};color:#1d4ed8;border-color:#93c5fd;background:#eff6ff">INFO</span>`;
+    case 'SKIPPED':
+      return `<span style="${base};color:#6c757d;border-color:#adb5bd;background:#f8f9fa">SKIPPED</span>`;
     default:
       return `<span style="${base};color:#555;border-color:#aaa;background:#f8f8f8">${esc(result || '?')}</span>`;
   }
@@ -202,6 +204,36 @@ function updateDeviceMatchCount() {
   document.getElementById('drRunBtn').disabled = matched.length === 0;
 }
 
+/* ── Device list (skipped-device badges) ────────────────────────────────────── */
+function renderDeviceList() {
+  let wrapper = document.getElementById('drDeviceListWrapper');
+  if (!wrapper) {
+    wrapper = document.createElement('div');
+    wrapper.id = 'drDeviceListWrapper';
+    wrapper.style.cssText = 'margin-top:.4rem;font-size:.82rem';
+    const countEl = document.getElementById('drDeviceMatchCount');
+    countEl.parentNode.appendChild(wrapper);
+  }
+  const skipped = _knownDevices.filter(d => d.skip_reason);
+  if (!skipped.length) { wrapper.innerHTML = ''; return; }
+  const table = document.createElement('table');
+  table.style.cssText = 'margin-top:.35rem;border-collapse:collapse';
+  skipped.forEach(device => {
+    const tr  = document.createElement('tr');
+    const nameTd = document.createElement('td');
+    nameTd.style.cssText = 'padding:1px 10px 1px 0;color:var(--text-muted)';
+    nameTd.textContent = device.name;
+    if (device.skip_reason) {
+      const label = device.skip_reason === 'not_deployed' ? 'Not Deployed' : 'Offline';
+      nameTd.innerHTML += ` <span class="badge bg-secondary">${label}</span>`;
+    }
+    tr.appendChild(nameTd);
+    table.appendChild(tr);
+  });
+  wrapper.innerHTML = `<span style="font-size:.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em">Skipped devices (${skipped.length})</span>`;
+  wrapper.appendChild(table);
+}
+
 /* ── ADOM loader ────────────────────────────────────────────────────────────── */
 async function loadAdoms() {
   const sel = document.getElementById('drAdom');
@@ -237,6 +269,7 @@ async function onAdomChange(adom) {
     if (Array.isArray(data)) {
       _knownDevices = data;
       updateDeviceMatchCount();
+      renderDeviceList();
     }
   } catch (e) {
     showError('Could not load device list: ' + e.message);
@@ -273,32 +306,38 @@ async function runAnalysis() {
   const collectedRows = [];
   const reviewed      = [];
 
-  showProgress(0, deviceList.length, deviceList[0]);
+  showProgress(0, targetDevices.length, targetDevices[0] ? targetDevices[0].name : '');
 
-  for (let i = 0; i < deviceList.length; i++) {
+  for (let i = 0; i < targetDevices.length; i++) {
     if (_abortRun) break;
 
-    const device = deviceList[i];
-    showProgress(i, deviceList.length, device);
+    const device = targetDevices[i];
+    showProgress(i, targetDevices.length, device.name);
 
     try {
       const resp = await fetch('/api/device-review/run/device', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ adom, device, checks, check_params: checkParams }),
+        body:    JSON.stringify({
+          adom,
+          device: device.name,
+          checks,
+          check_params: checkParams,
+          skip_reason: device.skip_reason || null,
+        }),
       });
       if (resp.status === 401) { location.href = '/login'; return; }
       const data = await resp.json();
       if (resp.ok && Array.isArray(data.rows)) {
         collectedRows.push(...data.rows);
-        reviewed.push(device);
+        reviewed.push(device.name);
       }
     } catch (_) {
       // network error on one device — skip and continue
     }
   }
 
-  showProgress(deviceList.length, deviceList.length, '');
+  showProgress(targetDevices.length, targetDevices.length, '');
 
   const runAt = new Date().toLocaleString();
   allRows  = collectedRows;

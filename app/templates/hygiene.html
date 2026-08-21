@@ -363,6 +363,10 @@
 
   <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
     <button class="btn btn-primary" id="hygieneRunBtn" disabled>&#9654; Run Analysis</button>
+    <button class="btn btn-outline-secondary ms-2" id="findUnusedBtn" disabled>
+      Find Unused Objects
+    </button>
+    <span class="spinner-border spinner-border-sm ms-2" id="unusedSpinner" role="status" style="display:none;"></span>
     <span id="hygieneRunning" class="text-muted" style="display:none;font-style:italic">Analysing…</span>
   </div>
 </div>
@@ -419,6 +423,22 @@
 </div>
 
 <div id="hygieneError" class="alert alert-danger" style="display:none"></div>
+
+<div class="card mt-4" id="unusedObjectsPanel" style="display:none;">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>
+      <strong>Unused Objects</strong>
+      <span class="text-muted small ms-2">address/service objects not referenced by any rule in this package</span>
+    </span>
+    <div>
+      <button class="btn btn-sm btn-outline-secondary me-1" id="unusedCsvBtn" style="display:none;">CSV</button>
+      <button class="btn btn-sm btn-outline-secondary" id="unusedJsonBtn" style="display:none;">JSON</button>
+    </div>
+  </div>
+  <div class="card-body" id="unusedObjectsContent">
+    <!-- populated by hygiene.js -->
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

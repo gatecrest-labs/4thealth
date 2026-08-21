@@ -29,6 +29,7 @@ CHECKS: dict[str, str] = {
     "disabled": "Disabled / Inactive Rules",
     "expired": "Expired Rules (past schedule end-date)",
     "unhit": "Unused / Un-Hit Rules (zero hit count)",
+    "missing_security_profile": "Missing Security Profiles (accept rules without UTM)",
 }
 
 
@@ -487,6 +488,54 @@ def check_unhit(policies: list[dict]) -> list[dict]:
     return findings
 
 
+def check_security_profile_gap(policies: list[dict]) -> list[dict]:
+    """Flag accept rules with no UTM security profiles attached.
+
+    Flags if: action=accept AND (utm-status=disable OR all profile fields are empty).
+    Skips deny/ipsec actions and _policy_block entries.
+    """
+    _PROFILE_FIELDS = (
+        "ips-sensor",
+        "av-profile",
+        "webfilter-profile",
+        "dnsfilter-profile",
+        "application-list",
+    )
+    findings = []
+    for idx, p in enumerate(policies):
+        if _is_policy_block(p):
+            continue
+        if _action(p) != "accept":
+            continue
+        utm = str(p.get("utm-status") or p.get("utm_status") or "disable").lower()
+        if utm != "enable":
+            findings.append(
+                {
+                    "policy_id": str(p.get("policyid", idx + 1)),
+                    "policy_name": _name(p),
+                    "seq": _seq(p, idx),
+                    "check": "missing_security_profile",
+                    "detail": "Accept rule has utm-status disabled — no security profiles active",
+                }
+            )
+            continue
+        has_profile = any(str(p.get(f) or "").strip() for f in _PROFILE_FIELDS)
+        if not has_profile:
+            findings.append(
+                {
+                    "policy_id": str(p.get("policyid", idx + 1)),
+                    "policy_name": _name(p),
+                    "seq": _seq(p, idx),
+                    "check": "missing_security_profile",
+                    "detail": (
+                        "UTM enabled but no security profiles attached "
+                        "(IPS, AV, webfilter, dnsfilter, app-control all empty)"
+                    ),
+                }
+            )
+    return findings
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 _CHECK_FNS = {
@@ -496,6 +545,7 @@ _CHECK_FNS = {
     "disabled": check_disabled,
     "expired": check_expired,
     "unhit": check_unhit,
+    "missing_security_profile": check_security_profile_gap,
 }
 
 
@@ -521,3 +571,135 @@ def run_checks(
         else:
             results.extend(fn(policies))
     return results
+
+
+# ── Unused object detection ───────────────────────────────────────────────────
+
+_BUILTIN_EXCLUSIONS: frozenset[str] = frozenset(
+    {
+        "all",
+        "ALL",
+        "any",
+        "ANY",
+        "none",
+        "NONE",
+    }
+)
+_FORTIGUARD_PREFIXES: tuple[str, ...] = ("g-", "G-", "isdb-", "ISDB-")
+
+
+def _is_builtin_obj(name: str) -> bool:
+    return name in _BUILTIN_EXCLUSIONS or any(
+        name.startswith(p) for p in _FORTIGUARD_PREFIXES
+    )
+
+
+def _collect_policy_refs(policies: list[dict]) -> tuple[set[str], set[str]]:
+    addr_refs: set[str] = set()
+    svc_refs: set[str] = set()
+    for p in policies:
+        if _is_policy_block(p):
+            continue
+        for field in ("srcaddr", "dstaddr", "src_addr", "dst_addr"):
+            for item in _addr_list(p.get(field) or []):
+                addr_refs.add(item)
+        for item in _addr_list(p.get("service") or p.get("services") or []):
+            svc_refs.add(item)
+    return addr_refs, svc_refs
+
+
+def _expand_group_members(groups: list[dict], direct_refs: set[str]) -> set[str]:
+    """BFS-expand group members reachable from any directly-referenced group name."""
+    group_map: dict[str, list[str]] = {}
+    for g in groups:
+        if not isinstance(g, dict):
+            continue
+        gname = g.get("name", "")
+        members: list[str] = []
+        for m in g.get("member") or []:
+            if isinstance(m, str):
+                members.append(m)
+            elif isinstance(m, dict):
+                n = m.get("name", "")
+                if n:
+                    members.append(n)
+        group_map[gname] = members
+
+    visited: set[str] = set()
+    queue = [n for n in direct_refs if n in group_map]
+    while queue:
+        name = queue.pop()
+        if name in visited:
+            continue
+        visited.add(name)
+        for member in group_map.get(name, []):
+            visited.add(member)
+            if member in group_map:
+                queue.append(member)
+    return visited
+
+
+def find_unused_objects(
+    policies: list[dict],
+    addresses: list[dict],
+    addr_groups: list[dict],
+    services: list[dict],
+    svc_groups: list[dict],
+) -> dict:
+    """Return address and service objects not referenced by any policy.
+
+    Objects used only inside a group that IS referenced by a policy are
+    considered used (via group membership expansion).
+
+    Returns:
+        {
+            "unused_addresses": [{"name": str, "type": str}, ...],
+            "unused_services":  [{"name": str, "type": str}, ...],
+        }
+    """
+    addr_refs, svc_refs = _collect_policy_refs(policies)
+    addr_member_refs = _expand_group_members(addr_groups, addr_refs)
+    svc_member_refs = _expand_group_members(svc_groups, svc_refs)
+    all_addr_refs = addr_refs | addr_member_refs
+    all_svc_refs = svc_refs | svc_member_refs
+
+    unused_addresses: list[dict] = []
+    for obj in addresses:
+        if not isinstance(obj, dict):
+            continue
+        name = obj.get("name", "")
+        if not name or _is_builtin_obj(name) or name in all_addr_refs:
+            continue
+        unused_addresses.append(
+            {"name": name, "type": str(obj.get("type") or "ipmask")}
+        )
+    for obj in addr_groups:
+        if not isinstance(obj, dict):
+            continue
+        name = obj.get("name", "")
+        if not name or _is_builtin_obj(name) or name in all_addr_refs:
+            continue
+        unused_addresses.append({"name": name, "type": "group"})
+
+    unused_services: list[dict] = []
+    for obj in services:
+        if not isinstance(obj, dict):
+            continue
+        name = obj.get("name", "")
+        if not name or _is_builtin_obj(name) or name in all_svc_refs:
+            continue
+        unused_services.append(
+            {"name": name, "type": str(obj.get("protocol") or "tcp/udp")}
+        )
+    for obj in svc_groups:
+        if not isinstance(obj, dict):
+            continue
+        name = obj.get("name", "")
+        if not name or _is_builtin_obj(name) or name in all_svc_refs:
+            continue
+        unused_services.append({"name": name, "type": "group"})
+
+    return {
+        "unused_addresses": sorted(unused_addresses, key=lambda x: x["name"].lower()),
+        "unused_services": sorted(unused_services, key=lambda x: x["name"].lower()),
+    }

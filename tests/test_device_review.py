@@ -18,7 +18,40 @@ from app.device_review import (
     _run_log_faz,
     _run_dns,
     _run_interface_protocols,
+    run_checks,
 )
+from app.routes.device_review_routes import _device_skip_reason
+
+
+# ── _device_skip_reason ───────────────────────────────────────────────────────
+
+def test_skip_reason_is_model():
+    d = {"name": "FW1", "flags": ["vdom_enabled", "is_model"], "conn_status": "UNKNOWN"}
+    assert _device_skip_reason(d) == "not_deployed"
+
+def test_skip_reason_offline_string():
+    d = {"name": "FW1", "flags": [], "conn_status": "unknown"}
+    assert _device_skip_reason(d) == "offline"
+
+def test_skip_reason_offline_uppercase():
+    d = {"name": "FW1", "flags": [], "conn_status": "UNKNOWN"}
+    assert _device_skip_reason(d) == "offline"
+
+def test_skip_reason_offline_int_zero():
+    d = {"name": "FW1", "flags": [], "conn_status": 0}
+    assert _device_skip_reason(d) == "offline"
+
+def test_skip_reason_none_when_healthy():
+    d = {"name": "FW1", "flags": ["vdom_enabled"], "conn_status": "up"}
+    assert _device_skip_reason(d) is None
+
+def test_skip_reason_is_model_takes_priority():
+    d = {"name": "FW1", "flags": ["is_model"], "conn_status": 0}
+    assert _device_skip_reason(d) == "not_deployed"
+
+def test_skip_reason_no_flags_field():
+    d = {"name": "FW1", "conn_status": "up"}
+    assert _device_skip_reason(d) is None
 
 
 # ── _parse_host_list ──────────────────────────────────────────────────────────
@@ -450,3 +483,191 @@ def test_fgfm_only_is_info():
     """fgfm-only = INFO (informational protocol)."""
     rows = _run_interface_protocols("FW1", {"interfaces": [_iface("mgmt", "10.0.0.1/24", "fgfm")]}, {})
     assert rows[0]["result"] == "INFO"
+
+
+# ── Task 3: Admin MFA Check ──────────────────────────────────────────────────
+
+
+def test_admin_mfa_all_disabled_fails():
+    data = {"admins": [
+        {"name": "admin1", "two-factor": "disable"},
+        {"name": "admin2", "two-factor": "disable"},
+    ]}
+    rows = run_checks("FW1", data, ["admin_mfa"])
+    assert rows[0]["result"] == "FAIL"
+    assert "admin1" in rows[0]["detail"]
+
+
+def test_admin_mfa_some_disabled_fails():
+    data = {"admins": [
+        {"name": "admin1", "two-factor": "fortitoken"},
+        {"name": "admin2", "two-factor": "disable"},
+    ]}
+    rows = run_checks("FW1", data, ["admin_mfa"])
+    assert rows[0]["result"] == "FAIL"
+    assert "admin2" in rows[0]["detail"]
+
+
+def test_admin_mfa_all_enabled_passes():
+    data = {"admins": [
+        {"name": "admin1", "two-factor": "fortitoken"},
+        {"name": "admin2", "two-factor": "fortitoken-cloud"},
+    ]}
+    rows = run_checks("FW1", data, ["admin_mfa"])
+    assert rows[0]["result"] == "PASS"
+
+
+def test_admin_mfa_missing_field_treated_as_disabled():
+    # FortiOS omits two-factor field when it's disable — absence = disable
+    data = {"admins": [{"name": "admin1"}]}
+    rows = run_checks("FW1", data, ["admin_mfa"])
+    assert rows[0]["result"] == "FAIL"
+
+
+# ── Task 2: Hostname, Admin Port, Pre-login Banner, Timezone ──────────────────
+
+
+def test_hostname_default_fails():
+    rows = run_checks("FW1", {"system_global": {"hostname": "FortiGate"}}, ["hostname_changed"])
+    assert rows[0]["result"] == "FAIL"
+
+
+def test_hostname_fortigate_case_insensitive_fails():
+    rows = run_checks("FW1", {"system_global": {"hostname": "fortigate"}}, ["hostname_changed"])
+    assert rows[0]["result"] == "FAIL"
+
+
+def test_hostname_fgt_serial_pattern_fails():
+    rows = run_checks("FW1", {"system_global": {"hostname": "FGT1234567890"}}, ["hostname_changed"])
+    assert rows[0]["result"] == "FAIL"
+
+
+def test_hostname_custom_passes():
+    rows = run_checks("FW1", {"system_global": {"hostname": "CORP-FW-DALLAS-01"}}, ["hostname_changed"])
+    assert rows[0]["result"] == "PASS"
+
+
+def test_admin_port_default_https_warns():
+    rows = run_checks("FW1", {"system_global": {"admin-sport": 443}}, ["admin_port_nondefault"])
+    assert rows[0]["result"] == "WARN"
+
+
+def test_admin_port_custom_passes():
+    rows = run_checks("FW1", {"system_global": {"admin-sport": 8443}}, ["admin_port_nondefault"])
+    assert rows[0]["result"] == "PASS"
+
+
+def test_prelogin_banner_disabled_fails():
+    rows = run_checks("FW1", {"system_global": {"pre-login-banner": "disable"}}, ["prelogin_banner"])
+    assert rows[0]["result"] == "FAIL"
+
+
+def test_prelogin_banner_enabled_passes():
+    rows = run_checks("FW1", {"system_global": {"pre-login-banner": "enable"}}, ["prelogin_banner"])
+    assert rows[0]["result"] == "PASS"
+
+
+def test_timezone_empty_is_config_missing():
+    rows = run_checks("FW1", {"system_global": {"timezone": ""}}, ["timezone_set"])
+    assert rows[0]["result"] == "CONFIG_MISSING"
+
+
+def test_timezone_absent_is_config_missing():
+    rows = run_checks("FW1", {"system_global": {}}, ["timezone_set"])
+    assert rows[0]["result"] == "CONFIG_MISSING"
+
+
+def test_timezone_set_passes():
+    rows = run_checks("FW1", {"system_global": {"timezone": "America/Denver"}}, ["timezone_set"])
+    assert rows[0]["result"] == "PASS"
+
+
+# ── VPN / IPsec tests ─────────────────────────────────────────────────────────
+
+def test_vpn_weak_crypto_des_in_phase1_fails():
+    data = {
+        "ipsec_phase1": [{"name": "tunnel1", "proposal": "des-sha1", "dhgrp": "14"}],
+        "ipsec_phase2": [],
+    }
+    rows = run_checks("FW1", data, ["vpn_weak_crypto"])
+    assert rows[0]["result"] == "FAIL"
+    assert "tunnel1" in rows[0]["detail"]
+
+
+def test_vpn_weak_crypto_weak_dhgrp_fails():
+    data = {
+        "ipsec_phase1": [{"name": "tunnel1", "proposal": "aes256-sha256", "dhgrp": "2 14"}],
+        "ipsec_phase2": [],
+    }
+    rows = run_checks("FW1", data, ["vpn_weak_crypto"])
+    assert rows[0]["result"] == "FAIL"
+
+
+def test_vpn_weak_crypto_3des_in_phase2_fails():
+    data = {
+        "ipsec_phase1": [],
+        "ipsec_phase2": [{"name": "p2-tunnel1", "proposal": "3des-sha1"}],
+    }
+    rows = run_checks("FW1", data, ["vpn_weak_crypto"])
+    assert rows[0]["result"] == "FAIL"
+
+
+def test_vpn_weak_crypto_strong_passes():
+    data = {
+        "ipsec_phase1": [{"name": "tunnel1", "proposal": "aes256-sha256", "dhgrp": "14 19"}],
+        "ipsec_phase2": [{"name": "p2", "proposal": "aes256-sha256"}],
+    }
+    rows = run_checks("FW1", data, ["vpn_weak_crypto"])
+    assert rows[0]["result"] == "PASS"
+
+
+def test_vpn_no_tunnels_is_info():
+    data = {"ipsec_phase1": [], "ipsec_phase2": []}
+    rows = run_checks("FW1", data, ["vpn_weak_crypto"])
+    assert rows[0]["result"] == "INFO"
+
+
+def test_vpn_pfs_disabled_warns():
+    data = {
+        "ipsec_phase1": [],
+        "ipsec_phase2": [{"name": "p2-tunnel1", "pfs": "disable"}],
+    }
+    rows = run_checks("FW1", data, ["vpn_pfs"])
+    assert rows[0]["result"] == "WARN"
+    assert "p2-tunnel1" in rows[0]["detail"]
+
+
+def test_vpn_pfs_enabled_passes():
+    data = {
+        "ipsec_phase1": [],
+        "ipsec_phase2": [{"name": "p2-tunnel1", "pfs": "enable"}],
+    }
+    rows = run_checks("FW1", data, ["vpn_pfs"])
+    assert rows[0]["result"] == "PASS"
+
+
+def test_vpn_ike_aggressive_mode_fails():
+    data = {
+        "ipsec_phase1": [{"name": "tunnel1", "ike-version": "1", "mode": "aggressive"}],
+        "ipsec_phase2": [],
+    }
+    rows = run_checks("FW1", data, ["vpn_ike_version"])
+    assert rows[0]["result"] == "FAIL"
+
+
+def test_vpn_ike_v1_main_warns():
+    data = {
+        "ipsec_phase1": [{"name": "tunnel1", "ike-version": "1", "mode": "main"}],
+        "ipsec_phase2": [],
+    }
+    rows = run_checks("FW1", data, ["vpn_ike_version"])
+    assert rows[0]["result"] == "WARN"
+
+
+def test_vpn_ike_v2_passes():
+    data = {
+        "ipsec_phase1": [{"name": "tunnel1", "ike-version": "2"}],
+        "ipsec_phase2": [],
+    }
+    rows = run_checks("FW1", data, ["vpn_ike_version"])
+    assert rows[0]["result"] == "PASS"
