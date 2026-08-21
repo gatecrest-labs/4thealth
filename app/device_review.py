@@ -1467,9 +1467,7 @@ def _run_admin_port_nondefault(
     https_port = (
         cfg.get("admin-sport") or cfg.get("admin_sport") or cfg.get("adminsport")
     )
-    http_port = (
-        cfg.get("admin-port") or cfg.get("admin_port") or cfg.get("adminport")
-    )
+    http_port = cfg.get("admin-port") or cfg.get("admin_port") or cfg.get("adminport")
     if https_port is None and http_port is None:
         return [
             _cis_row(
