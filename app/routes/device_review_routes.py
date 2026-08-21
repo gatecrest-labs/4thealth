@@ -37,6 +37,27 @@ from app import registry
 from app.security import internal_api_error, upstream_api_error
 from app.app_logger import app_log
 
+# Extend this set to add additional offline conn_status values if needed.
+_OFFLINE_CONN_STATUSES: frozenset[str] = frozenset({"0", "unknown", ""})
+
+
+def _device_skip_reason(d: dict) -> str | None:
+    """Return skip reason if the device should be excluded from checks.
+
+    "not_deployed" — device is a model/pre-staged FortiGate (is_model flag present).
+    "offline"      — device has not checked in to FortiManager (conn_status unknown/0).
+    None           — device is reachable, run checks normally.
+    """
+    flags = d.get("flags") or []
+    if isinstance(flags, list) and "is_model" in flags:
+        return "not_deployed"
+    raw_cs = d.get("conn_status")
+    conn_str = str(raw_cs).lower() if raw_cs is not None else ""
+    if conn_str in _OFFLINE_CONN_STATUSES:
+        return "offline"
+    return None
+
+
 bp = Blueprint("device_review", __name__)
 
 registry.register("device_review", "Device Review", "device_review.device_review_page")
@@ -97,6 +118,7 @@ def device_review_devices(adom: str):
                     "version": version,
                     "serial": d.get("sn", d.get("serial", "")),
                     "status": d.get("conn_status", ""),
+                    "skip_reason": _device_skip_reason(d),
                 }
             )
         return jsonify(devices)
@@ -190,6 +212,16 @@ def _fetch_device_data(
             data["ha_status"] = client.get_device_ha_status(adom, device)
         except Exception:
             data["ha_status"] = {}
+    if "ipsec_phase1" in data_keys:
+        try:
+            data["ipsec_phase1"] = client.get_device_ipsec_phase1(adom, device)
+        except Exception:
+            data["ipsec_phase1"] = []
+    if "ipsec_phase2" in data_keys:
+        try:
+            data["ipsec_phase2"] = client.get_device_ipsec_phase2(adom, device)
+        except Exception:
+            data["ipsec_phase2"] = []
     # device_meta is passed in from the caller (already fetched from device list)
     if "device_meta" in data_keys:
         data["device_meta"] = device_meta or {}
@@ -221,13 +253,33 @@ def device_review_run_one():
 
     try:
         with make_client() as client:
-            # Fetch device meta when firmware check is selected
-            device_meta: dict = {}
-            if "device_meta" in needed:
-                try:
-                    device_meta = client.get_device(adom, device) or {}
-                except Exception:
-                    device_meta = {}
+            # Always fetch device record — needed for server-side skip_reason check
+            # and reused as device_meta when the firmware check is selected.
+            try:
+                device_record = client.get_device(adom, device) or {}
+            except Exception:
+                device_record = {}
+            skip_reason = _device_skip_reason(device_record) if device_record else None
+            if skip_reason:
+                label = "Not Deployed (model device)" if skip_reason == "not_deployed" else "Device Offline"
+                return jsonify({
+                    "device": device,
+                    "rows": [{
+                        "device": device,
+                        "interface": "system",
+                        "vdom": "",
+                        "ip": "",
+                        "type": "system",
+                        "status": "",
+                        "check": "Device Skipped",
+                        "result": "SKIPPED",
+                        "detail": f"{label} — no checks run",
+                        "protocols": [],
+                        "has_insecure": False,
+                        "has_secure": False,
+                    }],
+                })
+            device_meta = device_record if "device_meta" in needed else {}
             device_data = _fetch_device_data(client, adom, device, needed, device_meta)
     except FMGError as exc:
         return upstream_api_error("device_review", exc)
@@ -273,6 +325,21 @@ def bulk_device_review_adom(
     def _run_one(dev: dict) -> dict:
         name = dev.get("name", "")
         ip = dev.get("ip", dev.get("mgmt_ip", ""))
+        skip = _device_skip_reason(dev)
+        if skip:
+            label = "Not Deployed (model device)" if skip == "not_deployed" else "Device Offline"
+            return {
+                "device": name,
+                "ip": ip,
+                "rows": [{
+                    "device": name, "interface": "system", "vdom": "",
+                    "ip": "", "type": "system", "status": "",
+                    "check": "Device Skipped", "result": "SKIPPED",
+                    "detail": f"{label} — no checks run",
+                    "protocols": [], "has_insecure": False, "has_secure": False,
+                }],
+                "error": None,
+            }
         try:
             with make_client() as c:
                 device_data = _fetch_device_data(c, adom, name, needed, dev)
