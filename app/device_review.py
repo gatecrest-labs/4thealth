@@ -1419,7 +1419,17 @@ def _run_hostname_changed(
                 "system/global could not be retrieved",
             )
         ]
-    hostname = str(cfg.get("hostname") or "").strip()
+    raw_hostname = cfg.get("hostname")
+    if raw_hostname is None:
+        return [
+            _cis_row(
+                device_name,
+                _CHECK_HOSTNAME,
+                "CONFIG_MISSING",
+                "Hostname field not found in system/global response",
+            )
+        ]
+    hostname = str(raw_hostname).strip()
     if (
         not hostname
         or hostname.lower() in ("fortigate", "fortigate-vm")
@@ -1454,8 +1464,12 @@ def _run_admin_port_nondefault(
                 "system/global could not be retrieved",
             )
         ]
-    https_port = cfg.get("admin-sport") or cfg.get("admin_sport")
-    http_port = cfg.get("admin-port") or cfg.get("admin_port")
+    https_port = (
+        cfg.get("admin-sport") or cfg.get("admin_sport") or cfg.get("adminsport")
+    )
+    http_port = (
+        cfg.get("admin-port") or cfg.get("admin_port") or cfg.get("adminport")
+    )
     if https_port is None and http_port is None:
         return [
             _cis_row(
@@ -1517,7 +1531,10 @@ def _run_prelogin_banner(
             )
         ]
     val = str(
-        cfg.get("pre-login-banner") or cfg.get("pre_login_banner") or "disable"
+        cfg.get("pre-login-banner")
+        or cfg.get("pre_login_banner")
+        or cfg.get("preloginbanner")
+        or "disable"
     ).lower()
     if val != "enable":
         return [
@@ -1547,8 +1564,8 @@ def _run_timezone_set(device_name: str, device_data: dict, params: dict) -> list
                 "system/global could not be retrieved",
             )
         ]
-    tz = str(cfg.get("timezone") or "").strip()
-    if not tz:
+    tz = cfg.get("timezone")
+    if tz is None or str(tz).strip() == "":
         return [
             _cis_row(
                 device_name,
