@@ -261,24 +261,32 @@ def device_review_run_one():
                 device_record = {}
             skip_reason = _device_skip_reason(device_record) if device_record else None
             if skip_reason:
-                label = "Not Deployed (model device)" if skip_reason == "not_deployed" else "Device Offline"
-                return jsonify({
-                    "device": device,
-                    "rows": [{
+                label = (
+                    "Not Deployed (model device)"
+                    if skip_reason == "not_deployed"
+                    else "Device Offline"
+                )
+                return jsonify(
+                    {
                         "device": device,
-                        "interface": "system",
-                        "vdom": "",
-                        "ip": "",
-                        "type": "system",
-                        "status": "",
-                        "check": "Device Skipped",
-                        "result": "SKIPPED",
-                        "detail": f"{label} — no checks run",
-                        "protocols": [],
-                        "has_insecure": False,
-                        "has_secure": False,
-                    }],
-                })
+                        "rows": [
+                            {
+                                "device": device,
+                                "interface": "system",
+                                "vdom": "",
+                                "ip": "",
+                                "type": "system",
+                                "status": "",
+                                "check": "Device Skipped",
+                                "result": "SKIPPED",
+                                "detail": f"{label} — no checks run",
+                                "protocols": [],
+                                "has_insecure": False,
+                                "has_secure": False,
+                            }
+                        ],
+                    }
+                )
             device_meta = device_record if "device_meta" in needed else {}
             device_data = _fetch_device_data(client, adom, device, needed, device_meta)
     except FMGError as exc:
@@ -327,17 +335,30 @@ def bulk_device_review_adom(
         ip = dev.get("ip", dev.get("mgmt_ip", ""))
         skip = _device_skip_reason(dev)
         if skip:
-            label = "Not Deployed (model device)" if skip == "not_deployed" else "Device Offline"
+            label = (
+                "Not Deployed (model device)"
+                if skip == "not_deployed"
+                else "Device Offline"
+            )
             return {
                 "device": name,
                 "ip": ip,
-                "rows": [{
-                    "device": name, "interface": "system", "vdom": "",
-                    "ip": "", "type": "system", "status": "",
-                    "check": "Device Skipped", "result": "SKIPPED",
-                    "detail": f"{label} — no checks run",
-                    "protocols": [], "has_insecure": False, "has_secure": False,
-                }],
+                "rows": [
+                    {
+                        "device": name,
+                        "interface": "system",
+                        "vdom": "",
+                        "ip": "",
+                        "type": "system",
+                        "status": "",
+                        "check": "Device Skipped",
+                        "result": "SKIPPED",
+                        "detail": f"{label} — no checks run",
+                        "protocols": [],
+                        "has_insecure": False,
+                        "has_secure": False,
+                    }
+                ],
                 "error": None,
             }
         try:

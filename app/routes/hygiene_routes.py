@@ -1288,13 +1288,16 @@ def hygiene_unused_objects():
 
     from app.hygiene import find_unused_objects
     import datetime
+
     result = find_unused_objects(policies, addresses, addr_groups, services, svc_groups)
-    return jsonify({
-        "adom": adom,
-        "pkg": path,
-        "unused_addresses": result["unused_addresses"],
-        "unused_services": result["unused_services"],
-        "total_addresses": len(addresses) + len(addr_groups),
-        "total_services": len(services) + len(svc_groups),
-        "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    })
+    return jsonify(
+        {
+            "adom": adom,
+            "pkg": path,
+            "unused_addresses": result["unused_addresses"],
+            "unused_services": result["unused_services"],
+            "total_addresses": len(addresses) + len(addr_groups),
+            "total_services": len(services) + len(svc_groups),
+            "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    )

@@ -1418,7 +1418,9 @@ class FMGClient:
     def get_device_ipsec_phase1(self, adom: str, device_name: str) -> list:
         """Return vpn.ipsec/phase1-interface config from all VDOMs via FMG proxy."""
         try:
-            r = self._proxy(adom, device_name, "/api/v2/cmdb/vpn.ipsec/phase1-interface?vdom=*")
+            r = self._proxy(
+                adom, device_name, "/api/v2/cmdb/vpn.ipsec/phase1-interface?vdom=*"
+            )
             payload = r.get("payload", [])
             if isinstance(payload, list):
                 if payload and isinstance(payload[0], dict) and "results" in payload[0]:
@@ -1440,7 +1442,9 @@ class FMGClient:
     def get_device_ipsec_phase2(self, adom: str, device_name: str) -> list:
         """Return vpn.ipsec/phase2-interface config from all VDOMs via FMG proxy."""
         try:
-            r = self._proxy(adom, device_name, "/api/v2/cmdb/vpn.ipsec/phase2-interface?vdom=*")
+            r = self._proxy(
+                adom, device_name, "/api/v2/cmdb/vpn.ipsec/phase2-interface?vdom=*"
+            )
             payload = r.get("payload", [])
             if isinstance(payload, list):
                 if payload and isinstance(payload[0], dict) and "results" in payload[0]:

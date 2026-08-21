@@ -495,8 +495,11 @@ def check_security_profile_gap(policies: list[dict]) -> list[dict]:
     Skips deny/ipsec actions and _policy_block entries.
     """
     _PROFILE_FIELDS = (
-        "ips-sensor", "av-profile", "webfilter-profile",
-        "dnsfilter-profile", "application-list",
+        "ips-sensor",
+        "av-profile",
+        "webfilter-profile",
+        "dnsfilter-profile",
+        "application-list",
     )
     findings = []
     for idx, p in enumerate(policies):
@@ -506,26 +509,30 @@ def check_security_profile_gap(policies: list[dict]) -> list[dict]:
             continue
         utm = str(p.get("utm-status") or p.get("utm_status") or "disable").lower()
         if utm != "enable":
-            findings.append({
-                "policy_id": str(p.get("policyid", idx + 1)),
-                "policy_name": _name(p),
-                "seq": _seq(p, idx),
-                "check": "missing_security_profile",
-                "detail": "Accept rule has utm-status disabled — no security profiles active",
-            })
+            findings.append(
+                {
+                    "policy_id": str(p.get("policyid", idx + 1)),
+                    "policy_name": _name(p),
+                    "seq": _seq(p, idx),
+                    "check": "missing_security_profile",
+                    "detail": "Accept rule has utm-status disabled — no security profiles active",
+                }
+            )
             continue
         has_profile = any(str(p.get(f) or "").strip() for f in _PROFILE_FIELDS)
         if not has_profile:
-            findings.append({
-                "policy_id": str(p.get("policyid", idx + 1)),
-                "policy_name": _name(p),
-                "seq": _seq(p, idx),
-                "check": "missing_security_profile",
-                "detail": (
-                    "UTM enabled but no security profiles attached "
-                    "(IPS, AV, webfilter, dnsfilter, app-control all empty)"
-                ),
-            })
+            findings.append(
+                {
+                    "policy_id": str(p.get("policyid", idx + 1)),
+                    "policy_name": _name(p),
+                    "seq": _seq(p, idx),
+                    "check": "missing_security_profile",
+                    "detail": (
+                        "UTM enabled but no security profiles attached "
+                        "(IPS, AV, webfilter, dnsfilter, app-control all empty)"
+                    ),
+                }
+            )
     return findings
 
 
@@ -568,14 +575,23 @@ def run_checks(
 
 # ── Unused object detection ───────────────────────────────────────────────────
 
-_BUILTIN_EXCLUSIONS: frozenset[str] = frozenset({
-    "all", "ALL", "any", "ANY", "none", "NONE",
-})
+_BUILTIN_EXCLUSIONS: frozenset[str] = frozenset(
+    {
+        "all",
+        "ALL",
+        "any",
+        "ANY",
+        "none",
+        "NONE",
+    }
+)
 _FORTIGUARD_PREFIXES: tuple[str, ...] = ("g-", "G-", "isdb-", "ISDB-")
 
 
 def _is_builtin_obj(name: str) -> bool:
-    return name in _BUILTIN_EXCLUSIONS or any(name.startswith(p) for p in _FORTIGUARD_PREFIXES)
+    return name in _BUILTIN_EXCLUSIONS or any(
+        name.startswith(p) for p in _FORTIGUARD_PREFIXES
+    )
 
 
 def _collect_policy_refs(policies: list[dict]) -> tuple[set[str], set[str]]:
@@ -654,7 +670,9 @@ def find_unused_objects(
         name = obj.get("name", "")
         if not name or _is_builtin_obj(name) or name in all_addr_refs:
             continue
-        unused_addresses.append({"name": name, "type": str(obj.get("type") or "ipmask")})
+        unused_addresses.append(
+            {"name": name, "type": str(obj.get("type") or "ipmask")}
+        )
     for obj in addr_groups:
         if not isinstance(obj, dict):
             continue
@@ -670,7 +688,9 @@ def find_unused_objects(
         name = obj.get("name", "")
         if not name or _is_builtin_obj(name) or name in all_svc_refs:
             continue
-        unused_services.append({"name": name, "type": str(obj.get("protocol") or "tcp/udp")})
+        unused_services.append(
+            {"name": name, "type": str(obj.get("protocol") or "tcp/udp")}
+        )
     for obj in svc_groups:
         if not isinstance(obj, dict):
             continue
