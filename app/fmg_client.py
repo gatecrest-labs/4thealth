@@ -1202,7 +1202,9 @@ class FMGClient:
         not present in the ADOM shared-object database.
         """
         try:
-            return self._get_paged(f"/pm/config/device/{device}/vdom/{vdom}/firewall/vip")
+            return self._get_paged(
+                f"/pm/config/device/{device}/vdom/{vdom}/firewall/vip"
+            )
         except Exception:
             return []
 
