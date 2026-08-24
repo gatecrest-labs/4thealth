@@ -232,6 +232,84 @@ def test_nat_lookup_matches_ippool(client):
     assert data["results"][0]["name"] == "outbound_pool"
 
 
+def test_nat_lookup_response_includes_objects_checked(client):
+    """Response must include objects_checked with shared_vips/device_vips/devices/pools counts."""
+    vips = [{"name": "v1", "extip": "1.2.3.4", "mappedip": [{"range": "10.0.0.1"}],
+             "portforward": "disable", "protocol": "", "extport": "", "mappedport": "", "comment": ""}]
+    pools = [{"name": "p1", "startip": "5.6.7.8", "endip": "5.6.7.9", "type": "overload", "comments": ""}]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = pools
+        inst.get_devices.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "9.9.9.9"})
+    data = resp.get_json()
+    assert "objects_checked" in data
+    oc = data["objects_checked"]
+    assert oc["shared_vips"] == 1
+    assert oc["device_vips"] == 0
+    assert oc["devices"] == 0
+    assert oc["pools"] == 1
+
+
+def test_nat_lookup_finds_per_device_vip(client):
+    """Per-device VIPs (not in ADOM shared objects) must be found via the device sweep."""
+    device_vips = [
+        {
+            "name": "vip-per-device",
+            "extip": "203.0.113.99",
+            "extintf": "wan1",
+            "mappedip": [{"range": "10.10.10.1"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        }
+    ]
+    devices = [{"name": "FW-EDGE-01", "vdom": [{"name": "root"}]}]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = []        # no ADOM-level VIPs
+        inst.get_ippool_objects.return_value = []
+        inst.get_devices.return_value = devices
+        inst.get_device_vip_objects.return_value = device_vips
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.10.10.1"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "vip-per-device"
+    assert data["results"][0]["device"] == "FW-EDGE-01"
+    assert data["objects_checked"]["devices"] == 1
+    assert data["objects_checked"]["device_vips"] == 1
+
+
+def test_nat_lookup_matches_vip_hyphenated_mapped_ip(client):
+    """Some FMG versions return 'mapped-ip' (hyphenated) — must still match."""
+    vips = [
+        {
+            "name": "vip-hyphen",
+            "extip": "203.0.113.50",
+            "extintf": "wan1",
+            "mapped-ip": [{"range": "10.0.0.99"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        }
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.0.99"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "vip-hyphen"
+
+
 def test_nat_lookup_not_found(client):
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value

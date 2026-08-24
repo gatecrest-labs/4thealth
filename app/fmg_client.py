@@ -1195,6 +1195,19 @@ class FMGClient:
                 pass
         return results
 
+    def get_device_vip_objects(self, device: str, vdom: str = "root") -> list:
+        """Return VIP objects from a specific device/vdom via the per-device DB path.
+
+        Used by NAT lookup to find VIPs that are installed on a device but are
+        not present in the ADOM shared-object database.
+        """
+        try:
+            return self._get_paged(
+                f"/pm/config/device/{device}/vdom/{vdom}/firewall/vip"
+            )
+        except Exception:
+            return []
+
     def get_audit_log(self, hours: int = 24) -> list:
         """Return FortiManager audit log entries from the last ``hours`` hours.
 
