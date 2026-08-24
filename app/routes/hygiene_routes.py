@@ -11,6 +11,7 @@ API (JSON, all read-only):
 """
 
 import ipaddress
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Blueprint, render_template, session, jsonify, request
 from app.decorators import tab_required, check_adom_access
@@ -1029,19 +1030,70 @@ def hygiene_nat_lookup(adom: str):
 
     results = []
 
+    # ── Phase 1: fetch ADOM-level shared VIPs and IP pools ──────────────────────
     try:
         with make_client() as client:
-            vips = client.get_vip_objects(adom)
+            shared_vips = client.get_vip_objects(adom)
             pools = client.get_ippool_objects(adom)
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
         return internal_api_error("hygiene", exc)
 
-    vips_checked = len(vips)
-    pools_checked = len(pools)
+    # ── Phase 2: fetch per-device VIPs in parallel ───────────────────────────────
+    # ADOM shared-object VIPs (above) miss VIPs that are installed on individual
+    # devices but not promoted to the shared object database.  Query each device's
+    # own VIP table via the per-device DB path to catch them.
+    dev_vdom_pairs: list[tuple[str, str]] = []
+    try:
+        with make_client() as client:
+            devices = client.get_devices(adom)
+        for dev in devices:
+            if not isinstance(dev, dict):
+                continue
+            dev_name = dev.get("name", "")
+            if not dev_name:
+                continue
+            vdoms_raw = dev.get("vdom") or []
+            if isinstance(vdoms_raw, list) and vdoms_raw:
+                for v in vdoms_raw:
+                    vn = v.get("name", "root") if isinstance(v, dict) else str(v)
+                    dev_vdom_pairs.append((dev_name, vn))
+            else:
+                dev_vdom_pairs.append((dev_name, "root"))
+    except Exception:
+        pass
 
-    for vip in vips:
+    def _fetch_dev_vips(pair: tuple[str, str]) -> list:
+        dev_name, vdom = pair
+        try:
+            with make_client() as c:
+                entries = c.get_device_vip_objects(dev_name, vdom)
+            for e in entries:
+                if isinstance(e, dict):
+                    e["_source_device"] = dev_name
+            return entries
+        except Exception:
+            return []
+
+    device_vips: list = []
+    if dev_vdom_pairs:
+        with ThreadPoolExecutor(max_workers=10) as pool_ex:
+            for chunk in pool_ex.map(_fetch_dev_vips, dev_vdom_pairs):
+                device_vips.extend(chunk)
+
+    # Tag ADOM-level VIPs with an empty source device marker before merging.
+    for v in shared_vips:
+        if isinstance(v, dict):
+            v.setdefault("_source_device", "")
+
+    all_vips = shared_vips + device_vips
+    shared_vips_count = len(shared_vips)
+    device_vips_count = len(device_vips)
+    devices_scanned = len({pair[0] for pair in dev_vdom_pairs})
+
+    # ── Phase 3: match VIPs ───────────────────────────────────────────────────────
+    for vip in all_vips:
         if not isinstance(vip, dict):
             continue
         name = vip.get("name", "")
@@ -1064,10 +1116,8 @@ def hygiene_nat_lookup(adom: str):
         mapped_ranges = vip.get("mappedip") or vip.get("mapped-ip") or []
 
         matched = False
-        # Match on external IP (single or range)
         if _ip_in_range(searched_ip, ext_ip_start, ext_ip_end):
             matched = True
-        # Match on any mapped IP range; FMG returns single IPs without a dash
         if not matched:
             for entry in mapped_ranges:
                 if not isinstance(entry, dict):
@@ -1084,7 +1134,6 @@ def hygiene_nat_lookup(adom: str):
         if not matched:
             continue
 
-        # Build human-readable mapped IP string
         mapped_display = (
             "; ".join(
                 e.get("range", "")
@@ -1099,6 +1148,7 @@ def hygiene_nat_lookup(adom: str):
             {
                 "nat_type": "VIP",
                 "name": name,
+                "device": vip.get("_source_device", ""),
                 "ext_ip": ext_ip,
                 "ext_intf": vip.get("extintf", ""),
                 "mapped_ip": mapped_display,
@@ -1110,6 +1160,7 @@ def hygiene_nat_lookup(adom: str):
             }
         )
 
+    # ── Phase 4: match IP pools ───────────────────────────────────────────────────
     for pool in pools:
         if not isinstance(pool, dict):
             continue
@@ -1124,6 +1175,7 @@ def hygiene_nat_lookup(adom: str):
             {
                 "nat_type": "IP Pool",
                 "name": name,
+                "device": "",
                 "start_ip": start_ip,
                 "end_ip": end_ip,
                 "pool_type": pool.get("type", ""),
@@ -1136,7 +1188,12 @@ def hygiene_nat_lookup(adom: str):
             "results": results,
             "total": len(results),
             "searched_ip": searched_ip,
-            "objects_checked": {"vips": vips_checked, "pools": pools_checked},
+            "objects_checked": {
+                "shared_vips": shared_vips_count,
+                "device_vips": device_vips_count,
+                "devices": devices_scanned,
+                "pools": len(pools),
+            },
         }
     )
 
