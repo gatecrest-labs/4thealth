@@ -1621,7 +1621,7 @@ async function runNatLookup() {
       return;
     }
     nlAllResults = data.results || [];
-    nlMeta       = { adom, ip: data.searched_ip || query };
+    nlMeta       = { adom, ip: data.searched_ip || query, objects_checked: data.objects_checked || null };
     nlPage       = 1;
     nlFilter     = '';
     document.getElementById('nlFilter').value = '';
@@ -1663,10 +1663,15 @@ function renderNlTable() {
   const shown = rows.length === nlAllResults.length
     ? `${nlAllResults.length} result${nlAllResults.length !== 1 ? 's' : ''}`
     : `${rows.length} of ${nlAllResults.length} result${nlAllResults.length !== 1 ? 's' : ''}`;
+  const nlCheckedSuffix = (() => {
+    const oc = meta.objects_checked;
+    if (!oc) return '';
+    return ` — searched ${oc.vips} VIP${oc.vips !== 1 ? 's' : ''}, ${oc.pools} pool${oc.pools !== 1 ? 's' : ''}`;
+  })();
   document.getElementById('nlSummary').textContent =
     nlAllResults.length === 0
-      ? `No NAT entries found for ${meta.ip || ''} in ${meta.adom || ''}`
-      : `${shown} for ${meta.ip || ''} in ${meta.adom || ''}`;
+      ? `No NAT entries found for ${meta.ip || ''} in ${meta.adom || ''}${nlCheckedSuffix}`
+      : `${shown} for ${meta.ip || ''} in ${meta.adom || ''}${nlCheckedSuffix}`;
   document.getElementById('nlCount').textContent =
     `${shown} — page ${nlPage} of ${total}`;
 

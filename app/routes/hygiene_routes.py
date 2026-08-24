@@ -1038,6 +1038,9 @@ def hygiene_nat_lookup(adom: str):
     except Exception as exc:
         return internal_api_error("hygiene", exc)
 
+    vips_checked = len(vips)
+    pools_checked = len(pools)
+
     for vip in vips:
         if not isinstance(vip, dict):
             continue
@@ -1057,7 +1060,8 @@ def hygiene_nat_lookup(adom: str):
                 ext_ip_end = ext_ip_end.strip()
             else:
                 ext_ip_start = ext_ip_end = ext_ip
-        mapped_ranges = vip.get("mappedip", []) or []
+        # FMG may return the field as "mappedip" or "mapped-ip" depending on version/context.
+        mapped_ranges = vip.get("mappedip") or vip.get("mapped-ip") or []
 
         matched = False
         # Match on external IP (single or range)
@@ -1132,6 +1136,7 @@ def hygiene_nat_lookup(adom: str):
             "results": results,
             "total": len(results),
             "searched_ip": searched_ip,
+            "objects_checked": {"vips": vips_checked, "pools": pools_checked},
         }
     )
 
