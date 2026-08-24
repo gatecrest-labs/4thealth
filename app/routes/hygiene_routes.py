@@ -1045,17 +1045,25 @@ def hygiene_nat_lookup(adom: str):
         if not name:
             continue
         ext_ip = vip.get("extip", "")
+        # Normalise extip for display; derive start/end for range matching.
+        # FMG may return a single IP ("1.2.3.4") or a range ("1.2.3.4-1.2.3.9").
         try:
             ext_ip = str(ipaddress.ip_address(ext_ip))
+            ext_ip_start = ext_ip_end = ext_ip
         except ValueError:
-            pass
+            if "-" in ext_ip:
+                ext_ip_start, _, ext_ip_end = ext_ip.partition("-")
+                ext_ip_start = ext_ip_start.strip()
+                ext_ip_end = ext_ip_end.strip()
+            else:
+                ext_ip_start = ext_ip_end = ext_ip
         mapped_ranges = vip.get("mappedip", []) or []
 
         matched = False
-        # Match on external IP (exact)
-        if ext_ip == searched_ip:
+        # Match on external IP (single or range)
+        if _ip_in_range(searched_ip, ext_ip_start, ext_ip_end):
             matched = True
-        # Match on any mapped IP range
+        # Match on any mapped IP range; FMG returns single IPs without a dash
         if not matched:
             for entry in mapped_ranges:
                 if not isinstance(entry, dict):
@@ -1063,9 +1071,11 @@ def hygiene_nat_lookup(adom: str):
                 rng = entry.get("range", "")
                 if "-" in rng:
                     start, _, end = rng.partition("-")
-                    if _ip_in_range(searched_ip, start.strip(), end.strip()):
-                        matched = True
-                        break
+                else:
+                    start = end = rng
+                if _ip_in_range(searched_ip, start.strip(), end.strip()):
+                    matched = True
+                    break
 
         if not matched:
             continue
