@@ -158,6 +158,58 @@ def test_nat_lookup_matches_vip_mapped_ip(client):
     assert data["results"][0]["name"] == "vip_web"
 
 
+def test_nat_lookup_matches_vip_single_mapped_ip(client):
+    """Single-IP mappedip entries (no dash) must be matched — regression for FMG format."""
+    vips = [
+        {
+            "name": "vip-Cherokee-GE-OMS-NAT",
+            "extip": "192.234.135.43",
+            "extintf": "any",
+            "mappedip": [{"range": "170.152.57.68"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        }
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "170.152.57.68"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "vip-Cherokee-GE-OMS-NAT"
+
+
+def test_nat_lookup_matches_vip_extip_range(client):
+    """VIP extip returned as a range string must be matched."""
+    vips = [
+        {
+            "name": "vip_range",
+            "extip": "203.0.113.10-203.0.113.20",
+            "extintf": "wan1",
+            "mappedip": [{"range": "10.0.0.1"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        }
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.15"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "vip_range"
+
+
 def test_nat_lookup_matches_ippool(client):
     pools = [
         {
