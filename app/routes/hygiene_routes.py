@@ -11,7 +11,7 @@ API (JSON, all read-only):
 """
 
 import ipaddress
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Blueprint, render_template, session, jsonify, request
 from app.decorators import tab_required, check_adom_access
@@ -1116,10 +1116,8 @@ def hygiene_nat_lookup(adom: str):
         mapped_ranges = vip.get("mappedip") or vip.get("mapped-ip") or []
 
         matched = False
-        # Match on external IP (single or range)
         if _ip_in_range(searched_ip, ext_ip_start, ext_ip_end):
             matched = True
-        # Match on any mapped IP range; FMG returns single IPs without a dash
         if not matched:
             for entry in mapped_ranges:
                 if not isinstance(entry, dict):
