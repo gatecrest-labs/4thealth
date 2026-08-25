@@ -1169,9 +1169,9 @@ def hygiene_nat_lookup(adom: str):
                 "name": name,
                 "device": vip.get("_source_device", ""),
                 "ext_ip": ext_ip,
-                "ext_intf": (lambda v: v[0] if isinstance(v, list) else v)(
-                    vip.get("extintf", "")
-                ),
+                "ext_intf": (
+                    lambda v: (v[0] if v else "") if isinstance(v, list) else v
+                )(vip.get("extintf", "")),
                 "mapped_ip": mapped_display,
                 "port_forward": port_forward,
                 "protocol": vip.get("protocol", "") if port_forward else "",
