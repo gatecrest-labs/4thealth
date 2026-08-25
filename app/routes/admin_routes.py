@@ -514,15 +514,10 @@ def api_debug_nat(adom: str, device: str):
                            and return their full raw dict instead of a 3-item sample
       ?shared=1          — also search the ADOM-level shared VIP objects for the name filter
     """
-    from app.fmg_client import FMGClient
-    from app.config import Config
+    from app.fmg_helpers import make_client
 
-    cfg = Config()
     name_filter = (request.args.get("name") or "").lower()
     include_shared = request.args.get("shared", "0") == "1"
-
-    def make_client():
-        return FMGClient(cfg)
 
     result: dict = {
         "adom": adom,
