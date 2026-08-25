@@ -924,27 +924,51 @@ class FMGClient:
         except Exception:
             return []
 
+    def get_device_group_members(self, adom: str, group_name: str) -> list[str]:
+        """Return device names that belong to a FMG device group.
+
+        FMG endpoint: /dvmdb/adom/{adom}/group/{group}/object member
+        Returns [] on error or when the name is not a group.
+        """
+        try:
+            data = self._get(f"/dvmdb/adom/{adom}/group/{group_name}/object member")
+            if not isinstance(data, list):
+                return []
+            return [m.get("name", "") for m in data if isinstance(m, dict) and m.get("name")]
+        except Exception:
+            return []
+
     def get_device_policy_package(self, adom: str, device_name: str) -> list[dict]:
         """Return policy packages installed on a device.
 
         Uses the scope member list already embedded in each package dict returned by
-        get_policy_packages() — no additional API calls are made.
+        get_policy_packages(). Scope members may be individual devices OR device groups;
+        groups are expanded via get_device_group_members() with results cached per call.
         Returns a list of {"name": pkg_name, "vdom": vdom} dicts (usually one entry);
         [] if none found or on error.
         """
         try:
             packages = self.get_policy_packages(adom)
             matched = []
+            device_lower = device_name.lower()
+            group_cache: dict[str, list[str]] = {}
             for pkg in packages:
                 scope = pkg.get("scope member") or pkg.get("scope_member") or []
                 if not isinstance(scope, list):
                     continue
                 for m in scope:
-                    if (
-                        isinstance(m, dict)
-                        and m.get("name", "").lower() == device_name.lower()
-                    ):
+                    if not isinstance(m, dict):
+                        continue
+                    name = m.get("name", "")
+                    if name.lower() == device_lower:
                         matched.append({"name": pkg["name"], "vdom": m.get("vdom", "")})
+                        break
+                    # scope member may be a device group — expand it (cached)
+                    if name not in group_cache:
+                        group_cache[name] = self.get_device_group_members(adom, name)
+                    if any(gm.lower() == device_lower for gm in group_cache[name]):
+                        matched.append({"name": pkg["name"], "vdom": m.get("vdom", "")})
+                        break
             return matched
         except Exception:
             return []
