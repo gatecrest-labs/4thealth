@@ -497,3 +497,61 @@ def api_host_metrics():
     data["range"] = range_key
     data["generated_at"] = int(time.time())
     return jsonify(data)
+
+
+# ── NAT debug (admin only) ─────────────────────────────────────────────────────
+# Returns raw VDOMs and VIP objects from FMG for a specific device to help
+# diagnose why a VIP is not being matched by the NAT lookup endpoint.
+
+
+@bp.route("/api/debug/nat/<adom>/<device>")
+@_admin_required
+def api_debug_nat(adom: str, device: str):
+    from app.fmg_client import FMGClient
+    from app.config import Config
+
+    cfg = Config()
+
+    def make_client():
+        return FMGClient(cfg)
+
+    result: dict = {
+        "adom": adom,
+        "device": device,
+        "vdoms": [],
+        "vip_counts": {},
+        "sample_vips": {},
+    }
+    try:
+        with make_client() as c:
+            vdoms_data = c.get_device_vdoms(adom, device)
+        result["vdoms"] = vdoms_data
+        vdom_names = (
+            [
+                v.get("name", "root")
+                for v in vdoms_data
+                if isinstance(v, dict) and v.get("name")
+            ]
+            if vdoms_data
+            else ["root"]
+        )
+        for vdom in vdom_names:
+            try:
+                with make_client() as c:
+                    vips = c.get_device_vip_objects(device, vdom)
+                result["vip_counts"][vdom] = len(vips)
+                # Return up to 3 sample VIP names + their mappedip raw values for inspection.
+                result["sample_vips"][vdom] = [
+                    {
+                        "name": v.get("name", ""),
+                        "extip": v.get("extip", ""),
+                        "mappedip_raw": v.get("mappedip") or v.get("mapped-ip"),
+                    }
+                    for v in vips[:3]
+                    if isinstance(v, dict)
+                ]
+            except Exception as exc:
+                result["vip_counts"][vdom] = f"ERROR: {exc}"
+    except Exception as exc:
+        result["error"] = str(exc)
+    return jsonify(result)

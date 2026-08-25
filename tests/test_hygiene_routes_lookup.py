@@ -311,6 +311,58 @@ def test_nat_lookup_matches_vip_hyphenated_mapped_ip(client):
     assert data["results"][0]["name"] == "vip-hyphen"
 
 
+def test_nat_lookup_matches_vip_mappedip_plain_string(client):
+    """FMG per-device path may return mappedip as a plain string — must still match."""
+    vips = [
+        {
+            "name": "vip-str",
+            "extip": "203.0.113.70",
+            "extintf": "wan1",
+            "mappedip": "10.0.1.50",
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        }
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.1.50"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "vip-str"
+
+
+def test_nat_lookup_matches_vip_mappedip_list_of_strings(client):
+    """FMG may return mappedip as a list of strings (not dicts) — must still match."""
+    vips = [
+        {
+            "name": "vip-strlist",
+            "extip": "203.0.113.80",
+            "extintf": "wan1",
+            "mappedip": ["10.0.2.75"],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        }
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.2.75"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "vip-strlist"
+
+
 def test_nat_lookup_not_found(client):
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value

@@ -1123,16 +1123,28 @@ def hygiene_nat_lookup(adom: str):
             else:
                 ext_ip_start = ext_ip_end = ext_ip
         # FMG may return the field as "mappedip" or "mapped-ip" depending on version/context.
-        mapped_ranges = vip.get("mappedip") or vip.get("mapped-ip") or []
+        # Normalise to a flat list of range strings: handles list-of-dicts, list-of-strings,
+        # and plain string (all observed FMG variants).
+        mapped_raw = vip.get("mappedip") or vip.get("mapped-ip") or []
+        if isinstance(mapped_raw, str):
+            mapped_ranges_strs = [mapped_raw] if mapped_raw else []
+        elif isinstance(mapped_raw, list):
+            mapped_ranges_strs = []
+            for _e in mapped_raw:
+                if isinstance(_e, dict):
+                    _r = _e.get("range", "")
+                    if _r:
+                        mapped_ranges_strs.append(_r)
+                elif isinstance(_e, str) and _e:
+                    mapped_ranges_strs.append(_e)
+        else:
+            mapped_ranges_strs = []
 
         matched = False
         if _ip_in_range(searched_ip, ext_ip_start, ext_ip_end):
             matched = True
         if not matched:
-            for entry in mapped_ranges:
-                if not isinstance(entry, dict):
-                    continue
-                rng = entry.get("range", "")
+            for rng in mapped_ranges_strs:
                 if "-" in rng:
                     start, _, end = rng.partition("-")
                 else:
@@ -1144,14 +1156,7 @@ def hygiene_nat_lookup(adom: str):
         if not matched:
             continue
 
-        mapped_display = (
-            "; ".join(
-                e.get("range", "")
-                for e in mapped_ranges
-                if isinstance(e, dict) and e.get("range")
-            )
-            or "—"
-        )
+        mapped_display = "; ".join(mapped_ranges_strs) or "—"
 
         port_forward = vip.get("portforward", "disable") == "enable"
         results.append(
