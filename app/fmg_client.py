@@ -941,15 +941,28 @@ class FMGClient:
     def get_device_group_members(self, adom: str, group_name: str) -> list[str]:
         """Return device names that belong to a FMG device group.
 
-        FMG endpoint: /dvmdb/adom/{adom}/group/{group}/object member
+        FMG requires option=['object member'] to include the sub-table inline;
+        the /object member path suffix does not work for dvmdb device groups.
         Returns [] on error or when the name is not a group.
         """
         try:
-            data = self._get(f"/dvmdb/adom/{adom}/group/{group_name}/object member")
-            if not isinstance(data, list):
-                return []
+            url = f"/dvmdb/adom/{adom}/group/{group_name}"
+            body = {
+                "id": self._next_id(),
+                "method": "get",
+                "params": [{"url": url, "option": ["object member"]}],
+            }
+            if self.session:
+                body["session"] = self.session
+            resp = self._post(body)
+            data = resp.get("result", [{}])[0].get("data") or {}
+            if isinstance(data, list) and data:
+                data = data[0]
+            members = data.get("object member") or [] if isinstance(data, dict) else []
             return [
-                m.get("name", "") for m in data if isinstance(m, dict) and m.get("name")
+                m.get("name", "")
+                for m in members
+                if isinstance(m, dict) and m.get("name")
             ]
         except Exception:
             return []
