@@ -267,12 +267,13 @@ def test_nat_lookup_finds_per_device_vip(client):
             "comment": "",
         }
     ]
-    devices = [{"name": "FW-EDGE-01", "vdom": [{"name": "root"}]}]
+    devices = [{"name": "FW-EDGE-01"}]
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = []        # no ADOM-level VIPs
         inst.get_ippool_objects.return_value = []
         inst.get_devices.return_value = devices
+        inst.get_device_vdoms.return_value = [{"name": "root"}]
         inst.get_device_vip_objects.return_value = device_vips
         resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.10.10.1"})
     assert resp.status_code == 200

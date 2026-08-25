@@ -1044,7 +1044,9 @@ def hygiene_nat_lookup(adom: str):
     # ADOM shared-object VIPs (above) miss VIPs that are installed on individual
     # devices but not promoted to the shared object database.  Query each device's
     # own VIP table via the per-device DB path to catch them.
-    dev_vdom_pairs: list[tuple[str, str]] = []
+    # VDOMs are queried explicitly per device (not from the dvmdb device list,
+    # which often omits the vdom field) so multi-VDOM devices are fully covered.
+    device_names: list[str] = []
     try:
         with make_client() as client:
             devices = client.get_devices(adom)
@@ -1052,34 +1054,42 @@ def hygiene_nat_lookup(adom: str):
             if not isinstance(dev, dict):
                 continue
             dev_name = dev.get("name", "")
-            if not dev_name:
-                continue
-            vdoms_raw = dev.get("vdom") or []
-            if isinstance(vdoms_raw, list) and vdoms_raw:
-                for v in vdoms_raw:
-                    vn = v.get("name", "root") if isinstance(v, dict) else str(v)
-                    dev_vdom_pairs.append((dev_name, vn))
-            else:
-                dev_vdom_pairs.append((dev_name, "root"))
+            if dev_name:
+                device_names.append(dev_name)
     except Exception:
         pass
 
-    def _fetch_dev_vips(pair: tuple[str, str]) -> list:
-        dev_name, vdom = pair
+    def _fetch_dev_vips(dev_name: str) -> list:
         try:
             with make_client() as c:
-                entries = c.get_device_vip_objects(dev_name, vdom)
-            for e in entries:
-                if isinstance(e, dict):
-                    e["_source_device"] = dev_name
-            return entries
+                vdoms_data = c.get_device_vdoms(adom, dev_name)
+                vdoms = (
+                    [
+                        v.get("name", "root")
+                        for v in vdoms_data
+                        if isinstance(v, dict) and v.get("name")
+                    ]
+                    if vdoms_data
+                    else ["root"]
+                )
+                all_entries: list = []
+                for vdom in vdoms:
+                    try:
+                        entries = c.get_device_vip_objects(dev_name, vdom)
+                        for e in entries:
+                            if isinstance(e, dict):
+                                e["_source_device"] = dev_name
+                        all_entries.extend(entries)
+                    except Exception:
+                        pass
+            return all_entries
         except Exception:
             return []
 
     device_vips: list = []
-    if dev_vdom_pairs:
+    if device_names:
         with ThreadPoolExecutor(max_workers=10) as pool_ex:
-            for chunk in pool_ex.map(_fetch_dev_vips, dev_vdom_pairs):
+            for chunk in pool_ex.map(_fetch_dev_vips, device_names):
                 device_vips.extend(chunk)
 
     # Tag ADOM-level VIPs with an empty source device marker before merging.
@@ -1090,7 +1100,7 @@ def hygiene_nat_lookup(adom: str):
     all_vips = shared_vips + device_vips
     shared_vips_count = len(shared_vips)
     device_vips_count = len(device_vips)
-    devices_scanned = len({pair[0] for pair in dev_vdom_pairs})
+    devices_scanned = len(device_names)
 
     # ── Phase 3: match VIPs ───────────────────────────────────────────────────────
     for vip in all_vips:
