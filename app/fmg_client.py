@@ -934,7 +934,9 @@ class FMGClient:
             data = self._get(f"/dvmdb/adom/{adom}/group/{group_name}/object member")
             if not isinstance(data, list):
                 return []
-            return [m.get("name", "") for m in data if isinstance(m, dict) and m.get("name")]
+            return [
+                m.get("name", "") for m in data if isinstance(m, dict) and m.get("name")
+            ]
         except Exception:
             return []
 
