@@ -311,6 +311,33 @@ def test_nat_lookup_matches_vip_hyphenated_mapped_ip(client):
     assert data["results"][0]["name"] == "vip-hyphen"
 
 
+def test_nat_lookup_matches_vip_extip_as_list(client):
+    """FMG returns extip as a list (e.g. ['192.234.135.43']) — must match by external IP."""
+    vips = [
+        {
+            "name": "vip-list-extip",
+            "extip": ["203.0.113.55"],
+            "extintf": ["any"],
+            "mappedip": ["10.5.5.5"],
+            "portforward": 0,
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        }
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = []
+        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.55"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "vip-list-extip"
+    assert data["results"][0]["ext_ip"] == "203.0.113.55"
+
+
 def test_nat_lookup_matches_vip_mappedip_plain_string(client):
     """FMG per-device path may return mappedip as a plain string — must still match."""
     vips = [
