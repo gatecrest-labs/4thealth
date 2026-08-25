@@ -1109,7 +1109,11 @@ def hygiene_nat_lookup(adom: str):
         name = vip.get("name", "")
         if not name:
             continue
-        ext_ip = vip.get("extip", "")
+        ext_ip_raw = vip.get("extip", "")
+        # FMG may return extip as a list (["1.2.3.4"]) or a plain string ("1.2.3.4").
+        if isinstance(ext_ip_raw, list):
+            ext_ip_raw = ext_ip_raw[0] if ext_ip_raw else ""
+        ext_ip = str(ext_ip_raw)
         # Normalise extip for display; derive start/end for range matching.
         # FMG may return a single IP ("1.2.3.4") or a range ("1.2.3.4-1.2.3.9").
         try:
@@ -1165,7 +1169,9 @@ def hygiene_nat_lookup(adom: str):
                 "name": name,
                 "device": vip.get("_source_device", ""),
                 "ext_ip": ext_ip,
-                "ext_intf": vip.get("extintf", ""),
+                "ext_intf": (lambda v: v[0] if isinstance(v, list) else v)(
+                    vip.get("extintf", "")
+                ),
                 "mapped_ip": mapped_display,
                 "port_forward": port_forward,
                 "protocol": vip.get("protocol", "") if port_forward else "",
