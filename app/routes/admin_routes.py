@@ -507,10 +507,19 @@ def api_host_metrics():
 @bp.route("/api/debug/nat/<adom>/<device>")
 @_admin_required
 def api_debug_nat(adom: str, device: str):
+    """Diagnostic: raw VDOMs + VIP data from FMG for a specific device.
+
+    Optional query params:
+      ?name=<substring>  — filter VIPs whose name contains this string (case-insensitive)
+                           and return their full raw dict instead of a 3-item sample
+      ?shared=1          — also search the ADOM-level shared VIP objects for the name filter
+    """
     from app.fmg_client import FMGClient
     from app.config import Config
 
     cfg = Config()
+    name_filter = (request.args.get("name") or "").lower()
+    include_shared = request.args.get("shared", "0") == "1"
 
     def make_client():
         return FMGClient(cfg)
@@ -518,10 +527,25 @@ def api_debug_nat(adom: str, device: str):
     result: dict = {
         "adom": adom,
         "device": device,
+        "name_filter": name_filter or None,
         "vdoms": [],
         "vip_counts": {},
-        "sample_vips": {},
+        "vips": {},
     }
+
+    # Optionally search ADOM-level shared VIPs for the name filter.
+    if name_filter and include_shared:
+        try:
+            with make_client() as c:
+                shared = c.get_vip_objects(adom)
+            result["shared_matches"] = [
+                v
+                for v in shared
+                if isinstance(v, dict) and name_filter in v.get("name", "").lower()
+            ]
+        except Exception as exc:
+            result["shared_error"] = str(exc)
+
     try:
         with make_client() as c:
             vdoms_data = c.get_device_vdoms(adom, device)
@@ -540,16 +564,26 @@ def api_debug_nat(adom: str, device: str):
                 with make_client() as c:
                     vips = c.get_device_vip_objects(device, vdom)
                 result["vip_counts"][vdom] = len(vips)
-                # Return up to 3 sample VIP names + their mappedip raw values for inspection.
-                result["sample_vips"][vdom] = [
-                    {
-                        "name": v.get("name", ""),
-                        "extip": v.get("extip", ""),
-                        "mappedip_raw": v.get("mappedip") or v.get("mapped-ip"),
-                    }
-                    for v in vips[:3]
-                    if isinstance(v, dict)
-                ]
+                if name_filter:
+                    # Return full raw dict for VIPs matching the name filter.
+                    result["vips"][vdom] = [
+                        v
+                        for v in vips
+                        if isinstance(v, dict)
+                        and name_filter in v.get("name", "").lower()
+                    ]
+                else:
+                    # Return 3 samples with key fields for quick inspection.
+                    result["vips"][vdom] = [
+                        {
+                            "name": v.get("name", ""),
+                            "extip": v.get("extip", ""),
+                            "extip_type": type(v.get("extip")).__name__,
+                            "mappedip_raw": v.get("mappedip") or v.get("mapped-ip"),
+                        }
+                        for v in vips[:3]
+                        if isinstance(v, dict)
+                    ]
             except Exception as exc:
                 result["vip_counts"][vdom] = f"ERROR: {exc}"
     except Exception as exc:
