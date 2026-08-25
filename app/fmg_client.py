@@ -924,6 +924,20 @@ class FMGClient:
         except Exception:
             return []
 
+    def get_device_group_names(self, adom: str) -> set[str]:
+        """Return the set of device group names in an ADOM.
+
+        Single API call — does not fetch member lists.
+        Returns empty set on error.
+        """
+        try:
+            data = self._get(f"/dvmdb/adom/{adom}/group")
+            if not isinstance(data, list):
+                return set()
+            return {g["name"] for g in data if isinstance(g, dict) and g.get("name")}
+        except Exception:
+            return set()
+
     def get_device_group_members(self, adom: str, group_name: str) -> list[str]:
         """Return device names that belong to a FMG device group.
 
@@ -944,16 +958,38 @@ class FMGClient:
         """Return policy packages installed on a device.
 
         Uses the scope member list already embedded in each package dict returned by
-        get_policy_packages(). Scope members may be individual devices OR device groups;
-        groups are expanded via get_device_group_members() with results cached per call.
-        Returns a list of {"name": pkg_name, "vdom": vdom} dicts (usually one entry);
-        [] if none found or on error.
+        get_policy_packages(). Scope members may be individual devices OR device groups.
+
+        Strategy (avoids O(N) per-scope-member API calls):
+        1. Collect unmatched scope member names — no API calls.
+        2. Fetch all group names in one call and intersect — isolates names that are
+           actual groups AND appear in scope members (typically 0-2).
+        3. Fetch member lists only for that small intersection.
+        Returns a list of {"name": pkg_name, "vdom": vdom} dicts; [] if none found.
         """
         try:
             packages = self.get_policy_packages(adom)
-            matched = []
             device_lower = device_name.lower()
-            group_cache: dict[str, list[str]] = {}
+
+            # Pass 1 — collect scope member names that don't match the device directly.
+            unmatched: set[str] = set()
+            for pkg in packages:
+                scope = pkg.get("scope member") or pkg.get("scope_member") or []
+                for m in scope:
+                    if isinstance(m, dict):
+                        n = m.get("name", "")
+                        if n and n.lower() != device_lower:
+                            unmatched.add(n)
+
+            # Pass 2 — resolve members only for unmatched names that are real groups.
+            group_members: dict[str, list[str]] = {}
+            if unmatched:
+                known_groups = self.get_device_group_names(adom)  # 1 API call
+                for grp in unmatched & known_groups:  # typically 0-2 names
+                    group_members[grp] = self.get_device_group_members(adom, grp)
+
+            # Pass 3 — match packages.
+            matched = []
             for pkg in packages:
                 scope = pkg.get("scope member") or pkg.get("scope_member") or []
                 if not isinstance(scope, list):
@@ -965,10 +1001,9 @@ class FMGClient:
                     if name.lower() == device_lower:
                         matched.append({"name": pkg["name"], "vdom": m.get("vdom", "")})
                         break
-                    # scope member may be a device group — expand it (cached)
-                    if name not in group_cache:
-                        group_cache[name] = self.get_device_group_members(adom, name)
-                    if any(gm.lower() == device_lower for gm in group_cache[name]):
+                    if any(
+                        gm.lower() == device_lower for gm in group_members.get(name, [])
+                    ):
                         matched.append({"name": pkg["name"], "vdom": m.get("vdom", "")})
                         break
             return matched
