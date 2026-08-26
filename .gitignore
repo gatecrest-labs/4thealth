@@ -69,6 +69,7 @@ graphify-out/
 .claude/CLAUDE.local.md
 
 .githooks/
+scripts/hooks/claude-sensitive-check.sh
 
 # Superpowers AI planning workspace (internal — not project content)
 .superpowers/
