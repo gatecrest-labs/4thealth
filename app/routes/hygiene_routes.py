@@ -1451,6 +1451,9 @@ def hygiene_unused_objects():
     """Return address/service objects not referenced by any rule in the given package."""
     adom = (request.args.get("adom") or "").strip()
     path = (request.args.get("pkg") or "").strip()
+    scope = (request.args.get("scope") or "all").strip()
+    if scope not in ("all", "local", "global"):
+        scope = "all"
     if not adom or not path:
         return jsonify({"error": "adom and pkg are required"}), 400
     if err := check_adom_access(adom):
@@ -1458,10 +1461,10 @@ def hygiene_unused_objects():
     try:
         with make_client() as client:
             policies = client.get_policies(adom, path) or []
-            addresses = client.get_address_objects(adom) or []
-            addr_groups = client.get_address_groups(adom) or []
-            services = client.get_service_objects(adom) or []
-            svc_groups = client.get_service_groups(adom) or []
+            addresses = client.get_address_objects(adom, scope=scope) or []
+            addr_groups = client.get_address_groups(adom, scope=scope) or []
+            services = client.get_service_objects(adom, scope=scope) or []
+            svc_groups = client.get_service_groups(adom, scope=scope) or []
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
