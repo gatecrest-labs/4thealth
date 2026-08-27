@@ -385,8 +385,16 @@ def plan_flow(
             "seq": idx + 1,
             "package": pkg_key,
         }
-        if r.full_cover and not r.disabled:
+        if r.full_cover and not r.disabled and not r.broad_cover:
             matching.append(entry)
+        elif r.full_cover and not r.disabled and r.broad_cover:
+            entry["svc_gap"] = []
+            entry["suggestion"] = (
+                f"Rule {pol_id} covers this host only via a subnet broader than /24 "
+                "— verify the host is intentionally in scope, then add it explicitly "
+                "to the address group or create a new rule."
+            )
+            partial.append(entry)
         elif r.action == "accept" and not r.disabled:
             svc_gap = matcher.uncovered_services(pol, service_ranges)
             entry["svc_gap"] = [
