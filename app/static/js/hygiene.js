@@ -44,6 +44,8 @@ let olPage         = 1;
 let olPageSize     = 25;
 let olFilter       = '';
 let olMeta         = null; // { adom, query }
+let _olGrpCounter  = 0;
+const _olGrpData   = {};
 
 /* ── Interface Lookup state ─────────────────────────────────────────────────── */
 let ilAllResults  = [];
@@ -1056,7 +1058,37 @@ function applyOlFilter() {
   );
 }
 
+function _olMembersHtml(cid) {
+  const d = _olGrpData[cid];
+  if (!d) return '';
+  const total = Math.ceil(d.members.length / d.pageSize) || 1;
+  d.page      = Math.min(Math.max(1, d.page), total);
+  const slice = d.members.slice((d.page - 1) * d.pageSize, d.page * d.pageSize);
+  const items = slice.map(m => {
+    const mname   = typeof m === 'string' ? m : (m.name || '');
+    const mdetail = typeof m === 'string' ? '' : (m.detail || '');
+    return `<div class="obj-lookup-member">↳ ${esc(mname)}${mdetail ? `<span style="color:var(--text-muted);margin-left:.4rem">${esc(mdetail)}</span>` : ''}</div>`;
+  }).join('');
+  if (d.members.length <= 10) return items;
+  const opts = [10, 25, 50, 100].map(n =>
+    `<option value="${n}"${n === d.pageSize ? ' selected' : ''}>${n}</option>`).join('');
+  function pgb(lbl, pg, dis) {
+    return `<button class="ol-mem-btn btn btn-sm btn-outline-secondary py-0 px-1"
+      data-olcid="${esc(cid)}" data-olpg="${pg}"${dis ? ' disabled' : ''}>${lbl}</button>`;
+  }
+  const nav = `<div class="ol-mem-nav d-flex align-items-center gap-1 mt-1 flex-wrap" style="font-size:.75rem">
+    <select class="ol-mem-psize form-select form-select-sm py-0" style="width:4.5rem" data-olcid="${esc(cid)}">${opts}</select>
+    ${pgb('&laquo;', 1, d.page === 1)}
+    ${pgb('&lsaquo;', d.page - 1, d.page === 1)}
+    <span class="text-muted">${d.page}/${total}</span>
+    ${pgb('&rsaquo;', d.page + 1, d.page === total)}
+    ${pgb('&raquo;', total, d.page === total)}
+  </div>`;
+  return items + nav;
+}
+
 function renderOlTable() {
+  _olGrpCounter = 0;
   const rows  = olFiltered;
   const total = Math.ceil(rows.length / olPageSize) || 1;
   olPage      = Math.min(olPage, total);
@@ -1087,13 +1119,9 @@ function renderOlTable() {
 
     let detailHtml = esc(o.detail || '—');
     if (o.members && o.members.length) {
-      detailHtml += `<div class="obj-lookup-members">` +
-        o.members.map(m => {
-          const mname   = typeof m === 'string' ? m : (m.name || '');
-          const mdetail = typeof m === 'string' ? '' : (m.detail || '');
-          return `<div class="obj-lookup-member">↳ ${esc(mname)}${mdetail ? `<span style="color:var(--text-muted);margin-left:.4rem">${esc(mdetail)}</span>` : ''}</div>`;
-        }).join('') +
-        `</div>`;
+      const cid = `olgr${_olGrpCounter++}`;
+      _olGrpData[cid] = { members: o.members, page: 1, pageSize: 25 };
+      detailHtml += `<div class="obj-lookup-members" id="ol-mem-${cid}">${_olMembersHtml(cid)}</div>`;
     }
     const adom = (olMeta || {}).adom || '';
     return `<tr>
@@ -2281,7 +2309,8 @@ async function runFindUnused() {
 
     try {
         const path   = pkgPaths[pkg] || pkg;
-        const params = new URLSearchParams({ adom, pkg: path });
+        const scope  = document.getElementById('unusedScope')?.value || 'all';
+        const params = new URLSearchParams({ adom, pkg: path, scope });
         const resp = await fetch(`/api/hygiene/unused-objects?${params}`);
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
@@ -2375,11 +2404,13 @@ function renderUnusedTable() {
             <div class="text-muted small">Page ${unusedPage} of ${total}</div>
         </div>` : ''}`;
 
-    document.getElementById('unusedFilterInput').addEventListener('input', function() {
+    const fi = document.getElementById('unusedFilterInput');
+    fi.addEventListener('input', function() {
         unusedFilter = this.value;
         unusedPage   = 1;
         renderUnusedTable();
     });
+    if (unusedFilter) { fi.focus(); fi.setSelectionRange(fi.value.length, fi.value.length); }
     const psSel = document.getElementById('unusedPageSizeSelect');
     if (psSel) psSel.addEventListener('change', function() {
         unusedPageSize = parseInt(this.value, 10);
@@ -2424,6 +2455,26 @@ document.getElementById('unusedObjectsContent')?.addEventListener('click', funct
     if (!btn || btn.disabled) return;
     unusedPage = parseInt(btn.dataset.uopage, 10);
     renderUnusedTable();
+});
+
+/* ── Object lookup member pagination delegation ─────────────────────────────── */
+document.getElementById('olResults')?.addEventListener('click', function(e) {
+    const btn = e.target.closest('.ol-mem-btn');
+    if (!btn || btn.disabled) return;
+    const cid = btn.dataset.olcid;
+    if (!_olGrpData[cid]) return;
+    _olGrpData[cid].page = parseInt(btn.dataset.olpg, 10);
+    document.getElementById(`ol-mem-${cid}`).innerHTML = _olMembersHtml(cid);
+});
+
+document.getElementById('olResults')?.addEventListener('change', function(e) {
+    const sel = e.target.closest('.ol-mem-psize');
+    if (!sel) return;
+    const cid = sel.dataset.olcid;
+    if (!_olGrpData[cid]) return;
+    _olGrpData[cid].pageSize = parseInt(sel.value, 10);
+    _olGrpData[cid].page     = 1;
+    document.getElementById(`ol-mem-${cid}`).innerHTML = _olMembersHtml(cid);
 });
 
 /* ── Group member pagination delegation ─────────────────────────────────────── */

@@ -364,7 +364,12 @@
 
   <div style="margin-top:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
     <button class="btn btn-primary" id="hygieneRunBtn" disabled>&#9654; Run Analysis</button>
-    <button class="btn btn-outline-secondary ms-2" id="findUnusedBtn" disabled>
+    <select id="unusedScope" class="form-select form-select-sm d-inline-block ms-2" style="width:auto">
+      <option value="all">All objects (local + global)</option>
+      <option value="local">Local only</option>
+      <option value="global">Global only</option>
+    </select>
+    <button class="btn btn-outline-secondary" id="findUnusedBtn" disabled>
       Find Unused Objects
     </button>
     <span class="spinner-border spinner-border-sm ms-2" id="unusedSpinner" role="status" style="display:none;"></span>
