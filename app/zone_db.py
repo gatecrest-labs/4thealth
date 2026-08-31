@@ -568,7 +568,12 @@ def compute_segmentation_report(db: dict) -> dict:
     # Open pairs: any pair with at least one allow-all policy
     open_pair_set: set[tuple] = set()
     for (fz, tz), pols in pair_policies.items():
-        if fz in zones and tz in zones and fz != tz and any(p.get("access_type") == "allow all" for p in pols):
+        if (
+            fz in zones
+            and tz in zones
+            and fz != tz
+            and any(p.get("access_type") == "allow all" for p in pols)
+        ):
             open_pair_set.add((fz, tz))
 
     open_pairs = [
@@ -576,7 +581,8 @@ def compute_segmentation_report(db: dict) -> dict:
             "from_zone": fz,
             "to_zone": tz,
             "policy_count": sum(
-                1 for p in pair_policies.get((fz, tz), [])
+                1
+                for p in pair_policies.get((fz, tz), [])
                 if p.get("access_type") == "allow all"
             ),
         }
@@ -590,9 +596,7 @@ def compute_segmentation_report(db: dict) -> dict:
     )
 
     # Trust mismatches
-    has_trust_levels = any(
-        z.get("trust_level") is not None for z in zones.values()
-    )
+    has_trust_levels = any(z.get("trust_level") is not None for z in zones.values())
     trust_mismatches = []
     for (fz, tz), pols in pair_policies.items():
         fz_data = zones.get(fz, {})
