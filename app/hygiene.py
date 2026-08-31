@@ -30,6 +30,7 @@ CHECKS: dict[str, str] = {
     "expired": "Expired Rules (past schedule end-date)",
     "unhit": "Unused / Un-Hit Rules (zero hit count)",
     "missing_security_profile": "Missing Security Profiles (accept rules without UTM)",
+    "redundant": "Redundant Rules (duplicate scope of an earlier rule)",
 }
 
 
@@ -365,6 +366,72 @@ def check_shadow(
     return findings
 
 
+def check_redundant_rules(
+    policies: list[dict],
+    addr_resolver: "dict[str, frozenset | None] | None" = None,
+    svc_resolver: "dict[str, frozenset | None] | None" = None,
+) -> list[dict]:
+    """Flag enabled rules whose traffic scope is mutually equivalent to an earlier rule.
+
+    Unlike shadowing (where A covers B one-way), redundancy requires both
+    _covers(A, B) AND _covers(B, A) — i.e., the rules match exactly the same
+    traffic.  Action must also match; a permit and a deny covering the same
+    scope serve different purposes and are not redundant.
+
+    Each later rule is reported at most once, against the first equivalent
+    earlier rule found above it.
+    """
+    findings = []
+    enabled = [
+        p for p in policies if _status(p) != "disable" and not _is_policy_block(p)
+    ]
+
+    for j, b in enumerate(enabled):
+        b_src = set(_addr_list(b.get("srcaddr") or b.get("src_addr")))
+        b_dst = set(_addr_list(b.get("dstaddr") or b.get("dst_addr")))
+        b_svc = set(_addr_list(b.get("service") or b.get("services")))
+        b_action = _action(b)
+        b_identity = _identity_set(b)
+
+        for a in enabled[:j]:
+            if _action(a) != b_action:
+                continue
+            if _identity_set(a) != b_identity:
+                continue
+            a_src = set(_addr_list(a.get("srcaddr") or a.get("src_addr")))
+            a_dst = set(_addr_list(a.get("dstaddr") or a.get("dst_addr")))
+            a_svc = set(_addr_list(a.get("service") or a.get("services")))
+
+            if not (
+                _covers(a_src, b_src, resolver=addr_resolver)
+                and _covers(b_src, a_src, resolver=addr_resolver)
+                and _covers(a_dst, b_dst, resolver=addr_resolver)
+                and _covers(b_dst, a_dst, resolver=addr_resolver)
+                and _covers(a_svc, b_svc, resolver=svc_resolver)
+                and _covers(b_svc, a_svc, resolver=svc_resolver)
+            ):
+                continue
+
+            findings.append(
+                {
+                    "policy_id": str(b.get("policyid", j + 1)),
+                    "policy_name": _name(b),
+                    "seq": _seq(b, j),
+                    "check": "redundant",
+                    "detail": (
+                        f"Matches the same traffic scope as rule '{_name(a)}' "
+                        f"(id {a.get('policyid', '?')}) which appears earlier"
+                        f" — consider consolidating."
+                    ),
+                    "redundant_rule": _rule_summary(b),
+                    "duplicate_of": _rule_summary(a),
+                }
+            )
+            break  # report only the first equivalent rule
+
+    return findings
+
+
 def check_disabled(policies: list[dict]) -> list[dict]:
     """Rules where status == 'disable'."""
     findings = []
@@ -546,6 +613,7 @@ _CHECK_FNS = {
     "expired": check_expired,
     "unhit": check_unhit,
     "missing_security_profile": check_security_profile_gap,
+    "redundant": check_redundant_rules,
 }
 
 
@@ -565,6 +633,12 @@ def run_checks(
         if key == "shadow":
             results.extend(
                 check_shadow(
+                    policies, addr_resolver=addr_resolver, svc_resolver=svc_resolver
+                )
+            )
+        elif key == "redundant":
+            results.extend(
+                check_redundant_rules(
                     policies, addr_resolver=addr_resolver, svc_resolver=svc_resolver
                 )
             )

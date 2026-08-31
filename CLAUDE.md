@@ -92,7 +92,7 @@ app/
   config.py            # Reads .env into a Config object
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
-  hygiene.py           # Rule hygiene check engine (6 checks: unnamed, unlogged, shadow, disabled, expired, unhit)
+  hygiene.py           # Rule hygiene check engine (7 checks: unnamed, unlogged, shadow, disabled, expired, unhit, redundant rules)
   device_review.py     # Device Review check engine — interface protocol checks; add new checks here
   rule_review.py       # Policy analysis + route-tracing engine; zone policy integration
   zone_db.py           # Zone policy DB engine — loads policy_db.json, runs queries, validates, handles CRUD
@@ -180,7 +180,7 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
    - Interface badges (source = blue, destination = green)
    - Page size 10/25/50/100 with `<< < … > >>` pagination
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
-2. **Hygiene Analysis** (below) — select ADOM + package, run 6 checks, filter/export findings (CSV/JSON/PDF).
+2. **Hygiene Analysis** (below) — select ADOM + package, run 7 checks, filter/export findings (CSV/JSON/PDF).
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
 
@@ -232,15 +232,17 @@ Three-step workflow: define flows → select policy packages → review results.
 
 Self-contained network segmentation policy browser. No FortiManager connection required — all data comes from `policy_db.json` in the project root.
 
-Four sub-tab panels:
+Five sub-tab panels:
 1. **Query Flow** — enter source/destination IPs (multi-line or comma-separated), optional service, get ALLOWED/BLOCKED/UNKNOWN verdict with governing rules
 2. **Browse** — zone accordion list (searchable, filterable) + full policy table (filterable by access type/severity)
 3. **Validate** — schema validation report with error/warning counts
 4. **Edit Database** (admin only) — add/remove/modify zones, subnets, and policy rules in-place
+5. **Segmentation Health** — effectiveness score, open zone-pair list, and trust-boundary mismatch report
 
 Backend: `app/zone_db.py` is the single source of truth — query engine, validation, and all CRUD mutations. It writes back to `policy_db.json` atomically. Routes in `app/routes/zone_routes.py`:
 - `POST /api/zone/query` — flow query (tab_required)
 - `GET /api/zone/zones`, `GET /api/zone/policies`, `GET /api/zone/validate` — read-only (tab_required)
+- `GET /api/zone/segmentation-report` — segmentation effectiveness report (tab_required)
 - Zone/subnet/policy mutation routes — admin_required
 
 Zone evaluation logic: block all > block only (service match) > allow only (service match) > allow all > implicit UNKNOWN. Zone hierarchy is supported via `parents[]` and zone name expansion.
@@ -261,7 +263,8 @@ Runtime data file (gitignored). Copy from a known-good source or build from scra
     "ZoneName": {
       "domain": "Default", "is_shared": false, "description": "",
       "subnets": [{"subnet": "10.1.0.0/16", "description": ""}],
-      "children": [], "parents": []
+      "children": [], "parents": [],
+      "trust_level": 90
     }
   },
   "policies": [
@@ -273,6 +276,8 @@ Runtime data file (gitignored). Copy from a known-good source or build from scra
   ]
 }
 ```
+
+`trust_level` is an optional integer 0–100 per zone; used by the Segmentation Health report to flag trust-boundary mismatches between zones (e.g. a high-trust zone allowing all traffic to a low-trust zone).
 
 #### Standalone production deployment
 

@@ -8,6 +8,7 @@ API (all JSON):
   GET  /api/zone/zones            list all zones + subnets
   GET  /api/zone/policies         list all policy rules
   GET  /api/zone/validate         run validation, return report
+  GET  /api/zone/segmentation-report  segmentation effectiveness report
   POST /api/zone/zone/add         add a zone
   POST /api/zone/zone/remove      remove a zone
   POST /api/zone/zone/modify      modify a zone field
@@ -147,6 +148,19 @@ def api_validate():
         return internal_api_error("zone_policy", exc)
 
 
+@bp.route("/api/zone/segmentation-report")
+@tab_required("zone_policy")
+def api_segmentation_report():
+    try:
+        db = zdb.load_db()
+        report = zdb.compute_segmentation_report(db)
+        return jsonify(report)
+    except FileNotFoundError:
+        return _err("policy_db.json not found", 503)
+    except Exception as exc:
+        return internal_api_error("segmentation report", exc)
+
+
 # ── Backup ────────────────────────────────────────────────────────────────────
 
 
@@ -224,6 +238,19 @@ def api_zone_modify():
     value = str(d.get("value", "")).strip()
     if not name or not field:
         return _err("name and field are required")
+    if field not in zdb.ZONE_MUTABLE_FIELDS:
+        return _err(f"field '{field}' is not modifiable")
+    if field == "trust_level":
+        raw = d.get("value")
+        if raw is None or raw == "":
+            value = None
+        else:
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                return _err("trust_level must be an integer 0–100")
+            if not (0 <= value <= 100):
+                return _err("trust_level must be between 0 and 100")
     try:
         db = zdb.load_db()
         msg = zdb.zone_modify(db, name, field, value)
