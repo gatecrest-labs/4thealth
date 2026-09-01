@@ -1213,7 +1213,7 @@ function showRHJobForm(id) {
   const adomSel = document.getElementById('rhJobFormAdom');
   adomSel.innerHTML = '<option value="">Loading…</option>';
   fetch('/admin/api/adoms').then(r => r.json()).then(data => {
-    adomSel.innerHTML = (data.adoms || []).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+    adomSel.innerHTML = (data.adoms || []).map(a => `<option value="${escH(a)}">${escH(a)}</option>`).join('');
     if (id) {
       fetch('/admin/api/rule-hygiene/jobs').then(r => r.json()).then(allJobs => {
         const job = allJobs.find(j => j.id === id);
