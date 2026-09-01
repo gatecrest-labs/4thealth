@@ -1212,8 +1212,8 @@ function showRHJobForm(id) {
   // Populate ADOM dropdown
   const adomSel = document.getElementById('rhJobFormAdom');
   adomSel.innerHTML = '<option value="">Loading…</option>';
-  fetch('/api/adoms').then(r => r.json()).then(adoms => {
-    adomSel.innerHTML = adoms.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+  fetch('/admin/api/adoms').then(r => r.json()).then(data => {
+    adomSel.innerHTML = (data.adoms || []).map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
     if (id) {
       fetch('/admin/api/rule-hygiene/jobs').then(r => r.json()).then(allJobs => {
         const job = allJobs.find(j => j.id === id);
