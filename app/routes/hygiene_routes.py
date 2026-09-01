@@ -1484,3 +1484,125 @@ def hygiene_unused_objects():
             "checked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
     )
+
+
+# ── Scheduler entry points ────────────────────────────────────────────────────
+
+
+def _hygiene_for_pkg(
+    adom: str,
+    pkg: dict,
+    checks: list[str],
+    unused_catalogs: dict,
+    include_unused_objects: bool = False,
+) -> dict:
+    """Run hygiene checks on one package. Opens its own FMG client (thread-safe)."""
+    from app.hygiene import run_checks, find_unused_objects, CHECKS as HYGIENE_CHECKS
+
+    pkg_path = pkg.get("path", pkg.get("name", ""))
+    pkg_name = pkg_path.split("/")[-1] if "/" in pkg_path else pkg.get("name", pkg_path)
+
+    scope_raw = pkg.get("scope member") or []
+    scope_members = sorted(
+        {s.get("name", "") for s in scope_raw if isinstance(s, dict) and s.get("name")}
+    )
+    device = scope_members[0] if len(scope_members) == 1 else None
+
+    try:
+        with make_client() as client:
+            policies = client.get_policies(adom, pkg_path)
+            pkg_settings = client.get_pkg_settings(adom, pkg_path)
+            active_checks = checks if checks else list(HYGIENE_CHECKS.keys())
+
+            # Catalogs are always pre-fetched by bulk_hygiene_adom; use them directly.
+            addr_objects = unused_catalogs["addresses"]
+            addr_groups = unused_catalogs["addr_groups"]
+            vip_objects = unused_catalogs["vip_objects"]
+            svc_objects = unused_catalogs["services"]
+            svc_groups = unused_catalogs["svc_groups"]
+
+            try:
+                addr_resolver = build_addr_resolver(
+                    addr_objects, addr_groups, vip_objects
+                )
+                svc_resolver = build_svc_resolver(svc_objects, svc_groups)
+            except Exception:
+                addr_resolver = None
+                svc_resolver = None
+
+            findings = run_checks(
+                policies, active_checks, pkg_settings, addr_resolver, svc_resolver
+            )
+
+            unused_objects = None
+            if include_unused_objects:
+                unused_objects = find_unused_objects(
+                    policies,
+                    unused_catalogs["addresses"],
+                    unused_catalogs["addr_groups"],
+                    unused_catalogs["services"],
+                    unused_catalogs["svc_groups"],
+                )
+
+        return {
+            "package": pkg_path,
+            "package_name": pkg_name,
+            "device": device,
+            "scope_members": scope_members,
+            "findings": findings,
+            "unused_objects": unused_objects,
+            "policy_count": len(policies),
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "package": pkg_path,
+            "package_name": pkg_name,
+            "device": device,
+            "scope_members": scope_members,
+            "findings": [],
+            "unused_objects": None,
+            "policy_count": 0,
+            "error": str(exc),
+        }
+
+
+def bulk_hygiene_adom(
+    adom: str,
+    checks: list[str],
+    include_unused_objects: bool = False,
+    max_workers: int = 4,
+) -> list[dict]:
+    """Run hygiene checks on all packages in an ADOM. Session-free; used by scheduler."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    # Fetch the package list and ADOM-level catalogs with one client.
+    # Catalogs are always pre-fetched so each _hygiene_for_pkg worker can build
+    # its addr/svc resolvers without N×5 redundant FMG calls.
+    # The client is closed BEFORE ThreadPoolExecutor starts — each _hygiene_for_pkg
+    # call opens its own client independently (thread-safe).
+    with make_client() as client:
+        packages = client.get_policy_packages(adom)
+        unused_catalogs: dict = {
+            "addresses": client.get_address_objects(adom) or [],
+            "addr_groups": client.get_address_groups(adom) or [],
+            "vip_objects": client.get_vip_objects(adom) or [],
+            "services": client.get_service_objects(adom) or [],
+            "svc_groups": client.get_service_groups(adom) or [],
+        }
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(
+                _hygiene_for_pkg,
+                adom,
+                pkg,
+                checks,
+                unused_catalogs,
+                include_unused_objects,
+            )
+            for pkg in packages
+        ]
+        results = [f.result() for f in futures]
+
+    return results
