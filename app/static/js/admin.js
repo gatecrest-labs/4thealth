@@ -1185,15 +1185,15 @@ async function loadRHJobs() {
       ? '<span class="badge badge-green">Enabled</span>'
       : '<span class="badge badge-gray">Disabled</span>';
     return `<tr>
-      <td>${esc(j.name)}</td>
-      <td>${esc(j.adom)}</td>
-      <td>${esc(days)}</td>
-      <td>${esc(j.time)}</td>
-      <td>${esc(activeChecks)}</td>
-      <td>${esc(j.format || 'html')}</td>
-      <td>${esc(j.batch_size || 20)}</td>
-      <td>${esc(j.email)}</td>
-      <td style="font-size:11px">${esc(lastRunStr)}</td>
+      <td>${escH(j.name)}</td>
+      <td>${escH(j.adom)}</td>
+      <td>${escH(days)}</td>
+      <td>${escH(j.time)}</td>
+      <td>${escH(activeChecks)}</td>
+      <td>${escH(j.format || 'html')}</td>
+      <td>${escH(j.batch_size || 20)}</td>
+      <td>${escH(j.email)}</td>
+      <td style="font-size:11px">${escH(lastRunStr)}</td>
       <td>${enabledBadge}</td>
       <td>
         <button class="btn-sm" onclick="showRHJobForm('${j.id}')">Edit</button>
@@ -1212,8 +1212,8 @@ function showRHJobForm(id) {
   // Populate ADOM dropdown
   const adomSel = document.getElementById('rhJobFormAdom');
   adomSel.innerHTML = '<option value="">Loading…</option>';
-  fetch('/api/adoms').then(r => r.json()).then(adoms => {
-    adomSel.innerHTML = adoms.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('');
+  fetch('/admin/api/adoms').then(r => r.json()).then(data => {
+    adomSel.innerHTML = (data.adoms || []).map(a => `<option value="${escH(a)}">${escH(a)}</option>`).join('');
     if (id) {
       fetch('/admin/api/rule-hygiene/jobs').then(r => r.json()).then(allJobs => {
         const job = allJobs.find(j => j.id === id);
