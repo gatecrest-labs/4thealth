@@ -10,6 +10,7 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 ## [Unreleased]
 
 ### Added
+- **Rule Hygiene Scheduled Jobs** — admins can create recurring Rule Hygiene audit jobs: choose an ADOM, select any subset of the 8 hygiene checks, optionally include unused-object analysis, set a day-of-week + time schedule, and email per-package reports (HTML, CSV, or JSON) as zip attachments. Jobs are persisted in `rule_hygiene_jobs.json` and registered as APScheduler CronTriggers at startup, mirroring the existing Config-Delta and Device Review schedulers. For ADOMs with more packages than the configured batch size, the run splits into multiple `[Part N of M]` emails; email 1 carries the full per-package summary table. New `bulk_hygiene_adom()` entry point in `app/routes/hygiene_routes.py` runs checks across all packages in an ADOM via a thread pool, session-free.
 - **Device Review — Device Filtering:** Devices flagged as `is_model` (pre-staged, not yet deployed to hardware) and devices with an unknown/offline `conn_status` are now automatically skipped. The device list shows a grey "Not Deployed" or "Offline" badge per device; running analysis on a skipped device returns a single `SKIPPED` result row instead of check findings. Checking in extra offline-device statuses requires only adding to `_OFFLINE_CONN_STATUSES` in `device_review_routes.py`.
 - **Device Review — CIS Binary Checks (4 new):**
   - *Hostname Changed* — `FAIL` if hostname matches a factory default (`FortiGate`, `FortiGate-VM`, or `fgt<digits>` pattern)
