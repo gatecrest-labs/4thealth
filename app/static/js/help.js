@@ -17,7 +17,7 @@ const SECTIONS = [
   <li><strong>Firewalls</strong> — browse managed FortiGate devices by ADOM, search by name or IP, and drill into full device details.</li>
   <li><strong>Device Versions</strong> — firmware version distribution across all devices in an ADOM.</li>
   <li><strong>Rule Review</strong> — policy viewer with full-text search and exports, plus automated hygiene checks on a selected package.</li>
-  <li><strong>Device Review</strong> — per-device interface audit showing which management protocols (HTTP, Telnet, HTTPS, SSH, etc.) are enabled, with insecure protocols highlighted red.</li>
+  <li><strong>Audit Review</strong> — per-device CIS hardening and interface protocol audit, plus hygiene analysis of policy packages</li>
   <li><strong>Rule Validation</strong> — evaluate whether proposed flows are already permitted or need new/modified rules.</li>
   <li><strong>Zone Policy</strong> — browse and query your network segmentation policy database.</li>
   <li><strong>Map (Beta)</strong> — interactive geographic map of all managed FortiGate devices, colour-coded by ADOM with zoom-based clustering.</li>
@@ -136,7 +136,7 @@ const SECTIONS = [
     tab:   'rule_hygiene',
     html: `
 <h3>Rule Review</h3>
-<p>Four sections on this page: <strong>Policy Rules</strong>, <strong>Object Lookup</strong>, <strong>Interface Lookup</strong>, <strong>NAT Lookup</strong>, and <strong>Hygiene Analysis</strong>. Each has its own ADOM selector and works independently.</p>
+<p>Four sections on this page: <strong>Policy Rules</strong>, <strong>Object Lookup</strong>, <strong>Interface Lookup</strong>, and <strong>NAT Lookup</strong>. Each has its own ADOM selector and works independently.</p>
 <h3>Policy Rules</h3>
 <p>Select an ADOM and Policy Package — the full rule table loads automatically.</p>
 <ul>
@@ -170,33 +170,16 @@ const SECTIONS = [
   <li>Results show: Type (VIP or IP Pool), name, external IP, mapped/pool IP, interface, protocol/port (for port-forwarding VIPs), and comments.</li>
   <li>Exports: CSV, JSON, PDF.</li>
 </ul>
-<h3>Hygiene Analysis</h3>
-<ol>
-  <li>Select an <strong>ADOM</strong> and <strong>Policy Package</strong> (independent from the viewer above).</li>
-  <li>Choose which checks to run (all selected by default).</li>
-  <li>Click <strong>Run Analysis</strong>. Findings appear in the results table.</li>
-</ol>
-<h3>Check Types</h3>
-<ul>
-  <li><strong>Unnamed rules</strong> — policies with no name set (harder to audit).</li>
-  <li><strong>Unlogged rules</strong> — policies with logging disabled (traffic is invisible).</li>
-  <li><strong>Shadow rules</strong> — rules that are completely covered by an earlier, broader rule and will never match.</li>
-  <li><strong>Disabled rules</strong> — rules that have been turned off but left in place.</li>
-  <li><strong>Expired rules</strong> — rules with a validity end date in the past.</li>
-  <li><strong>Unhit rules</strong> — rules with zero bytes or sessions since creation (may be unused).</li>
-</ul>
-<h3>Findings Table</h3>
-<ul>
-  <li>Filter by check type using the dropdown. Use the search box to find specific rule names or IDs.</li>
-  <li>Export findings as <strong>CSV</strong>, <strong>JSON</strong>, or <strong>PDF</strong>. Each export includes a header block showing the package, ADOM, timestamp, and active filters.</li>
-</ul>
 `
   },
   {
-    id:    'device_review',
-    label: 'Device Review',
-    tab:   'device_review',
+    id:    'audit_review',
+    label: 'Audit Review',
+    tab:   'audit_review',
     html: `
+<h3>Audit Review</h3>
+<p>The Audit Review tab contains two sections: <strong>Device Review</strong> and <strong>Hygiene Analysis</strong>.</p>
+
 <h3>Device Review</h3>
 <p>Audits every FortiGate in a selected ADOM against interface protocol checks and CIS hardening benchmarks. Results are colour-coded by severity so issues stand out immediately.</p>
 
@@ -282,6 +265,14 @@ const SECTIONS = [
 
 <h3>CSV &amp; JSON &amp; PDF Exports</h3>
 <p>CSV and JSON export all filtered rows with a metadata header. PDF exports only the selected (checked) rows and includes an evidence header: ADOM, date/time, devices reviewed, and checks run.</p>
+
+<h3>Hygiene Analysis</h3>
+<p>Runs up to 8 hygiene checks against a selected policy package and reports findings. Select an ADOM and package, choose which checks to run, then click <strong>▶ Run Analysis</strong>.</p>
+<ul>
+  <li>Filter findings using the search box or the check-type dropdown.</li>
+  <li>Export findings as <strong>CSV</strong>, <strong>JSON</strong>, or <strong>PDF</strong>.</li>
+  <li>Click <strong>Find Unused Objects</strong> to detect address and service objects not referenced by any rule in the selected package.</li>
+</ul>
 `
   },
   {
@@ -407,7 +398,7 @@ const SECTIONS = [
     label: 'Scheduled Jobs',
     html: `
 <h3>Scheduled Jobs</h3>
-<p>The <strong>Scheduled</strong> sub-tab in the Admin panel lets admins create recurring automated reports. Two job types are available: <strong>Config-Delta</strong> (pending configuration diffs) and <strong>Device Review</strong> (CIS hardening audit). Both use the same SMTP settings configured at the top of the panel.</p>
+<p>The <strong>Scheduled</strong> sub-tab in the Admin panel lets admins create recurring automated reports. Two job types are available: <strong>Config-Delta</strong> (pending configuration diffs) and <strong>Audit Review</strong> (CIS hardening audit). Both use the same SMTP settings configured at the top of the panel.</p>
 
 <h3>SMTP Settings</h3>
 <p>Before creating any scheduled job, configure the outbound mail server:</p>
@@ -432,7 +423,7 @@ const SECTIONS = [
 </ul>
 <p>Click <strong>Run Now</strong> on any job row to fire it immediately outside the schedule.</p>
 
-<h3>Device Review Scheduled Jobs</h3>
+<h3>Audit Review Scheduled Jobs</h3>
 <p>Runs CIS hardening checks against every device in an ADOM on a recurring schedule and emails the results.</p>
 <ul>
   <li><strong>Name</strong> — a label for this job (e.g. "Weekly CIS Audit — Enterprise").</li>
@@ -446,7 +437,7 @@ const SECTIONS = [
 </ul>
 
 <h3>Email Report Format</h3>
-<p>Each Device Review email contains two parts:</p>
+<p>Each Audit Review email contains two parts:</p>
 <ul>
   <li><strong>Email body</strong> — a summary table showing pass / fail / warn counts per check across all devices.</li>
   <li><strong>Attachment</strong> — the full findings detail in your chosen format:
@@ -565,10 +556,10 @@ const SECTIONS = [
   <div class="faq-q">The route table shows thousands of rows. Is there a faster way to find a route?</div>
   <div class="faq-a">Yes — use the filter box above the route table in the device detail panel. Type any part of the destination network, gateway IP, or interface name to narrow down the list instantly.</div>
 
-  <div class="faq-q">Device Review shows no interfaces even though I know protocols are configured.</div>
+  <div class="faq-q">Audit Review shows no interfaces even though I know protocols are configured.</div>
   <div class="faq-a">The review fetches interfaces via FortiManager's proxy API. If the device is offline or FortiManager cannot reach it, the interface list will be empty for that device. Devices that return no data are silently skipped — they are still counted in "devices reviewed" but contribute no rows to the results.</div>
 
-  <div class="faq-q">Why does the Device Review take a long time for a large ADOM?</div>
+  <div class="faq-q">Why does the Audit Review take a long time for a large ADOM?</div>
   <div class="faq-a">Each device requires a separate API call through FortiManager. The review processes one device at a time so you can watch progress and cancel early. For an ADOM with 700+ devices expect several minutes. Use the <strong>⏹ Cancel</strong> button to stop and work with partial results.</div>
 
   <div class="faq-q">The Device Versions "All ADOMs" chart is spinning and not loading.</div>
