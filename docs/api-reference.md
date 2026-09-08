@@ -29,7 +29,7 @@ All endpoints require an authenticated session (HTTP 401 otherwise).
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/device-review/adoms/<adom>/devices` | List devices in an ADOM for the Device Review tab |
+| GET | `/api/device-review/adoms/<adom>/devices` | List devices in an ADOM for the Audit Review tab |
 | POST | `/api/device-review/run` | Run selected security checks against chosen devices |
 
 ## Rule Validation

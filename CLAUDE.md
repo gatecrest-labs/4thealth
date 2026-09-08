@@ -93,8 +93,9 @@ app/
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
   hygiene.py           # Rule hygiene check engine (7 checks: unnamed, unlogged, shadow, disabled, expired, unhit, redundant rules)
-  device_review.py     # Device Review check engine — interface protocol checks; add new checks here
-  rule_review.py       # Policy analysis + route-tracing engine; zone policy integration
+  device_review.py     # Audit Review check engine — interface protocol checks; add new checks here
+  rule_review.py       # Policy analysis + route-tracing engine; delegates matching to app/planner/
+  planner/             # Deterministic set-semantics analysis engine (matching, CLI gen, risk, insertion)
   zone_db.py           # Zone policy DB engine — loads policy_db.json, runs queries, validates, handles CRUD
   summary_job.py       # Background job: managed firewall + rule counts; nightly APScheduler
   adom_cache.py        # Background cache: ADOM list from FortiManager, refreshed every 30 min
@@ -188,7 +189,7 @@ Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `ser
 
 Two-section layout with unified tab access (internal key: `audit_review`):
 
-1. **Device Review** (top) — runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
+1. **Audit Review** (top) — runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
    - **Workflow:** Select ADOM → device list loads automatically. Choose which checks to run (all checked by default). For parameterised CIS checks, a **Check Parameters** panel appears — enter expected IPs before running. Click **Run Analysis** — per-device progress loop fires, findings appear in a filterable, paginated table. Export results as CSV, JSON, or PDF.
    - **Result values:**
      - `INSECURE` — red: cleartext protocols (HTTP, Telnet) are enabled
@@ -337,7 +338,7 @@ Table rows show a single compact badge (highest-priority state). The diff panel 
 
 ### Scheduled Exports
 
-Two scheduler modules support recurring exports: Config-Delta diffs (`app/config_diff_scheduler.py`) and Device Review CIS audit results (`app/device_review_scheduler.py`). Both are APScheduler-based, persist jobs in gitignored JSON files, and are registered in `app/__init__.py` alongside other background schedulers.
+Two scheduler modules support recurring exports: Config-Delta diffs (`app/config_diff_scheduler.py`) and Audit Review CIS audit results (`app/device_review_scheduler.py`). Both are APScheduler-based, persist jobs in gitignored JSON files, and are registered in `app/__init__.py` alongside other background schedulers.
 
 #### Config-Delta Scheduled Jobs
 

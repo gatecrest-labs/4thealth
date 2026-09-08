@@ -673,7 +673,7 @@ def _build_attachment_dr(
     if fmt == "csv":
         buf = io.StringIO()
         w = csv.writer(buf)
-        w.writerow(["# 4THealth Device Review"])
+        w.writerow(["# 4THealth Audit Review"])
         w.writerow([f"# ADOM: {adom}"])
         w.writerow([f"# Generated: {generated_at}"])
         w.writerow([])
