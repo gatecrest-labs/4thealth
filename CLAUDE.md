@@ -109,7 +109,7 @@ app/
     hygiene_routes.py         # /hygiene page + /api/hygiene/* endpoints
     rule_review_routes.py     # /rule-review page + /api/rule-review/* endpoints
     zone_routes.py            # /zone-policy page + /api/zone/* endpoints
-    device_review_routes.py   # /device-review page + /api/device-review/* endpoints
+    audit_review_routes.py    # /audit-review page + /api/audit-review/* endpoints
     admin_routes.py           # /admin page + /admin/api/* group/user/log/ADOM/settings/token endpoints
     pending_changes_routes.py # /pending-changes page + /api/pending-changes/* endpoints
     external_api_routes.py    # /external/api/* bearer-token endpoints for FW-Analyst integration
@@ -170,9 +170,8 @@ Sessions expire after 1 hour. `COOKIE_SECURE` is automatically set when SSL is a
 
 `GET /hygiene` → `hygiene.html` + `hygiene.js`
 
-Two-section layout (tab displays as "Rule Review" in the nav; internal key remains `rule_hygiene`):
-1. **Policy Rules** (top) — select ADOM + package, rule table loads automatically. Features:
-   - Independent ADOM/package selectors from the Hygiene Analysis section below
+Single-section layout (tab displays as "Rule Review" in the nav; internal key remains `rule_hygiene`):
+1. **Policy Rules** — select ADOM + package, rule table loads automatically. Features:
    - Full-text regex search across name, ID, comment, source, destination, service, interfaces
    - Field-scoped filter dropdown (search within a single column)
    - Address groups and service groups expand inline (click the triangle) to show member objects
@@ -180,37 +179,33 @@ Two-section layout (tab displays as "Rule Review" in the nav; internal key remai
    - Interface badges (source = blue, destination = green)
    - Page size 10/25/50/100 with `<< < … > >>` pagination
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
-2. **Hygiene Analysis** (below) — select ADOM + package, run 7 checks, filter/export findings (CSV/JSON/PDF).
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
 
-### Device Review tab
+### Audit Review tab
 
-`GET /device-review` → `device_review.html` + `device_review.js`
+`GET /audit-review` → `audit_review.html` + `audit_review.js`
 
-Runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
+Two-section layout with unified tab access (internal key: `audit_review`):
 
-**Workflow:**
-1. Select ADOM → device list loads automatically.
-2. Choose which checks to run (all checked by default).
-3. For parameterised CIS checks, a **Check Parameters** panel appears — enter expected IPs before running.
-4. Click **Run Analysis** — a per-device progress loop fires, findings appear in a filterable, paginated table.
-5. Export results as CSV, JSON, or PDF.
+1. **Device Review** (top) — runs configurable security checks against every device in a selected ADOM. Combines interface-protocol analysis with CIS hardening checks in a single unified results table.
+   - **Workflow:** Select ADOM → device list loads automatically. Choose which checks to run (all checked by default). For parameterised CIS checks, a **Check Parameters** panel appears — enter expected IPs before running. Click **Run Analysis** — per-device progress loop fires, findings appear in a filterable, paginated table. Export results as CSV, JSON, or PDF.
+   - **Result values:**
+     - `INSECURE` — red: cleartext protocols (HTTP, Telnet) are enabled
+     - `FAIL` — red: CIS check failed (server missing, sync disabled, etc.)
+     - `WARN` — yellow: CIS host check — service is active but configured servers do not match expected (NTP, Syslog, FortiAnalyzer, DNS); effectively unreachable for Interface Protocols (unknown protocols default to informational)
+     - `CONFIG_MISSING` — yellow: CIS check ran but no expected values were supplied; device value shown for information
+     - `PASS` — green: CIS check passed
+     - `INFO` — blue: informational finding (e.g. PING enabled; interfaces with only informational protocols)
+   - **Protocol severity configuration:** Create `protocol_severity.json` at the project root (gitignored) to override default protocol classifications. See `protocol_severity.example.json` for all defaults and valid values (`secure`, `insecure`, `info`, `null`). Overrides take effect on app restart.
 
-**Result values:**
-- `INSECURE` — red: cleartext protocols (HTTP, Telnet) are enabled
-- `FAIL` — red: CIS check failed (server missing, sync disabled, etc.)
-- `WARN` — yellow: CIS host check — service is active but configured servers do not match expected (NTP, Syslog, FortiAnalyzer, DNS); effectively unreachable for Interface Protocols (unknown protocols default to informational)
-- `CONFIG_MISSING` — yellow: CIS check ran but no expected values were supplied; device value shown for information
-- `PASS` — green: CIS check passed
-- `INFO` — blue: informational finding (e.g. PING enabled; interfaces with only informational protocols)
+2. **Hygiene Analysis** (below) — select ADOM + package, run hygiene checks, filter/export findings (CSV/JSON/PDF). Find Unused Objects per package.
 
-**Protocol severity configuration:** Create `protocol_severity.json` at the project root (gitignored) to override default protocol classifications. See `protocol_severity.example.json` for all defaults and valid values (`secure`, `insecure`, `info`, `null`). Overrides take effect on app restart.
-
+Both sections are gated by the `audit_review` tab permission key.
 
 **Adding a new CIS check (binary example):**
 1. Add a proxy method to `fmg_client.py` if new device data is needed.
-2. Add a fetch branch in `_fetch_device_data()` in `device_review_routes.py` for the new `data_key`.
+2. Add a fetch branch in `_fetch_device_data()` in `audit_review_routes.py` for the new `data_key`.
 3. Write `_run_my_check(device_name, device_data, params) -> list[Row]` in `device_review.py`.
 4. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
 No template or frontend JS changes are needed for binary checks.
@@ -356,9 +351,9 @@ Two scheduler modules support recurring exports: Config-Delta diffs (`app/config
 
 **Run history pruning:** On each successful job execution, records older than `run_history_days` (default 30) are removed from `runs[]` in `config_diff_jobs.json`.
 
-#### Device Review Scheduled Jobs
+#### Audit Review Scheduled Jobs
 
-`app/device_review_scheduler.py` — APScheduler-based scheduler mirroring `config_diff_scheduler.py`.
+`app/device_review_scheduler.py` — APScheduler-based scheduler mirroring `config_diff_scheduler.py`. (Scheduler module filename remains `device_review_scheduler.py` for backward compatibility.)
 
 Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs.example.json` to create).
 
@@ -383,18 +378,18 @@ Persists jobs in `device_review_jobs.json` (gitignored; copy `device_review_jobs
 `check_params`: only entries for parameterized checks; omitted keys = `CONFIG_MISSING`.
 `email`: comma-separated string — `smtp_client._parse_recipients()` handles splitting.
 
-**`bulk_device_review_adom(adom, checks, check_params, max_workers=4)`** in `app/routes/device_review_routes.py` — session-free entry point for the scheduler. Uses `ThreadPoolExecutor(max_workers=4)`.
+**`bulk_device_review_adom(adom, checks, check_params, max_workers=4)`** in `app/routes/audit_review_routes.py` — session-free entry point for the scheduler. Uses `ThreadPoolExecutor(max_workers=4)`.
 
 **Admin API endpoints** (all `admin_required`):
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/admin/api/device-review/jobs` | List all Device Review scheduled jobs |
-| `POST` | `/admin/api/device-review/jobs` | Create a new job |
-| `PUT` | `/admin/api/device-review/jobs/<id>` | Update an existing job |
-| `DELETE` | `/admin/api/device-review/jobs/<id>` | Delete a job |
-| `POST` | `/admin/api/device-review/jobs/<id>/run` | Trigger an immediate run |
-| `GET` | `/admin/api/device-review/jobs/<id>/status` | Get last run status / history |
+| `GET` | `/admin/api/audit-review/jobs` | List all Audit Review scheduled jobs |
+| `POST` | `/admin/api/audit-review/jobs` | Create a new job |
+| `PUT` | `/admin/api/audit-review/jobs/<id>` | Update an existing job |
+| `DELETE` | `/admin/api/audit-review/jobs/<id>` | Delete a job |
+| `POST` | `/admin/api/audit-review/jobs/<id>/run` | Trigger an immediate run |
+| `GET` | `/admin/api/audit-review/jobs/<id>/status` | Get last run status / history |
 
 **Scheduled report output:** Email reports include a **per-host summary table** at the top of both the email body and the attached file (HTML, CSV, and JSON formats), showing per-device counts for each result type: Device | PASS | FAIL | INSECURE | WARN | CONFIG_MISSING | INFO | Total. The per-check aggregate summary follows below the host summary in the email body.
 
