@@ -20,7 +20,7 @@ from app.device_review import (
     _run_interface_protocols,
     run_checks,
 )
-from app.routes.device_review_routes import _device_skip_reason
+from app.routes.audit_review_routes import _device_skip_reason
 
 
 # ── _device_skip_reason ───────────────────────────────────────────────────────

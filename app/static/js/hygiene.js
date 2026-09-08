@@ -6,6 +6,21 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function showError(msg) {
+  const el = document.getElementById('pvPkgError');
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+function download(filename, content, mime) {
+  const a  = document.createElement('a');
+  const bl = new Blob([content], { type: mime });
+  a.href   = URL.createObjectURL(bl);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 /* ── Group member pagination state ──────────────────────────────────────── */
 let _grpMemCounter = 0;
 const _grpMemData  = {};

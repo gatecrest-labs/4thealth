@@ -879,7 +879,7 @@ async function runHygieneAnalysis() {
     filterCheck        = '';
     document.getElementById('hygieneFilter').value      = '';
     document.getElementById('hygieneCheckFilter').value = '';
-    document.getElementById('lastRunLabel').textContent =
+    document.getElementById('hygieneLastRunLabel').textContent =
       `Last run: ${new Date().toLocaleString()} — ${data.policy_count} policies analysed`;
 
     populateCheckFilter(data.checks_run);
