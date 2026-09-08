@@ -421,16 +421,16 @@ def admin_cdiff_jobs_status(job_id: str):
     return jsonify({"running": _sched.is_job_running(job_id), "last_run": last_run})
 
 
-# ── Device Review: Scheduled Jobs ─────────────────────────────────────────────
+# ── Audit Review: Scheduled Jobs ──────────────────────────────────────────────
 
 
-@bp.route("/api/device-review/jobs")
+@bp.route("/api/audit-review/jobs")
 @_admin_required
 def admin_dr_jobs_list():
     return jsonify(_dr_sched.get_all_jobs())
 
 
-@bp.route("/api/device-review/jobs", methods=["POST"])
+@bp.route("/api/audit-review/jobs", methods=["POST"])
 @_admin_required
 def admin_dr_jobs_create():
     data = request.get_json(force=True) or {}
@@ -441,7 +441,7 @@ def admin_dr_jobs_create():
     return jsonify(job), 201
 
 
-@bp.route("/api/device-review/jobs/<job_id>", methods=["PUT"])
+@bp.route("/api/audit-review/jobs/<job_id>", methods=["PUT"])
 @_admin_required
 def admin_dr_jobs_update(job_id: str):
     data = request.get_json(force=True) or {}
@@ -454,7 +454,7 @@ def admin_dr_jobs_update(job_id: str):
     return jsonify(job)
 
 
-@bp.route("/api/device-review/jobs/<job_id>", methods=["DELETE"])
+@bp.route("/api/audit-review/jobs/<job_id>", methods=["DELETE"])
 @_admin_required
 def admin_dr_jobs_delete(job_id: str):
     try:
@@ -464,7 +464,7 @@ def admin_dr_jobs_delete(job_id: str):
     return jsonify({"ok": True})
 
 
-@bp.route("/api/device-review/jobs/<job_id>/run", methods=["POST"])
+@bp.route("/api/audit-review/jobs/<job_id>/run", methods=["POST"])
 @_admin_required
 def admin_dr_jobs_run(job_id: str):
     jobs = _dr_sched.get_all_jobs()
@@ -474,7 +474,7 @@ def admin_dr_jobs_run(job_id: str):
     return jsonify({"ok": True, "message": "Job started"}), 202
 
 
-@bp.route("/api/device-review/jobs/<job_id>/status")
+@bp.route("/api/audit-review/jobs/<job_id>/status")
 @_admin_required
 def admin_dr_jobs_status(job_id: str):
     jobs = _dr_sched.get_all_jobs()
