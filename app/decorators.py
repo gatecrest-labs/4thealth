@@ -106,8 +106,8 @@ def login_required(f):
     return decorated
 
 
-def tab_required(tab_key: str):
-    """Allow only users who have permission for ``tab_key`` (or admin role)."""
+def tab_required(*tab_keys: str):
+    """Allow only users who have permission for any of ``tab_keys`` (or admin role)."""
 
     def decorator(f):
         @wraps(f)
@@ -119,9 +119,8 @@ def tab_required(tab_key: str):
             err = _revalidate_session()
             if err is not None:
                 return err
-            if flask_session.get("role") != "admin" and tab_key not in set(
-                flask_session.get("allowed_tabs", [])
-            ):
+            allowed = set(flask_session.get("allowed_tabs", []))
+            if flask_session.get("role") != "admin" and not (allowed & set(tab_keys)):
                 if request.path.startswith("/api/"):
                     return jsonify({"error": "Access denied"}), 403
                 abort(403)
