@@ -39,7 +39,7 @@ def hygiene_page():
 
 
 @bp.route("/api/hygiene/adoms/<adom>/packages")
-@tab_required("rule_hygiene")
+@tab_required("rule_hygiene", "audit_review")
 def hygiene_packages(adom: str):
     if err := check_adom_access(adom):
         return err
@@ -66,7 +66,7 @@ def hygiene_packages(adom: str):
 
 
 @bp.route("/api/hygiene/adoms/<adom>/packages/raw")
-@tab_required("rule_hygiene")
+@tab_required("rule_hygiene", "audit_review")
 def hygiene_packages_raw(adom: str):
     """Return the unfiltered FMG response — useful for diagnosing missing packages."""
     if err := check_adom_access(adom):
@@ -1308,7 +1308,7 @@ def hygiene_nat_lookup(adom: str):
 
 
 @bp.route("/api/hygiene/run", methods=["POST"])
-@tab_required("rule_hygiene")
+@tab_required("audit_review")
 def hygiene_run():
     data = request.get_json(silent=True) or {}
     adom = (data.get("adom") or "").strip()
@@ -1445,7 +1445,7 @@ def hygiene_run():
 
 
 @bp.route("/api/hygiene/unused-objects")
-@tab_required("rule_hygiene")
+@tab_required("audit_review")
 def hygiene_unused_objects():
     """Return address/service objects not referenced by any rule in the given package."""
     adom = (request.args.get("adom") or "").strip()

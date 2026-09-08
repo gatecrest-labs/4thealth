@@ -7,6 +7,19 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ---
 
+## [2026-09] — Audit Review tab
+
+- Renamed "Device Review" tab to "Audit Review"; internal key `device_review` → `audit_review`; URL `/device-review` → `/audit-review`
+- Audit Review page now has two subsections: **Device Review** (CIS / interface audit) and **Hygiene Analysis** (policy package hygiene checks)
+- Moved Hygiene Analysis section from the Rule Review tab into the new Audit Review tab
+- Rule Review tab retains Policy Rules viewer only
+- Admin → Scheduled: "Device Review Jobs" section renamed to "Audit Review Jobs"; API path `/admin/api/device-review/jobs*` → `/admin/api/audit-review/jobs*`
+- Scheduled email subjects updated from "4THealth Device Review" to "4THealth Audit Review"
+- `tab_required` decorator updated to accept multiple permission keys (shared package-list endpoints accept `rule_hygiene` or `audit_review`)
+- **Migration:** groups with `device_review` in `allowed_tabs` must update the key to `audit_review`
+
+---
+
 ## [Unreleased]
 
 ### Added

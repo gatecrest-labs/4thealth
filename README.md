@@ -65,7 +65,7 @@ JSON-RPC API** — no direct device connections are made.
 │   ├── fmg_client.py            FortiManager JSON-RPC client (context-manager; auto login/logout)
 │   ├── fmg_helpers.py           FMGClient factory / session helper
 │   ├── hygiene.py               Rule hygiene check engine (6 checks, read-only)
-│   ├── device_review.py         Device Review check engine; add new checks here
+│   ├── device_review.py         Audit Review check engine; add new checks here
 │   ├── rule_review.py           Rule Validation — flow/policy matching, path analysis, zone integration
 │   ├── zone_db.py               Zone policy DB engine — loads policy_db.json, runs queries, CRUD
 │   ├── map_regions.py           Map region config — load/save map_regions.json, state validation
@@ -77,7 +77,7 @@ JSON-RPC API** — no direct device connections are made.
 │   ├── summary_job.py           Background job: managed firewall + rule counts, nightly APScheduler
 │   ├── summary_history.py       Summary history persistence
 │   ├── config_diff_scheduler.py APScheduler — Config-Delta scheduled exports
-│   ├── device_review_scheduler.py APScheduler — Device Review CIS audit scheduled exports
+│   ├── device_review_scheduler.py APScheduler — Audit Review CIS audit scheduled exports
 │   ├── smtp_client.py           SMTP delivery for scheduled export emails
 │   ├── atomic_io.py             Atomic JSON write helper
 │   ├── security.py              API error response helpers
