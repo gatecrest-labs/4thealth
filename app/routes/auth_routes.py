@@ -105,6 +105,7 @@ def login():
             app_log("WARN", "auth", "Login rate-limited", username=username, remote=ip)
             try:
                 from app import login_metrics as _lm
+
                 _lm.record_event(False)
             except Exception:
                 pass
@@ -119,6 +120,7 @@ def login():
             current_app.logger.exception("Unexpected error during authentication")
             try:
                 from app import login_metrics as _lm
+
                 _lm.record_event(False)
             except Exception:
                 pass
@@ -143,6 +145,7 @@ def login():
             )
             try:
                 from app import login_metrics as _lm
+
                 _lm.record_event(True)
             except Exception:
                 pass
@@ -155,6 +158,7 @@ def login():
         app_log("WARN", "auth", "Failed login attempt", username=username, remote=ip)
         try:
             from app import login_metrics as _lm
+
             _lm.record_event(False)
         except Exception:
             pass
