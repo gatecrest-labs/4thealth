@@ -39,6 +39,10 @@
       <div class="metrics-card-title">Disk</div>
       <div class="metrics-chart-wrap"><canvas id="chartDisk"></canvas></div>
     </div>
+    <div class="metrics-card">
+      <div class="metrics-card-title">Logins</div>
+      <div class="metrics-chart-wrap"><canvas id="chartLogin"></canvas></div>
+    </div>
   </div>
 </div>
 
@@ -1014,5 +1018,5 @@
   window._inDocker = {{ in_docker | tojson }};
   const DR_CHECK_DEFS = {{ checks_meta | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/admin.js') }}?v=12"></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}?v=13"></script>
 {% endblock %}

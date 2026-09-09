@@ -1899,6 +1899,59 @@ function zpAdminPost(url, body, statusId, successMsg, onSuccess) {
         });
     }
 
+    function makeLoginChart(canvasId) {
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return null;
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Success',
+                        data: [],
+                        borderColor: '#166534',
+                        backgroundColor: '#16653428',
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: 0,
+                        borderWidth: 1.5,
+                    },
+                    {
+                        label: 'Failed',
+                        data: [],
+                        borderColor: '#dc2626',
+                        backgroundColor: '#dc262628',
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: 0,
+                        borderWidth: 1.5,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    y: {
+                        min: 0,
+                        ticks: { maxTicksLimit: 5, precision: 0 },
+                    },
+                    x: { ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+                },
+                plugins: {
+                    legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y,
+                        },
+                    },
+                },
+            },
+        });
+    }
+
     function loadMetrics(range) {
         current = range;
         document.querySelectorAll('.metrics-range-btn').forEach(b => {
@@ -1916,12 +1969,23 @@ function zpAdminPost(url, body, statusId, successMsg, onSuccess) {
                     });
             })
             .catch(() => {});
+        fetch('/admin/api/login-metrics?range=' + range)
+            .then(r => r.json())
+            .then(data => {
+                if (!charts.login) return;
+                charts.login.data.labels               = data.success.map(p => fmtLabel(p.ts, range));
+                charts.login.data.datasets[0].data     = data.success.map(p => p.v);
+                charts.login.data.datasets[1].data     = data.failed.map(p => p.v);
+                charts.login.update('none');
+            })
+            .catch(() => {});
     }
 
     function init() {
-        charts.cpu  = makeChart('chartCpu',  '#4e79a7');
-        charts.mem  = makeChart('chartMem',  '#f28e2b');
-        charts.disk = makeChart('chartDisk', '#59a14f');
+        charts.cpu   = makeChart('chartCpu',  '#4e79a7');
+        charts.mem   = makeChart('chartMem',  '#f28e2b');
+        charts.disk  = makeChart('chartDisk', '#59a14f');
+        charts.login = makeLoginChart('chartLogin');
 
         if (!charts.cpu) return; // canvases absent — not on admin page
 
