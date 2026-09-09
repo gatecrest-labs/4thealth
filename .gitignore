@@ -21,6 +21,9 @@ protocol_severity.json
 api_tokens.json
 app_settings.json
 host_metrics.db
+login_events.db
+login_events.db-wal
+login_events.db-shm
 
 # Python
 .venv/

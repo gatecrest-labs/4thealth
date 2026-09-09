@@ -103,6 +103,11 @@ def login():
         ip = request.remote_addr or ""
         if _is_rate_limited(ip, username):
             app_log("WARN", "auth", "Login rate-limited", username=username, remote=ip)
+            try:
+                from app import login_metrics as _lm
+                _lm.record_event(False)
+            except Exception:
+                pass
             flash(
                 "Too many failed attempts. Please wait before trying again.", "danger"
             )
@@ -112,6 +117,11 @@ def login():
             auth_result = authenticate(username, password)
         except Exception:
             current_app.logger.exception("Unexpected error during authentication")
+            try:
+                from app import login_metrics as _lm
+                _lm.record_event(False)
+            except Exception:
+                pass
             flash("An unexpected error occurred. Please try again.", "error")
             return render_template("login.html"), 500
         if auth_result is not None:

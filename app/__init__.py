@@ -37,7 +37,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             # External API uses bearer-token auth — no CSRF cookie available
             if request.path.startswith("/external/api/"):
                 return None
-            if not app.config.get("TESTING") and not validate_csrf_request():
+            if not validate_csrf_request():
                 return csrf_error_response()
         return None
 

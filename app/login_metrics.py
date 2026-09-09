@@ -92,7 +92,7 @@ def prune_old_data(db_path: str = None) -> None:
 
 def init_scheduler(app) -> None:
     from apscheduler.schedulers.background import BackgroundScheduler
+    init_db(_DEFAULT_DB_PATH)
     scheduler = BackgroundScheduler(daemon=True)
     scheduler.add_job(prune_old_data, 'cron', hour=3, minute=30)
     scheduler.start()
-    init_db(_DEFAULT_DB_PATH)
