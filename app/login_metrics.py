@@ -54,6 +54,7 @@ def get_metrics(range_key: str, db_path: str = None) -> dict:
     since = int(time.time()) - cfg['lookback']
     try:
         conn = sqlite3.connect(path)
+        conn.execute('PRAGMA journal_mode=WAL')
         rows = conn.execute(
             '''
             SELECT
@@ -81,6 +82,7 @@ def prune_old_data(db_path: str = None) -> None:
     cutoff = int(time.time()) - 90 * 86_400
     try:
         conn = sqlite3.connect(path)
+        conn.execute('PRAGMA journal_mode=WAL')
         conn.execute('DELETE FROM login_events WHERE ts < ?', (cutoff,))
         conn.commit()
         conn.close()
