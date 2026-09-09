@@ -233,6 +233,15 @@ def create_app(test_config: dict | None = None) -> Flask:
         except Exception as exc:
             app.logger.warning("Host metrics scheduler failed to start: %s", exc)
 
+    if not app.config.get("TESTING") and not app.config.get("_LOGIN_METRICS_STARTED"):
+        app.config["_LOGIN_METRICS_STARTED"] = True
+        try:
+            from app import login_metrics as _login_metrics_mod
+
+            _login_metrics_mod.init_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Login metrics scheduler failed to start: %s", exc)
+
     @app.context_processor
     def inject_session_globals():
         role = session.get("role", "viewer")

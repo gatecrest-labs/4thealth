@@ -562,3 +562,15 @@ def api_host_metrics():
     data["range"] = range_key
     data["generated_at"] = int(time.time())
     return jsonify(data)
+
+
+@bp.route("/api/login-metrics")
+@_admin_required
+def api_login_metrics():
+    from app import login_metrics as _lm
+
+    range_key = request.args.get("range", "1h")
+    data = _lm.get_metrics(range_key)
+    data["range"] = range_key
+    data["generated_at"] = int(time.time())
+    return jsonify(data)
