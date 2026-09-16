@@ -28,25 +28,58 @@ def make_client() -> FMGClient:
     )
 
 
+_FORTIGUARD_SUBS = [
+    "antivirus", "ips", "web_filtering", "appctrl", "antispam",
+    "outbreak_prevention", "firmware_updates", "forticloud_sandbox",
+]
+
+
 def parse_license_payload(raw_payload) -> dict:
     """Parse FortiOS /api/v2/monitor/license/status results dict.
 
-    Returns {"status": "licensed"|"expired"|"unknown", "expires": "YYYY-MM-DD"|None}.
+    Returns {
+        "status": "licensed"|"expired"|"unknown",
+        "expires": "YYYY-MM-DD"|None,
+        "subscriptions": {key: {"status": "licensed"|"expired"|"none"|"unknown", "expires": str|None}, ...}
+    }.
     raw_payload is the `payload` value from `client._proxy()` — pass `raw.get('payload', {})`.
     """
     import time
     from datetime import datetime, timezone
 
+    now = time.time()
     results = raw_payload if isinstance(raw_payload, dict) else {}
+
+    # FortiCare support contract (primary license health indicator)
     forticare = results.get("forticare", {})
     enhanced = forticare.get("support", {}).get("enhanced", {})
     status = enhanced.get("status", "")
     expires_ts = enhanced.get("expires")
     if status == "licensed" and expires_ts:
-        if expires_ts > time.time():
-            exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime(
-                "%Y-%m-%d"
-            )
-            return {"status": "licensed", "expires": exp_str}
-        return {"status": "expired", "expires": None}
-    return {"status": "unknown", "expires": None}
+        if expires_ts > now:
+            exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            lic_status, lic_expires = "licensed", exp_str
+        else:
+            lic_status, lic_expires = "expired", None
+    else:
+        lic_status, lic_expires = "unknown", None
+
+    # FortiGuard subscription statuses
+    subs = {}
+    for key in _FORTIGUARD_SUBS:
+        entry = results.get(key, {})
+        s = entry.get("status", "")
+        exp_ts = entry.get("expires")
+        if s == "licensed":
+            if exp_ts and exp_ts <= now:
+                subs[key] = {"status": "expired", "expires": None}
+            elif exp_ts:
+                subs[key] = {"status": "licensed", "expires": datetime.fromtimestamp(exp_ts, tz=timezone.utc).strftime("%Y-%m-%d")}
+            else:
+                subs[key] = {"status": "licensed", "expires": None}
+        elif s in ("no_license", "free_license"):
+            subs[key] = {"status": "none", "expires": None}
+        else:
+            subs[key] = {"status": "unknown", "expires": None}
+
+    return {"status": lic_status, "expires": lic_expires, "subscriptions": subs}

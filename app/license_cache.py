@@ -118,7 +118,7 @@ def _run_job(app):
                             exc,
                         )
                         firmware = "n/a"
-                        lic = {"status": "unknown", "expires": None}
+                        lic = {"status": "unknown", "expires": None, "subscriptions": {}}
                     result.append(
                         {
                             "name": device_name,
@@ -126,6 +126,7 @@ def _run_job(app):
                             "status": lic["status"],
                             "expires": lic["expires"],
                             "firmware": firmware,
+                            "subscriptions": lic.get("subscriptions", {}),
                         }
                     )
 
