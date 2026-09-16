@@ -63,7 +63,7 @@ def parse_license_payload(raw_payload) -> dict:
     enhanced = forticare.get("support", {}).get("enhanced", {})
     status = enhanced.get("status", "")
     expires_ts = enhanced.get("expires")
-    if status == "licensed" and expires_ts:
+    if status in ("licensed", "expires_soon") and expires_ts:
         if expires_ts > now:
             exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime(
                 "%Y-%m-%d"
@@ -80,7 +80,7 @@ def parse_license_payload(raw_payload) -> dict:
         entry = results.get(key, {})
         s = entry.get("status", "")
         exp_ts = entry.get("expires")
-        if s == "licensed":
+        if s in ("licensed", "expires_soon"):
             if exp_ts and exp_ts <= now:
                 subs[key] = {"status": "expired", "expires": None}
             elif exp_ts:
