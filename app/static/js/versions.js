@@ -19,6 +19,7 @@ let globalDetSize   = 10;
 /* ── License state ──────────────────────────────────────────────────── */
 let licenseDevices   = [];
 let licenseSelStatus = null;
+let licenseSelExpiry = null;   // 'within30' | 'within90' | 'beyond90' | null
 let licenseDetPage   = 1;
 let licenseDetSize   = 20;
 
@@ -632,6 +633,55 @@ function buildDonutSVG(licensed, expired, unknown) {
 </div>`;
 }
 
+/* ── Expiring-soon donut (licensed devices, three expiry brackets) ────────── */
+function buildExpiryDonutSVG(within30, within90, beyond90) {
+  const total = within30 + within90 + beyond90;
+  if (total === 0) return '<p style="font-size:.85em;color:var(--text-muted)">No expiry data</p>';
+
+  const r = 54, cx = 70, cy = 70;
+  const circumference = 2 * Math.PI * r;
+
+  const counts  = [within30, within90, beyond90];
+  const colours = ['#dc3545', '#fd7e14', '#28a745'];
+  const labels  = ['≤30 days', '31–90 days', '>90 days'];
+  const keys    = ['within30', 'within90', 'beyond90'];
+
+  let offset = 0;
+  const arcs = counts.map((c, i) => {
+    const dash   = ((c / total) * circumference).toFixed(2);
+    const gap    = (circumference - dash).toFixed(2);
+    const rotate = ((offset / total) * 360).toFixed(2);
+    offset += c;
+    return `<circle
+      cx="${cx}" cy="${cy}" r="${r}"
+      fill="none"
+      stroke="${colours[i]}"
+      stroke-width="18"
+      stroke-dasharray="${dash} ${gap}"
+      transform="rotate(${rotate - 90} ${cx} ${cy})"
+      data-status="${keys[i]}"
+      style="cursor:pointer"
+      title="${labels[i]}: ${c}"
+    />`;
+  }).join('');
+
+  const legendItems = counts.map((c, i) =>
+    `<span class="lic-legend-item" data-status="${keys[i]}" style="cursor:pointer">
+       <span class="lic-dot" style="background:${colours[i]}"></span>
+       ${escHtml(labels[i])} <strong>${c}</strong>
+     </span>`
+  ).join('');
+
+  return `
+<div class="lic-donut-wrap">
+  <svg width="140" height="140" viewBox="0 0 140 140" aria-hidden="true">
+    ${arcs}
+    <text x="${cx}" y="${cy + 6}" text-anchor="middle" font-size="16" font-weight="bold" fill="currentColor">${total}</text>
+  </svg>
+  <div class="lic-legend">${legendItems}</div>
+</div>`;
+}
+
 function loadLicenseStatus(adom) {
   const container = document.getElementById('licenseContent');
   if (!container) return;
@@ -655,12 +705,21 @@ function renderLicenseSection(data, adom) {
 
   licenseDevices   = data.devices || [];
   licenseSelStatus = null;
+  licenseSelExpiry = null;
   licenseDetPage   = 1;
 
   const devices  = licenseDevices;
   const licensed = devices.filter(d => d.status === 'licensed').length;
   const expired  = devices.filter(d => d.status === 'expired').length;
   const unknown  = devices.filter(d => d.status === 'unknown').length;
+
+  // Expiry buckets — licensed devices with a known expiry date only
+  const now = Date.now(), ms30 = 30 * 864e5, ms90 = 90 * 864e5;
+  const withExpiry = devices.filter(d => d.status === 'licensed' && d.expires);
+  const exWithin30 = withExpiry.filter(d => new Date(d.expires) - now <= ms30).length;
+  const exWithin90 = withExpiry.filter(d => { const df = new Date(d.expires) - now; return df > ms30 && df <= ms90; }).length;
+  const exBeyond90 = withExpiry.filter(d => new Date(d.expires) - now > ms90).length;
+  const showExpiry = withExpiry.length > 0;
 
   const lastUpdated = data.last_updated
     ? `Last updated: ${new Date(data.last_updated).toLocaleString()}`
@@ -679,18 +738,34 @@ function renderLicenseSection(data, adom) {
   <div style="padding:1rem">
     ${devices.length === 0
       ? `<p style="color:var(--text-muted)">${data.status === 'pending' ? 'Cache is warming up — check back in a moment.' : 'No devices found.'}</p>`
-      : buildDonutSVG(licensed, expired, unknown)
+      : `<div style="display:flex;gap:3rem;flex-wrap:wrap;align-items:flex-start">
+           <div>
+             <div style="font-size:.78em;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em">By License</div>
+             ${buildDonutSVG(licensed, expired, unknown)}
+           </div>
+           ${showExpiry ? `<div>
+             <div style="font-size:.78em;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em">Expiring Soon</div>
+             ${buildExpiryDonutSVG(exWithin30, exWithin90, exBeyond90)}
+           </div>` : ''}
+         </div>`
     }
     <p style="margin-top:.5rem;color:var(--text-muted);font-size:.85em">Click a slice or legend item to list devices.</p>
   </div>
 </div>
 <div id="licenseListContent"></div>`;
 
-  // Wire donut slice and legend clicks
+  // Wire all slice/legend clicks — status keys vs expiry bracket keys
+  const statusKeys = new Set(['licensed', 'expired', 'unknown']);
   container.querySelectorAll('[data-status]').forEach(el => {
     el.addEventListener('click', () => {
       const s = el.dataset.status;
-      licenseSelStatus = (licenseSelStatus === s) ? null : s;
+      if (statusKeys.has(s)) {
+        licenseSelStatus = (licenseSelStatus === s) ? null : s;
+        licenseSelExpiry = null;
+      } else {
+        licenseSelExpiry = (licenseSelExpiry === s) ? null : s;
+        licenseSelStatus = null;
+      }
       licenseDetPage = 1;
       renderLicenseList();
     });
@@ -725,19 +800,40 @@ function renderLicenseList() {
   const listEl = document.getElementById('licenseListContent');
   if (!listEl) return;
 
-  if (!licenseSelStatus) {
+  if (!licenseSelStatus && !licenseSelExpiry) {
     listEl.innerHTML = '';
     return;
   }
 
-  const filtered = licenseDevices.filter(d => d.status === licenseSelStatus);
+  const now = Date.now(), ms30 = 30 * 864e5, ms90 = 90 * 864e5;
+  const expiryMeta = {
+    within30: { label: 'Expiring ≤30 days',    colour: '#dc3545' },
+    within90: { label: 'Expiring 31–90 days',  colour: '#fd7e14' },
+    beyond90: { label: 'Expiring >90 days',    colour: '#28a745' },
+  };
+  const statusColours = { licensed: '#28a745', expired: '#dc3545', unknown: '#ffc107' };
+
+  let filtered, statusLabel, colour;
+  if (licenseSelExpiry) {
+    const meta = expiryMeta[licenseSelExpiry];
+    statusLabel = meta.label;
+    colour      = meta.colour;
+    filtered = licenseDevices.filter(d => {
+      if (d.status !== 'licensed' || !d.expires) return false;
+      const diff = new Date(d.expires) - now;
+      if (licenseSelExpiry === 'within30') return diff <= ms30;
+      if (licenseSelExpiry === 'within90') return diff > ms30 && diff <= ms90;
+      return diff > ms90;
+    });
+  } else {
+    statusLabel = licenseSelStatus.charAt(0).toUpperCase() + licenseSelStatus.slice(1);
+    colour      = statusColours[licenseSelStatus] || '#6c757d';
+    filtered    = licenseDevices.filter(d => d.status === licenseSelStatus);
+  }
+
   const total    = filtered.length;
   const start    = (licenseDetPage - 1) * licenseDetSize;
   const page     = filtered.slice(start, start + licenseDetSize);
-
-  const statusLabel = licenseSelStatus.charAt(0).toUpperCase() + licenseSelStatus.slice(1);
-  const colourMap   = { licensed: '#28a745', expired: '#dc3545', unknown: '#ffc107' };
-  const colour      = colourMap[licenseSelStatus] || '#6c757d';
 
   const rows = page.map(d => `
 <tr>
@@ -759,9 +855,9 @@ function renderLicenseList() {
   <div class="table-controls">
     <span>Showing: <strong>${escHtml(statusLabel)}</strong> (${total} device${total !== 1 ? 's' : ''})</span>
     <div class="table-controls-right">
-      <button class="btn btn-sm btn-ghost" onclick="exportLicenseData('csv',licenseDevices.filter(d=>d.status===licenseSelStatus),'${licenseSelStatus}')">CSV</button>
-      <button class="btn btn-sm btn-ghost" onclick="exportLicenseData('json',licenseDevices.filter(d=>d.status===licenseSelStatus),'${licenseSelStatus}')">JSON</button>
-      <button class="btn btn-sm btn-ghost" onclick="exportLicenseData('pdf',licenseDevices.filter(d=>d.status===licenseSelStatus),'${licenseSelStatus}')">PDF</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportCurrentLicenseData('csv')">CSV</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportCurrentLicenseData('json')">JSON</button>
+      <button class="btn btn-sm btn-secondary" onclick="exportCurrentLicenseData('pdf')">PDF</button>
     </div>
   </div>
   <table class="data-table">
@@ -800,6 +896,26 @@ function renderLicenseList() {
   });
 }
 
+/* ── Export helper — re-filters from current state ───────────────────────── */
+function exportCurrentLicenseData(format) {
+  const now = Date.now(), ms30 = 30 * 864e5, ms90 = 90 * 864e5;
+  let rows, label;
+  if (licenseSelExpiry) {
+    rows = licenseDevices.filter(d => {
+      if (d.status !== 'licensed' || !d.expires) return false;
+      const diff = new Date(d.expires) - now;
+      if (licenseSelExpiry === 'within30') return diff <= ms30;
+      if (licenseSelExpiry === 'within90') return diff > ms30 && diff <= ms90;
+      return diff > ms90;
+    });
+    label = licenseSelExpiry;
+  } else {
+    rows  = licenseDevices.filter(d => d.status === licenseSelStatus);
+    label = licenseSelStatus;
+  }
+  exportLicenseData(format, rows, label);
+}
+
 /* ── License data export ─────────────────────────────────────────────────── */
 function exportLicenseData(format, rows, status) {
   const safeAdom = (currentAdom || 'all').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -827,7 +943,8 @@ function exportLicenseData(format, rows, status) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 0);
   } else if (format === 'pdf') {
-    const statusLabel = status.charAt(0).toUpperCase() + status.slice(1);
+    const expLabels = { within30: 'Expiring ≤30 days', within90: 'Expiring 31–90 days', beyond90: 'Expiring >90 days' };
+    const statusLabel = expLabels[status] || (status.charAt(0).toUpperCase() + status.slice(1));
     const tableRows = rows.map(d =>
       `<tr><td>${escHtml(d.name)}</td><td>${escHtml(statusLabel)}</td><td>${escHtml(d.expires || '—')}</td><td>${escHtml(d.firmware || 'n/a')}</td><td>${escHtml(d.adom || '—')}</td></tr>`
     ).join('');
