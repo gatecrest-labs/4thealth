@@ -29,8 +29,14 @@ def make_client() -> FMGClient:
 
 
 _FORTIGUARD_SUBS = [
-    "antivirus", "ips", "web_filtering", "appctrl", "antispam",
-    "outbreak_prevention", "firmware_updates", "forticloud_sandbox",
+    "antivirus",
+    "ips",
+    "web_filtering",
+    "appctrl",
+    "antispam",
+    "outbreak_prevention",
+    "firmware_updates",
+    "forticloud_sandbox",
 ]
 
 
@@ -57,7 +63,9 @@ def parse_license_payload(raw_payload) -> dict:
     expires_ts = enhanced.get("expires")
     if status == "licensed" and expires_ts:
         if expires_ts > now:
-            exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime("%Y-%m-%d")
+            exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime(
+                "%Y-%m-%d"
+            )
             lic_status, lic_expires = "licensed", exp_str
         else:
             lic_status, lic_expires = "expired", None
@@ -74,7 +82,12 @@ def parse_license_payload(raw_payload) -> dict:
             if exp_ts and exp_ts <= now:
                 subs[key] = {"status": "expired", "expires": None}
             elif exp_ts:
-                subs[key] = {"status": "licensed", "expires": datetime.fromtimestamp(exp_ts, tz=timezone.utc).strftime("%Y-%m-%d")}
+                subs[key] = {
+                    "status": "licensed",
+                    "expires": datetime.fromtimestamp(exp_ts, tz=timezone.utc).strftime(
+                        "%Y-%m-%d"
+                    ),
+                }
             else:
                 subs[key] = {"status": "licensed", "expires": None}
         elif s in ("no_license", "free_license"):

@@ -118,7 +118,11 @@ def _run_job(app):
                             exc,
                         )
                         firmware = "n/a"
-                        lic = {"status": "unknown", "expires": None, "subscriptions": {}}
+                        lic = {
+                            "status": "unknown",
+                            "expires": None,
+                            "subscriptions": {},
+                        }
                     result.append(
                         {
                             "name": device_name,
