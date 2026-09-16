@@ -211,6 +211,23 @@ Both sections are gated by the `audit_review` tab permission key.
 4. Append an entry to `CHECKS` with the appropriate `data_keys` and empty `params_schema`.
 No template or frontend JS changes are needed for binary checks.
 
+### Device Review tab
+
+`GET /versions` → `versions.html` + `versions.js`
+
+Two-section layout (permission key: `versions`):
+
+1. **Device Version** (top) — global all-ADOM firmware version bar chart (pre-warmed cache, `app/versions_cache.py`) + per-ADOM version bar chart. Select ADOM from dropdown; click a bar to list devices on that version.
+
+2. **License Status** (below) — SVG donut chart showing Licensed / Expired / Unknown device counts for the selected ADOM. Data sourced from `app/license_cache.py` (background cache, default 60-minute refresh, configurable via `LICENSE_CACHE_INTERVAL_MIN` env var). Click a donut slice or legend item to expand a paginated device list (Device, Status, Expires, Firmware, ADOM). Export the list as CSV, JSON, or PDF. A **Refresh** button triggers an immediate cache rebuild via `POST /api/devices/all/license/refresh`.
+
+**License API endpoints** (all `@tab_required("versions")`):
+- `GET /api/devices/all/license` — cached all-ADOM license data (ADOM-access filtered)
+- `POST /api/devices/all/license/refresh` — trigger background cache rebuild
+- `GET /api/adoms/<adom>/license` — cached license data for one ADOM
+
+**`app/license_cache.py`** — mirrors `versions_cache.py`. Calls `client._proxy(adom, device, "/api/v2/monitor/license/status")` per device and parses via `parse_license_payload()` (in `fmg_helpers.py`). Stores `{name, adom, status, expires, firmware}` per device.
+
 ### Rule Validation tab
 
 `GET /rule-review` → `rule_review.html` + `rule_review.js`

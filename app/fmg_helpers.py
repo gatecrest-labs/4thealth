@@ -26,3 +26,27 @@ def make_client() -> FMGClient:
         verify_ssl=Config.FMG_VERIFY_SSL,
         timeout=Config.FMG_TIMEOUT,
     )
+
+
+def parse_license_payload(raw_payload) -> dict:
+    """Parse FortiOS /api/v2/monitor/license/status results dict.
+
+    Returns {"status": "licensed"|"expired"|"unknown", "expires": "YYYY-MM-DD"|None}.
+    raw_payload is the `payload` value from `client._proxy()` — pass `raw.get('payload', {})`.
+    """
+    import time
+    from datetime import datetime, timezone
+
+    results = raw_payload if isinstance(raw_payload, dict) else {}
+    forticare = results.get("forticare", {})
+    enhanced = forticare.get("support", {}).get("enhanced", {})
+    status = enhanced.get("status", "")
+    expires_ts = enhanced.get("expires")
+    if status == "licensed" and expires_ts:
+        if expires_ts > time.time():
+            exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime(
+                "%Y-%m-%d"
+            )
+            return {"status": "licensed", "expires": exp_str}
+        return {"status": "expired", "expires": None}
+    return {"status": "unknown", "expires": None}
