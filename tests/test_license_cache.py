@@ -37,8 +37,11 @@ def test_unknown_wrong_status():
 
 
 def test_non_dict_input():
-    assert parse_license_payload(None) == {"status": "unknown", "expires": None}
-    assert parse_license_payload([]) == {"status": "unknown", "expires": None}
+    for bad in (None, []):
+        result = parse_license_payload(bad)
+        assert result["status"] == "unknown"
+        assert result["expires"] is None
+        assert "subscriptions" in result
 
 
 import app.license_cache as lc

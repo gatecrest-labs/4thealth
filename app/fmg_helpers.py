@@ -37,6 +37,8 @@ _FORTIGUARD_SUBS = [
     "outbreak_prevention",
     "firmware_updates",
     "forticloud_sandbox",
+    "ai_malware_detection",
+    "blacklisted_certificates",
 ]
 
 

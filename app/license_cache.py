@@ -109,6 +109,17 @@ def _run_job(app):
                         raw = client._proxy(
                             adom, device_name, "/api/v2/monitor/license/status"
                         )
+                        # Retry with the management VDOM when the default
+                        # (root) call fails — happens on multi-VDOM devices
+                        # whose mgt_vdom is not root.
+                        if not raw.get("payload"):
+                            mgt_vdom = d.get("mgt_vdom", "").strip('"')
+                            if mgt_vdom and mgt_vdom.lower() != "root":
+                                raw = client._proxy(
+                                    adom,
+                                    device_name,
+                                    f"/api/v2/monitor/license/status?vdom={mgt_vdom}",
+                                )
                         lic = parse_license_payload(raw.get("payload", {}))
                     except Exception as exc:
                         logger.warning(
