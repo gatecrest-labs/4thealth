@@ -7,7 +7,7 @@ bp = Blueprint("dashboard", __name__)
 # Register nav tabs — order here controls nav bar order.
 registry.register("dashboard", "Dashboard", "dashboard.index")
 registry.register("firewalls", "Firewalls", "dashboard.firewalls")
-registry.register("versions", "Device Versions", "dashboard.versions")
+registry.register("versions", "Device Review", "dashboard.versions")
 
 
 @bp.route("/")

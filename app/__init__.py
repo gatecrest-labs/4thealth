@@ -144,6 +144,12 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         init_versions_scheduler(app)
 
+    if not app.config.get("TESTING") and not app.config.get("_LICENSE_CACHE_STARTED"):
+        app.config["_LICENSE_CACHE_STARTED"] = True
+        from app.license_cache import init_scheduler as init_license_scheduler
+
+        init_license_scheduler(app)
+
     if not app.config.get("TESTING") and not app.config.get("_ADOM_CACHE_STARTED"):
         app.config["_ADOM_CACHE_STARTED"] = True
         from app.adom_cache import init_scheduler as init_adom_scheduler

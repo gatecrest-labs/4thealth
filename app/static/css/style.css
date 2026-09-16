@@ -2673,3 +2673,9 @@ a:hover { text-decoration: underline; }
 
 .cli-block-sm { font-size: .78rem; max-height: 120px; overflow-y: auto; padding: .4rem .6rem;
     background: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
+
+/* ── License donut chart ───────────────────────────────────────────────── */
+.lic-donut-wrap { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+.lic-legend { display: flex; flex-direction: column; gap: .4rem; }
+.lic-legend-item { display: flex; align-items: center; gap: .4rem; font-size: .95rem; cursor: pointer; }
+.lic-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }

@@ -2,14 +2,17 @@
 
 import json
 import re
-import time
-from datetime import datetime, timezone
 
 from flask import Blueprint, Response, jsonify, request, session, stream_with_context
 from app.fmg_client import FMGClient, FMGError, PROXY_ENDPOINTS
 from app.config import Config
-from app.decorators import tab_required, admin_required, check_adom_access
-from app.fmg_helpers import make_client as _make_client
+from app.decorators import (
+    tab_required,
+    admin_required,
+    check_adom_access,
+)
+from app import license_cache
+from app.fmg_helpers import make_client as _make_client, parse_license_payload
 from app.security import internal_api_error, upstream_api_error
 
 bp = Blueprint("api", __name__, url_prefix="/api")
@@ -407,6 +410,50 @@ def all_devices_refresh():
     return jsonify({"status": cached["status"], "queued": True})
 
 
+@bp.route("/devices/all/license")
+@tab_required("versions")
+def all_devices_license():
+    from app.groups import get_allowed_adoms
+
+    cached = license_cache.get_cached()
+    allowed = get_allowed_adoms(
+        session.get("user", ""),
+        ad_groups=session.get("ad_groups"),
+        role=session.get("role"),
+    )
+    if allowed is not None:
+        cached["devices"] = [
+            d for d in cached.get("devices", []) if d.get("adom") in allowed
+        ]
+    return jsonify(cached)
+
+
+@bp.route("/devices/all/license/refresh", methods=["POST"])
+@tab_required("versions")
+def all_devices_license_refresh():
+    from flask import current_app
+
+    license_cache.refresh_now(current_app._get_current_object())
+    return jsonify({"queued": True})
+
+
+@bp.route("/adoms/<adom>/license")
+@tab_required("versions")
+def adom_license(adom):
+    err = check_adom_access(adom)
+    if err:
+        return err
+    devices = license_cache.get_cached_adom(adom)
+    cached = license_cache.get_cached()
+    return jsonify(
+        {
+            "devices": devices,
+            "last_updated": cached.get("last_updated"),
+            "status": cached.get("status"),
+        }
+    )
+
+
 # ── ADOM list ────────────────────────────────────────────────────────────────
 
 
@@ -648,23 +695,7 @@ def _assemble_health(
     if not isinstance(perf_raw, dict):
         perf_raw = {}
 
-    def _parse_license(raw_payload) -> dict:
-        # _proxy() already unwraps response.results, so raw_payload IS the results dict
-        results = raw_payload if isinstance(raw_payload, dict) else {}
-        forticare = results.get("forticare", {})
-        enhanced = forticare.get("support", {}).get("enhanced", {})
-        status = enhanced.get("status", "")
-        expires_ts = enhanced.get("expires")
-        if status == "licensed" and expires_ts:
-            if expires_ts > time.time():
-                exp_str = datetime.fromtimestamp(expires_ts, tz=timezone.utc).strftime(
-                    "%Y-%m-%d"
-                )
-                return {"status": "licensed", "expires": exp_str}
-            return {"status": "expired", "expires": None}
-        return {"status": "unknown", "expires": None}
-
-    license_info = _parse_license(payload("license_status"))
+    license_info = parse_license_payload(payload("license_status"))
 
     def _parse_vdom_routes(r) -> dict:
         by_vdom = {}
