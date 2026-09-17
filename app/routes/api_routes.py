@@ -696,6 +696,8 @@ def _assemble_health(
         perf_raw = {}
 
     license_info = parse_license_payload(payload("license_status"))
+    if license_info["status"] == "unknown" and conn_status != 1:
+        license_info["status"] = "offline"
 
     def _parse_vdom_routes(r) -> dict:
         by_vdom = {}

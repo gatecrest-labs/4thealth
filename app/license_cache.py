@@ -121,6 +121,8 @@ def _run_job(app):
                                     f"/api/v2/monitor/license/status?vdom={mgt_vdom}",
                                 )
                         lic = parse_license_payload(raw.get("payload", {}))
+                        if lic["status"] == "unknown" and d.get("conn_status", 0) != 1:
+                            lic["status"] = "offline"
                     except Exception as exc:
                         logger.warning(
                             "license_cache: proxy(%s/%s) failed: %s",

@@ -610,8 +610,8 @@ function exportData(format, devices) {
 }
 
 /* ── License donut chart ───────────────────────────────────────────────── */
-function buildDonutSVG(licensed, expired, unknown) {
-  const total = licensed + expired + unknown;
+function buildDonutSVG(licensed, expired, offline, unregistered, unknown) {
+  const total = licensed + expired + offline + unregistered + unknown;
   if (total === 0) return '<p class="text-muted">No data</p>';
 
   const r = 54;
@@ -619,9 +619,9 @@ function buildDonutSVG(licensed, expired, unknown) {
   const cy = 70;
   const circumference = 2 * Math.PI * r;
 
-  const counts  = [licensed, expired, unknown];
-  const colours = ['#28a745', '#dc3545', '#ffc107'];
-  const labels  = ['Licensed', 'Expired', 'Unknown'];
+  const counts  = [licensed, expired, offline, unregistered, unknown];
+  const colours = ['#28a745', '#dc3545', '#374151', '#94a3b8', '#ffc107'];
+  const labels  = ['Licensed', 'Expired', 'Offline', 'Not Registered', 'Unknown'];
 
   let offset = 0;
   const arcs = counts.map((c, i) => {
@@ -997,9 +997,11 @@ function renderLicenseSection(data, adom) {
   licenseDetPage   = 1;
 
   const devices  = licenseDevices;
-  const licensed = devices.filter(d => d.status === 'licensed').length;
-  const expired  = devices.filter(d => d.status === 'expired').length;
-  const unknown  = devices.filter(d => d.status === 'unknown').length;
+  const licensed     = devices.filter(d => d.status === 'licensed').length;
+  const expired      = devices.filter(d => d.status === 'expired').length;
+  const offline      = devices.filter(d => d.status === 'offline').length;
+  const unregistered = devices.filter(d => d.status === 'unregistered').length;
+  const unknown      = devices.filter(d => d.status === 'unknown').length;
 
   // Expiry buckets — licensed devices with a known expiry date only
   const now = Date.now(), ms30 = 30 * 864e5, ms90 = 90 * 864e5;
@@ -1029,7 +1031,7 @@ function renderLicenseSection(data, adom) {
       : `<div style="display:flex;gap:3rem;flex-wrap:wrap;align-items:flex-start">
            <div>
              <div style="font-size:.78em;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em">By License</div>
-             ${buildDonutSVG(licensed, expired, unknown)}
+             ${buildDonutSVG(licensed, expired, offline, unregistered, unknown)}
            </div>
            ${showExpiry ? `<div>
              <div style="font-size:.78em;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em">Expiring Soon</div>
@@ -1043,7 +1045,7 @@ function renderLicenseSection(data, adom) {
 <div id="licenseListContent"></div>`;
 
   // Wire all slice/legend clicks — status keys vs expiry bracket keys
-  const statusKeys = new Set(['licensed', 'expired', 'unknown']);
+  const statusKeys = new Set(['licensed', 'expired', 'offline', 'unregistered', 'unknown']);
   container.querySelectorAll('[data-status]').forEach(el => {
     el.addEventListener('click', () => {
       const s = el.dataset.status;
@@ -1099,7 +1101,7 @@ function renderLicenseList() {
     within90: { label: 'Expiring 31–90 days',  colour: '#fd7e14' },
     beyond90: { label: 'Expiring >90 days',    colour: '#28a745' },
   };
-  const statusColours = { licensed: '#28a745', expired: '#dc3545', unknown: '#ffc107' };
+  const statusColours = { licensed: '#28a745', expired: '#dc3545', offline: '#374151', unregistered: '#94a3b8', unknown: '#ffc107' };
 
   let filtered, statusLabel, colour;
   if (licenseSelExpiry) {
