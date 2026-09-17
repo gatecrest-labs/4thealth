@@ -622,6 +622,7 @@ function buildDonutSVG(licensed, expired, offline, unregistered, unknown) {
   const counts  = [licensed, expired, offline, unregistered, unknown];
   const colours = ['#28a745', '#dc3545', '#374151', '#94a3b8', '#ffc107'];
   const labels  = ['Licensed', 'Expired', 'Offline', 'Not Registered', 'Unknown'];
+  const keys    = ['licensed', 'expired', 'offline', 'unregistered', 'unknown'];
 
   let offset = 0;
   const arcs = counts.map((c, i) => {
@@ -636,14 +637,14 @@ function buildDonutSVG(licensed, expired, offline, unregistered, unknown) {
       stroke-width="18"
       stroke-dasharray="${dash} ${gap}"
       transform="rotate(${rotate - 90} ${cx} ${cy})"
-      data-status="${labels[i].toLowerCase()}"
+      data-status="${keys[i]}"
       style="cursor:pointer"
       title="${labels[i]}: ${c}"
     />`;
   }).join('');
 
   const legendItems = counts.map((c, i) =>
-    `<span class="lic-legend-item" data-status="${labels[i].toLowerCase()}" style="cursor:pointer">
+    `<span class="lic-legend-item" data-status="${keys[i]}" style="cursor:pointer">
        <span class="lic-dot" style="background:${colours[i]}"></span>
        ${escHtml(labels[i])} <strong>${c}</strong>
      </span>`
@@ -1102,6 +1103,7 @@ function renderLicenseList() {
     beyond90: { label: 'Expiring >90 days',    colour: '#28a745' },
   };
   const statusColours = { licensed: '#28a745', expired: '#dc3545', offline: '#374151', unregistered: '#94a3b8', unknown: '#ffc107' };
+  const statusLabels  = { licensed: 'Licensed', expired: 'Expired', offline: 'Offline', unregistered: 'Not Registered', unknown: 'Unknown' };
 
   let filtered, statusLabel, colour;
   if (licenseSelExpiry) {
@@ -1116,7 +1118,7 @@ function renderLicenseList() {
       return diff > ms90;
     });
   } else {
-    statusLabel = licenseSelStatus.charAt(0).toUpperCase() + licenseSelStatus.slice(1);
+    statusLabel = statusLabels[licenseSelStatus] || licenseSelStatus;
     colour      = statusColours[licenseSelStatus] || '#6c757d';
     filtered    = licenseDevices.filter(d => d.status === licenseSelStatus);
   }
