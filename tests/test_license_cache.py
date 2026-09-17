@@ -31,9 +31,9 @@ def test_unknown_no_status():
     assert result["expires"] is None
 
 
-def test_unknown_wrong_status():
+def test_unregistered_wrong_status():
     result = parse_license_payload(_make_payload("no_license"))
-    assert result["status"] == "unknown"
+    assert result["status"] == "unregistered"
 
 
 def test_non_dict_input():

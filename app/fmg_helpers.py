@@ -71,6 +71,9 @@ def parse_license_payload(raw_payload) -> dict:
             lic_status, lic_expires = "licensed", exp_str
         else:
             lic_status, lic_expires = "expired", None
+    elif results:
+        # Payload returned but no valid FortiCare status — device not registered
+        lic_status, lic_expires = "unregistered", None
     else:
         lic_status, lic_expires = "unknown", None
 
