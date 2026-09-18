@@ -216,6 +216,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         except Exception as exc:
             app.logger.warning("Rule Hygiene scheduler failed to start: %s", exc)
 
+    if not app.config.get("TESTING") and not app.config.get("_RP_SCHEDULER_STARTED"):
+        app.config["_RP_SCHEDULER_STARTED"] = True
+        try:
+            from app.rule_policy_scheduler import (
+                init_scheduler as init_rp_scheduler,
+            )
+
+            with app.app_context():
+                init_rp_scheduler(app)
+        except Exception as exc:
+            app.logger.warning("Rule Policy scheduler failed to start: %s", exc)
+
     if not app.config.get("TESTING") and not app.config.get(
         "_BACKUP_SCHEDULER_STARTED"
     ):
