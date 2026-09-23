@@ -875,8 +875,15 @@
     Active level: <strong id="logCurrentLevel">—</strong> &nbsp;|&nbsp; Showing <strong id="logCount">0</strong> entries
   </div>
 
-  <div class="log-container" id="logContainer">
-    <div class="loading-placeholder">Loading logs…</div>
+  <div class="table-wrapper" style="max-height:500px;overflow-y:auto">
+    <table class="data-table" id="logTable">
+      <thead>
+        <tr><th>Time</th><th>Level</th><th>Component</th><th>Message</th></tr>
+      </thead>
+      <tbody id="logTbody">
+        <tr><td colspan="4" class="loading-placeholder" style="padding:.75rem 1rem">Loading logs…</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 

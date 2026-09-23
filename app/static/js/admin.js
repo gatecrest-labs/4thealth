@@ -645,7 +645,7 @@
     if (component) params.set('component', component);
 
     const res = await fetch(`/admin/api/logs?${params}`);
-    if (!res.ok) { document.getElementById('logContainer').textContent = 'Failed to load logs.'; return; }
+    if (!res.ok) { document.getElementById('logTbody').innerHTML = '<tr><td colspan="4" style="padding:.75rem 1rem;color:var(--danger)">Failed to load logs.</td></tr>'; return; }
 
     const data = await res.json();
     logMeta = data;
@@ -667,22 +667,21 @@
   }
 
   function renderLogs(entries) {
-    const container = document.getElementById('logContainer');
+    const tbody = document.getElementById('logTbody');
     if (!entries.length) {
-      container.innerHTML = '<div class="empty-state" style="padding:1rem">No log entries match your filter.</div>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state" style="padding:.75rem 1rem">No log entries match your filter.</td></tr>';
       return;
     }
-    container.innerHTML = entries.slice().reverse().map(e => {
+    tbody.innerHTML = entries.slice().reverse().map(e => {
       const color = LOG_LEVEL_COLORS[e.level] || 'var(--text)';
-      const extra = e.extra ? ' ' + Object.entries(e.extra).map(([k,v]) => `${k}=${JSON.stringify(v)}`).join(' ') : '';
-      return `<div class="log-line">
-        <span class="log-ts">${esc(e.ts)}</span>
-        <span class="log-level" style="color:${color}">${esc(e.level.padEnd(5))}</span>
-        <span class="log-component">[${esc(e.component)}]</span>
-        <span class="log-msg">${esc(e.message)}${esc(extra)}</span>
-      </div>`;
+      const extra = e.extra ? ' <span style="color:var(--text-muted)">— ' + esc(JSON.stringify(e.extra)) + '</span>' : '';
+      return `<tr>
+        <td style="white-space:nowrap;font-size:.78rem">${esc(e.ts)}</td>
+        <td><span style="font-size:.75rem;font-weight:600;padding:.15rem .45rem;border-radius:3px;background:${color}22;color:${color}">${esc(e.level)}</span></td>
+        <td style="font-size:.82rem">${esc(e.component)}</td>
+        <td style="font-size:.82rem">${esc(e.message)}${extra}</td>
+      </tr>`;
     }).join('');
-    container.scrollTop = 0;
   }
 
   document.getElementById('btnRefreshLogs').addEventListener('click', loadLogs);
@@ -693,7 +692,7 @@
     const level = document.getElementById('logLevelSelect').value;
     const res = await fetch('/admin/api/logs/level', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
       body: JSON.stringify({ level }),
     });
     if (res.ok) loadLogs();
@@ -701,7 +700,7 @@
 
   document.getElementById('btnClearLogs').addEventListener('click', async () => {
     if (!confirm('Clear all log entries from the in-memory buffer?')) return;
-    await fetch('/admin/api/logs', { method: 'DELETE' });
+    await fetch('/admin/api/logs', { method: 'DELETE', headers: { 'X-CSRF-Token': getCSRF() } });
     loadLogs();
   });
 
