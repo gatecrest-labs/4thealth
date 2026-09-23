@@ -10,6 +10,7 @@ Usage:
     entries = get_log_entries(level="WARN", limit=200)
 """
 
+import sys
 import threading
 from collections import deque
 from datetime import datetime, timezone
@@ -53,6 +54,12 @@ def app_log(level: str, component: str, message: str, **extra) -> None:
     }
     if extra:
         entry["extra"] = extra
+    extra_str = " ".join(f"{k}={v}" for k, v in extra.items()) if extra else ""
+    print(
+        f"[{entry['ts']}] {level} {component}: {message}"
+        + (f" {extra_str}" if extra_str else ""),
+        file=sys.stderr,
+    )
     with _lock:
         _buffer.append(entry)
 
