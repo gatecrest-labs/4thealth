@@ -11,7 +11,7 @@ API (JSON, all read-only):
 """
 
 import ipaddress
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Blueprint, render_template, session, jsonify, request
 from app.decorators import tab_required, check_adom_access
@@ -1034,49 +1034,59 @@ def hygiene_interface_lookup(adom: str):
         return jsonify({"error": "ips is required"}), 400
 
     searched_set = set(searched_ips)
-    results = []
-    skipped_devices = []
 
     try:
         with make_client() as client:
             devices = client.get_devices(adom) or []
-            for device in devices:
-                device_name = (
-                    device.get("name", "") if isinstance(device, dict) else str(device)
-                )
-                if not device_name:
-                    continue
-                try:
-                    interfaces = client.get_device_interfaces_all_vdoms(
-                        adom, device_name
-                    )
-                except Exception:
-                    skipped_devices.append(device_name)
-                    continue
-
-                for iface in interfaces:
-                    if not isinstance(iface, dict):
-                        continue
-                    raw_ip = iface.get("ip", "")
-                    if not raw_ip:
-                        continue
-                    # FortiGate format: "10.1.2.3 255.255.255.0" — extract IP part
-                    ip_part = raw_ip.split()[0] if " " in raw_ip else raw_ip
-                    if ip_part in searched_set:
-                        results.append(
-                            {
-                                "device": device_name,
-                                "interface": iface.get("name", ""),
-                                "vdom": iface.get("vdom", "root"),
-                                "ip": _cidr_from_mask(raw_ip),
-                                "type": iface.get("type", ""),
-                                "status": iface.get("status", ""),
-                            }
-                        )
     except FMGError as exc:
         return upstream_api_error("hygiene", exc)
     except Exception as exc:
         return internal_api_error("hygiene", exc)
+
+    valid_devices = [
+        d for d in devices if (d.get("name", "") if isinstance(d, dict) else str(d))
+    ]
+
+    def _lookup_device(device):
+        device_name = (
+            device.get("name", "") if isinstance(device, dict) else str(device)
+        )
+        try:
+            with make_client() as c:
+                interfaces = c.get_device_interfaces_all_vdoms(adom, device_name)
+        except Exception:
+            return [], device_name
+        matches = []
+        for iface in interfaces:
+            if not isinstance(iface, dict):
+                continue
+            raw_ip = iface.get("ip", "")
+            if not raw_ip:
+                continue
+            # FortiGate format: "10.1.2.3 255.255.255.0" — extract IP part
+            ip_part = raw_ip.split()[0] if " " in raw_ip else raw_ip
+            if ip_part in searched_set:
+                matches.append(
+                    {
+                        "device": device_name,
+                        "interface": iface.get("name", ""),
+                        "vdom": iface.get("vdom", "root"),
+                        "ip": _cidr_from_mask(raw_ip),
+                        "type": iface.get("type", ""),
+                        "status": iface.get("status", ""),
+                    }
+                )
+        return matches, None
+
+    results = []
+    skipped_devices = []
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        futures = {pool.submit(_lookup_device, d): d for d in valid_devices}
+        for future in as_completed(futures):
+            matches, skipped = future.result()
+            results.extend(matches)
+            if skipped:
+                skipped_devices.append(skipped)
 
     results.sort(key=lambda r: (r["device"].lower(), r["interface"].lower()))
     return jsonify(
