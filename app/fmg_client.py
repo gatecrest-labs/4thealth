@@ -445,18 +445,18 @@ class FMGClient:
         )
         scope = [{"name": device, "vdom": v} for v in vdom_names]
 
-        # Resolve per-vdom package assignments. Only stage packages that are
-        # "modified" — staging an already-installed package overwrites the preview
-        # state and causes preview/result to return empty for the modified package.
+        # Resolve per-vdom package assignments. Stage ALL packages that are
+        # assigned to this device (regardless of modified/installed status).
+        # With per-package staging cycles (stage→preview→result→cancel per
+        # package), staging an already-installed package is safe — it just
+        # produces an empty diff for that cycle without affecting other cycles.
+        # Filtering to only "modified" packages caused VDOMs whose status was
+        # stale or returned via a different FMG code path to be silently skipped.
         pkg_names: list[str] = []
         for vname in vdom_names:
             info = self.get_package_info(adom, device, vname)
             pname = info.get("pkg_name", "")
-            if (
-                pname
-                and pname not in pkg_names
-                and info.get("pkg_status") == "modified"
-            ):
+            if pname and pname not in pkg_names:
                 pkg_names.append(pname)
 
         def _exec(url: str, data: dict) -> dict:
