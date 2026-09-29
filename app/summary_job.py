@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 _store: dict = {
     "firewalls_total": None,
     "rules_total": None,
+    "ha_clusters": None,
+    "standalones": None,
     "last_updated": None,  # ISO-8601 UTC string
     "status": "pending",  # pending | running | ok | error
     "error": None,
@@ -59,6 +61,8 @@ def _run_job(app):
 
         firewalls_total = 0
         rules_total = 0
+        ha_clusters = 0
+        standalones = 0
 
         with make_client() as client:
             # ── Step 1: enumerate ADOMs ───────────────────────────────────
@@ -77,7 +81,23 @@ def _run_job(app):
             for adom in adom_names:
                 try:
                     devices = client.get_devices(adom)
-                    count = len(devices) if isinstance(devices, list) else 0
+                    if isinstance(devices, list):
+                        for d in devices:
+                            if isinstance(d, dict):
+                                ha = d.get("ha_mode")
+                                try:
+                                    ha_int = int(ha) if ha is not None and ha != "" else 0
+                                except (TypeError, ValueError):
+                                    ha_int = 0
+                                if ha_int in (1, 2):
+                                    ha_clusters += 1
+                                else:
+                                    standalones += 1
+                            else:
+                                standalones += 1
+                        count = len(devices)
+                    else:
+                        count = 0
                     firewalls_total += count
                     if count > 0:
                         adoms_with_devices.append(adom)
@@ -124,6 +144,8 @@ def _run_job(app):
                 {
                     "firewalls_total": firewalls_total,
                     "rules_total": rules_total,
+                    "ha_clusters": ha_clusters,
+                    "standalones": standalones,
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                     "status": "ok",
                     "error": None,
