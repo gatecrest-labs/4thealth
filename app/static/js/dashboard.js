@@ -37,7 +37,8 @@ function renderSummary(d) {
   if (fwBreakdown) {
     if (d.ha_clusters != null && d.standalones != null) {
       const clusterWord = d.ha_clusters === 1 ? 'cluster' : 'clusters';
-      fwBreakdown.textContent = `${d.ha_clusters} HA ${clusterWord} · ${d.standalones} standalone`;
+      const haMembers = d.ha_clusters * 2;
+      fwBreakdown.textContent = `${d.ha_clusters} HA ${clusterWord} (${haMembers} members) · ${d.standalones} standalone`;
     } else {
       fwBreakdown.textContent = '';
     }
