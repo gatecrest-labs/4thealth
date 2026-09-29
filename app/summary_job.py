@@ -86,7 +86,9 @@ def _run_job(app):
                             if isinstance(d, dict):
                                 ha = d.get("ha_mode")
                                 try:
-                                    ha_int = int(ha) if ha is not None and ha != "" else 0
+                                    ha_int = (
+                                        int(ha) if ha is not None and ha != "" else 0
+                                    )
                                 except (TypeError, ValueError):
                                     ha_int = 0
                                 if ha_int in (1, 2):
