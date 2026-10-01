@@ -443,21 +443,25 @@ class FMGClient:
             if vdoms
             else ["root"]
         )
-        scope = [{"name": device, "vdom": v} for v in vdom_names]
+        # Resolve per-vdom package assignments. Build a pkg→[vdom] map so each
+        # staging cycle can use a scope containing ONLY the VDOMs assigned to
+        # that specific package. Passing all VDOMs in one global scope confuses
+        # FMG's staging context for per-VDOM packages and causes preview/result
+        # to return an empty diff even for modified packages.
+        from app.app_logger import app_log  # noqa: PLC0415
 
-        # Resolve per-vdom package assignments. Stage ALL packages that are
-        # assigned to this device (regardless of modified/installed status).
-        # With per-package staging cycles (stage→preview→result→cancel per
-        # package), staging an already-installed package is safe — it just
-        # produces an empty diff for that cycle without affecting other cycles.
-        # Filtering to only "modified" packages caused VDOMs whose status was
-        # stale or returned via a different FMG code path to be silently skipped.
-        pkg_names: list[str] = []
+        pkg_vdoms: dict[str, list[str]] = {}
         for vname in vdom_names:
             info = self.get_package_info(adom, device, vname)
             pname = info.get("pkg_name", "")
-            if pname and pname not in pkg_names:
-                pkg_names.append(pname)
+            app_log(
+                "INFO",
+                "fmg_client",
+                f"install_preview pkg_info: adom={adom} device={device} "
+                f"vdom={vname} pkg_name={pname!r} pkg_status={info.get('pkg_status', '')!r}",
+            )
+            if pname:
+                pkg_vdoms.setdefault(pname, []).append(vname)
 
         def _exec(url: str, data: dict) -> dict:
             body = {
@@ -521,10 +525,12 @@ class FMGClient:
             )
 
         # If no packages need staging the device has nothing pending.
-        if not pkg_names:
+        if not pkg_vdoms:
             return ""
 
-        def _fetch_result(stage_taskid: int, preview_taskid: int) -> str:
+        def _fetch_result(
+            stage_taskid: int, preview_taskid: int, pkg_scope: list
+        ) -> str:
             """Fetch preview/result for this device.
 
             Try the install/preview task's own ID first (confirmed working on
@@ -536,7 +542,7 @@ class FMGClient:
                 try:
                     result_data = _exec(
                         "/securityconsole/preview/result",
-                        {"adom": adom, "scope": scope, "preview_taskid": taskid},
+                        {"adom": adom, "scope": pkg_scope, "preview_taskid": taskid},
                     )
                 except FMGError:
                     continue
@@ -552,6 +558,15 @@ class FMGClient:
                     continue
                 # Collect ALL entries matching this device — some FMG builds
                 # return one entry per package rather than one per device.
+                entry_names = [
+                    e.get("name", "") for e in entries if isinstance(e, dict)
+                ]
+                app_log(
+                    "INFO",
+                    "fmg_client",
+                    f"install_preview result: adom={adom} device={device} "
+                    f"taskid={taskid} entry_names={entry_names}",
+                )
                 parts = []
                 for entry in entries:
                     if not isinstance(entry, dict):
@@ -574,7 +589,10 @@ class FMGClient:
         # Fix: run stage → preview → result → cancel for each package so
         # every VDOM's diff is captured independently.
         raw_parts: list[str] = []
-        for pkg_name in pkg_names:
+        for pkg_name, pkg_vdom_list in pkg_vdoms.items():
+            # Use only the VDOMs assigned to this package — passing all VDOMs
+            # in the scope causes FMG to return an empty diff for per-VDOM packages.
+            pkg_scope = [{"name": device, "vdom": v} for v in pkg_vdom_list]
             stage_taskid = None
             preview_taskid = None
             try:
@@ -585,12 +603,19 @@ class FMGClient:
                         {
                             "adom": adom,
                             "flags": ["preview"],
-                            "scope": scope,
+                            "scope": pkg_scope,
                             "pkg": pkg_name,
                         },
                     )
-                except FMGError:
+                except FMGError as _stage_err:
                     # RPC rejection — package may have no diff; skip it.
+                    app_log(
+                        "WARNING",
+                        "fmg_client",
+                        f"install_preview SKIP: adom={adom} device={device} "
+                        f"pkg={pkg_name!r} scope_vdoms={pkg_vdom_list} "
+                        f"reason={_stage_err}",
+                    )
                     continue
                 stage_taskid = stage_data.get("task")
                 if not stage_taskid:
@@ -606,7 +631,7 @@ class FMGClient:
                         {
                             "adom": adom,
                             "flags": ["none"],
-                            "scope": scope,
+                            "scope": pkg_scope,
                             "preview_taskid": stage_taskid,
                         },
                     )
@@ -618,7 +643,7 @@ class FMGClient:
                 _poll(preview_taskid, f"Preview:{pkg_name}")
 
                 # Step 3: fetch CLI diff text
-                raw = _fetch_result(stage_taskid, preview_taskid)
+                raw = _fetch_result(stage_taskid, preview_taskid, pkg_scope)
                 if raw:
                     raw_parts.append(raw)
             except FMGError as exc:
@@ -635,7 +660,7 @@ class FMGClient:
                 try:
                     _exec(
                         "/securityconsole/package/cancel/install",
-                        {"adom": adom, "scope": scope},
+                        {"adom": adom, "scope": pkg_scope},
                     )
                 except Exception:
                     pass
