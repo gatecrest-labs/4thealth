@@ -103,6 +103,7 @@ app/
   decorators.py        # login_required, tab_required, admin_required, check_adom_access
   app_settings.py      # Persistent app settings (app_settings.json); used for external_api_enabled toggle
   api_tokens.py        # Bearer token CRUD for the external API; SHA-256 hashes stored in api_tokens.json
+  package_change_alerts.py  # Package Change Alerts: rules, policy-diff filter, dedupe, email; invoked by config_diff_scheduler
   routes/
     auth_routes.py            # /login, /logout
     dashboard_routes.py       # /, /firewalls, /versions (Jinja2 pages)
@@ -119,6 +120,7 @@ policy_db.json         # Network segmentation policy database (gitignored — ru
 groups.json            # Group definitions (gitignored — copy from groups.example.json); includes tab and ADOM permissions
 app_settings.json      # App feature flags (gitignored — copy from app_settings.example.json)
 api_tokens.json        # Hashed bearer tokens (gitignored — copy from api_tokens.example.json)
+package_change_alerts.json  # Package Change Alert rules + dedupe state (gitignored — copy from package_change_alerts.example.json)
 backup_config.json     # Backup password, FTP/SFTP config, scheduled jobs + run history (gitignored)
 ```
 
@@ -355,7 +357,7 @@ Table rows show a single compact badge (highest-priority state). The diff panel 
 
 ### Scheduled Exports
 
-Two scheduler modules support recurring exports: Config-Delta diffs (`app/config_diff_scheduler.py`) and Audit Review CIS audit results (`app/device_review_scheduler.py`). Both are APScheduler-based, persist jobs in gitignored JSON files, and are registered in `app/__init__.py` alongside other background schedulers.
+Two scheduler modules support recurring exports (plus the Package Change Alerts hook described below): Config-Delta diffs (`app/config_diff_scheduler.py`) and Audit Review CIS audit results (`app/device_review_scheduler.py`). Both are APScheduler-based, persist jobs in gitignored JSON files, and are registered in `app/__init__.py` alongside other background schedulers.
 
 #### Config-Delta Scheduled Jobs
 
@@ -451,6 +453,22 @@ Persists jobs in `rule_hygiene_jobs.json` (gitignored; copy `rule_hygiene_jobs.e
 | `DELETE` | `/admin/api/rule-hygiene/jobs/<id>` | Delete a job |
 | `POST` | `/admin/api/rule-hygiene/jobs/<id>/run` | Trigger an immediate run |
 | `GET` | `/admin/api/rule-hygiene/jobs/<id>/status` | Get last run status / history |
+
+#### Package Change Alerts
+
+`app/package_change_alerts.py` — not a scheduler: it is driven by `config_diff_scheduler._execute_job`, which calls `evaluate_alerts(adom, results)` right after `bulk_preview_adom()` returns (wrapped in its own try/except so an alert failure never fails the Config-Delta job or its digest email). It reuses those install-preview results — no extra FMG preview calls.
+
+Rules persist in `package_change_alerts.json` (gitignored; copy `package_change_alerts.example.json`):
+```json
+{
+  "id": "uuid", "name": "Policy owners alert", "adom": "Example ADOM",
+  "packages": [], "email": "alice@corp.com", "format": "html", "enabled": true,
+  "sent": { "<package>": "<sha256 of filtered diff>" }, "runs": [...]
+}
+```
+`packages: []` = every package in the ADOM. Per run and per watched package: map devices to packages from scope members (device groups expanded via `get_device_group_members`), keep only `config firewall policy|address|addrgrp|service|vip` sections of each device/VDOM diff (`filter_policy_changes`), hash the result, skip if it equals `sent[package]`, otherwise send one email with attachment 1 (filtered diff) and attachment 2 (policy report built by `rule_policy_scheduler._bulk_policy_adom` / `_build_attachment_rp`, live hits off). `sent[package]` is written only after a successful send; it is cleared only when the package has no policy diff **and** every target device previewed successfully. If any target device errored or is missing from the preview results, or the package is not found in the ADOM, the package is skipped for that run with state untouched (noted in `runs[].skipped`); a failed package lookup is recorded as an error on each rule. `filter_policy_changes` uses indentation as well as config/end depth, because `parse_preview_diff` strips the first `end` of each VDOM block and real diffs arrive unbalanced.
+
+Admin endpoints (all `admin_required`): `GET/POST /admin/api/package-alerts/rules`, `PUT/DELETE /admin/api/package-alerts/rules/<id>`, `POST /admin/api/package-alerts/rules/<id>/test` (sample email; no FMG calls, no dedupe state). UI: Admin → Scheduled → Package Change Alerts (`admin.html` / `admin.js`, `pca*` functions).
 
 ### External API
 
