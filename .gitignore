@@ -17,6 +17,7 @@ config_diff_jobs.json
 device_review_jobs.json
 rule_hygiene_jobs.json
 rule_policy_jobs.json
+package_change_alerts.json
 backup_config.json
 protocol_severity.json
 api_tokens.json
