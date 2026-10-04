@@ -141,7 +141,11 @@ def _run_job(app):
                     )
 
         adom_breakdown = [
-            {"name": a, "fw_count": adom_fw.get(a, 0), "rule_count": adom_rules.get(a, 0)}
+            {
+                "name": a,
+                "fw_count": adom_fw.get(a, 0),
+                "rule_count": adom_rules.get(a, 0),
+            }
             for a in adom_names
             if adom_fw.get(a, 0) > 0
         ]
