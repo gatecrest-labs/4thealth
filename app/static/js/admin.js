@@ -1750,17 +1750,72 @@ function zpAdminPost(url, body, statusId, successMsg, onSuccess) {
     });
   });
 
-  // Backup
+  // Backup — server-side copy into backups/, plus a browser download of the same file
   document.getElementById('zpAdminBackupBtn').addEventListener('click', () => {
+    const statusEl = document.getElementById('zpAdminBackupStatus');
     fetch('/api/zone/backup', {
       method:  'POST',
       headers: { 'X-CSRF-Token': getCSRF() },
     })
+      .then(r => {
+        if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'Backup failed'); });
+        const cd = r.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename="?([^";]+)"?/);
+        const filename = match ? match[1] : 'policy_db_backup.json';
+        return r.blob().then(blob => ({ blob, filename }));
+      })
+      .then(({ blob, filename }) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = `Backed up to backups/${filename} and downloaded`;
+        statusEl.style.color = 'var(--success, green)';
+      })
+      .catch(e => {
+        statusEl.textContent = e.message;
+        statusEl.style.color = 'var(--danger, red)';
+      });
+  });
+
+  // Restore from Backup — upload a local JSON file, validate, auto-backup current DB, overwrite
+  document.getElementById('zpAdminRestoreBtn').addEventListener('click', () => {
+    document.getElementById('zpAdminRestoreFile').click();
+  });
+
+  document.getElementById('zpAdminRestoreFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const statusEl = document.getElementById('zpAdminRestoreStatus');
+    if (!confirm(`This will overwrite the live policy database with "${file.name}". The current database will be backed up first. Continue?`)) {
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/zone/restore', {
+      method:  'POST',
+      headers: { 'X-CSRF-Token': getCSRF() },
+      body:    fd,
+    })
       .then(r => r.json())
       .then(d => {
-        const el = document.getElementById('zpAdminBackupStatus');
-        el.textContent  = d.error ? d.error : (d.filename || 'Backup created');
-        el.style.color  = d.error ? 'var(--danger, red)' : 'var(--success, green)';
+        if (d.error) {
+          statusEl.textContent = d.error;
+          statusEl.style.color = 'var(--danger, red)';
+          return;
+        }
+        statusEl.textContent = d.message || 'Database restored';
+        statusEl.style.color = 'var(--success, green)';
+        zpAdminLoadZones();
+      })
+      .catch(e => {
+        statusEl.textContent = e.message;
+        statusEl.style.color = 'var(--danger, red)';
       });
   });
 

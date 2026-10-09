@@ -161,6 +161,10 @@ a:hover { text-decoration: underline; }
 .btn-secondary:hover { background: var(--border); }
 .btn-secondary:disabled { opacity: .45; cursor: default; }
 
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { filter: brightness(.9); }
+.btn-danger:disabled { opacity: .45; cursor: default; }
+
 .btn-link { background: transparent; color: var(--accent); padding: 0; }
 .btn-link:hover { text-decoration: underline; }
 
@@ -2083,6 +2087,28 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   white-space: nowrap;
 }
+
+.zp-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem .9rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.zp-form h4 { flex: 1 1 100%; margin: 0 0 .25rem; }
+
+.zp-form label {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  font-size: .8rem;
+  color: var(--text-muted);
+}
+
+.zp-form-full { flex: 1 1 100%; }
+
+.zp-form .form-status { flex: 1 1 100%; font-size: .8rem; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    Device Review tab

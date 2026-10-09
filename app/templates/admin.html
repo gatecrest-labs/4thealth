@@ -732,9 +732,12 @@
     This panel replaces the Edit Database sub-tab that previously appeared on the Zone Policy page.
   </p>
 
-  <div class="section-block" style="margin-bottom:1rem;">
+  <div class="section-block" style="margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
     <button id="zpAdminBackupBtn" class="btn btn-secondary">Backup policy_db.json</button>
-    <span id="zpAdminBackupStatus" style="margin-left:0.75rem;font-size:0.85rem;"></span>
+    <span id="zpAdminBackupStatus" style="font-size:0.85rem;"></span>
+    <input type="file" id="zpAdminRestoreFile" accept=".json,application/json" style="display:none;">
+    <button id="zpAdminRestoreBtn" class="btn btn-danger">Restore from Backup</button>
+    <span id="zpAdminRestoreStatus" style="font-size:0.85rem;"></span>
   </div>
 
   <div class="zp-edit-grid">
@@ -745,7 +748,7 @@
         <h4>Add Zone</h4>
         <label>Name <input type="text" name="name" required></label>
         <label>Domain <input type="text" name="domain" value="Default"></label>
-        <label>Description <input type="text" name="description"></label>
+        <label class="zp-form-full">Description <input type="text" name="description"></label>
         <label><input type="checkbox" name="is_shared"> Shared</label>
         <button type="submit" class="btn btn-primary btn-sm">Add Zone</button>
         <span class="form-status" id="zpAdminZoneAddStatus"></span>
@@ -781,7 +784,7 @@
         <h4>Add Subnet to Zone</h4>
         <label>Zone <select name="zone" id="zpAdminSubnetAddZoneSelect"></select></label>
         <label>Subnet (CIDR) <input type="text" name="subnet" placeholder="10.0.0.0/24"></label>
-        <label>Description <input type="text" name="description"></label>
+        <label class="zp-form-full">Description <input type="text" name="description"></label>
         <button type="submit" class="btn btn-primary btn-sm">Add Subnet</button>
         <span class="form-status" id="zpAdminSubnetAddStatus"></span>
       </form>
@@ -818,7 +821,7 @@
           </select>
         </label>
         <label>Services (comma-separated) <input type="text" name="services"></label>
-        <label>Description <input type="text" name="description"></label>
+        <label class="zp-form-full">Description <input type="text" name="description"></label>
         <button type="submit" class="btn btn-primary btn-sm">Add Rule</button>
         <span class="form-status" id="zpAdminPolicyAddStatus"></span>
       </form>
