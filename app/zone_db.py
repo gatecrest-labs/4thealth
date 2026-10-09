@@ -348,10 +348,15 @@ def validate_db(db: dict) -> dict:
 
     if not isinstance(zones, dict):
         errors.append("'zones' must be a dict")
+        zones = {}
     if not isinstance(policies, list):
         errors.append("'policies' must be a list")
+        policies = []
 
     for name, zone in zones.items():
+        if not isinstance(zone, dict):
+            errors.append(f"Zone '{name}' must be an object")
+            continue
         for entry in zone.get("subnets", []):
             try:
                 ipaddress.ip_network(entry.get("subnet", ""), strict=False)
@@ -365,6 +370,9 @@ def validate_db(db: dict) -> dict:
                 warnings.append(f"Zone '{name}': parent '{parent}' not in zones")
 
     for i, p in enumerate(policies):
+        if not isinstance(p, dict):
+            errors.append(f"Policy #{i} must be an object")
+            continue
         at = p.get("access_type", "")
         if at not in VALID_ACCESS_TYPES:
             errors.append(f"Policy #{i}: invalid access_type '{at}'")
