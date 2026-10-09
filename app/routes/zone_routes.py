@@ -192,7 +192,10 @@ def api_backup():
     try:
         dest = _create_backup()
         return send_file(
-            dest, mimetype="application/json", as_attachment=True, download_name=dest.name
+            dest,
+            mimetype="application/json",
+            as_attachment=True,
+            download_name=dest.name,
         )
     except Exception as exc:
         return internal_api_error("zone_policy", exc)
