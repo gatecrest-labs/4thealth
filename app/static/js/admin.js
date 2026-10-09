@@ -1892,15 +1892,47 @@ function zpAdminPost(url, body, statusId, successMsg, onSuccess) {
       { index: parseInt(document.getElementById('zpAdminPolicyIndex').value, 10),
         field: document.getElementById('zpAdminPolicyField').value,
         value: document.getElementById('zpAdminPolicyValue').value },
-      'zpAdminPolicyEditStatus', 'Updated');
+      'zpAdminPolicyEditStatus', 'Updated', zpAdminShowPolicyPreview);
   });
 
   // Remove Policy Rule
   document.getElementById('zpAdminPolicyRemoveBtn').addEventListener('click', () => {
     zpAdminPost('/api/zone/policy/remove',
       { index: parseInt(document.getElementById('zpAdminPolicyIndex').value, 10) },
-      'zpAdminPolicyEditStatus', 'Rule removed');
+      'zpAdminPolicyEditStatus', 'Rule removed', zpAdminShowPolicyPreview);
   });
+
+  // Policy index preview — show which rule a typed index actually points to,
+  // since index is just the rule's live array position and shifts on add/remove.
+  let zpPolicyPreviewTimer = null;
+  document.getElementById('zpAdminPolicyIndex').addEventListener('input', () => {
+    clearTimeout(zpPolicyPreviewTimer);
+    zpPolicyPreviewTimer = setTimeout(zpAdminShowPolicyPreview, 300);
+  });
+
+  function zpAdminShowPolicyPreview() {
+    const el = document.getElementById('zpAdminPolicyPreview');
+    const raw = document.getElementById('zpAdminPolicyIndex').value;
+    if (raw === '') { el.textContent = ''; return; }
+    const idx = parseInt(raw, 10);
+    if (Number.isNaN(idx) || idx < 0) { el.textContent = ''; return; }
+    fetch('/api/zone/policies')
+      .then(r => r.json())
+      .then(rows => {
+        if (!Array.isArray(rows)) { el.textContent = ''; return; }
+        const row = rows.find(p => p.index === idx);
+        if (!row) {
+          el.textContent = `No rule at index ${idx} (valid range: 0-${rows.length - 1})`;
+          el.style.color = 'var(--danger, red)';
+          return;
+        }
+        const svc = (row.services && row.services.length) ? row.services.join(', ') : 'any';
+        el.textContent = `#${idx}: [${row.policy_set || ''}] ${row.from_zone || ''} → ${row.to_zone || ''} — ${row.access_type || ''} — ${svc}` +
+          (row.description ? ` — "${row.description}"` : '');
+        el.style.color = 'var(--text-muted)';
+      })
+      .catch(() => { el.textContent = ''; });
+  }
 })();
 
 // --- Host Metrics Charts ---
