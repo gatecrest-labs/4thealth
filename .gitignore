@@ -58,6 +58,16 @@ temp_secret.txt
 # Docker
 docker-compose.override.yml
 
+# Terraform (never commit real account/project-specific values or state)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+*.tfplan
+crash.log
+crash.*.log
+
 # Claude Code memory index (internal AI assistant file — not project content)
 MEMORY.md
 memory/
