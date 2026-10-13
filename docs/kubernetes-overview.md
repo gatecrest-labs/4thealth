@@ -145,14 +145,15 @@ to the load balancer — it's not needed for this initial migration.
 
 ## Static IP: inbound vs. outbound are two different problems
 
-- **Inbound** — browser users need a stable IP or DNS name to reach the dashboard reliably.
+- **Inbound** — users on the corporate network (VPN, Direct Connect, or Cloud VPN) need a stable
+  private IP or DNS name to reach the dashboard. This is an internal-only service — not exposed
+  to the internet.
 - **Outbound/egress** — FortiManager, your SMTP relay, RADIUS server, and SNMP-polled devices
   allowlist traffic by source IP on their side. If the pod's outbound IP changes, those
   integrations silently break.
 
 **These two concerns use different mechanisms on both clouds, and the mechanisms are not
-symmetric between AWS and GCP** — AWS's load balancer story in particular has a real gotcha (an
-ALB has no native static IP). Don't assume one cloud's approach maps directly onto the other;
+symmetric between AWS and GCP.** Don't assume one cloud's approach maps directly onto the other;
 each cloud doc covers its own mechanics in full, rather than forcing an artificial 1:1 mirror.
 
 ## Cost — order of magnitude
