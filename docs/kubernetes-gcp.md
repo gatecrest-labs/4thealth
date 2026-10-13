@@ -69,12 +69,17 @@ need `roles/container.admin`; read-only access needs `roles/container.clusterVie
 
 ### Inbound — static IP for the dashboard
 
-Since TLS stays inside the container (see the overview doc), the simplest option is a
-**regional external passthrough Network Load Balancer** — a plain `Service` of type
-`LoadBalancer` with a reserved static IP, no Ingress/L7 layer needed:
+The dashboard is internal-only — not exposed to the internet. Use an **internal passthrough
+Network Load Balancer** — a plain `Service` of type `LoadBalancer` with a reserved internal IP,
+reachable only from within the VPC (via Cloud VPN or Cloud Interconnect from your corporate
+network). TLS stays inside the container (see the overview doc), so L4 passthrough is correct here.
+
+Reserve an internal (private) IP in the cluster's subnet:
 
 ```bash
-gcloud compute addresses create 4thealth-ingress --region us-central1
+gcloud compute addresses create 4thealth-ingress \
+  --region us-central1 \
+  --subnet default
 gcloud compute addresses describe 4thealth-ingress --region us-central1 --format='get(address)'
 ```
 
@@ -84,7 +89,7 @@ kind: Service
 metadata:
   name: 4thealth
   annotations:
-    networking.gke.io/load-balancer-type: "Internal"   # omit this line for an external LB
+    networking.gke.io/load-balancer-type: "Internal"
 spec:
   type: LoadBalancer
   loadBalancerIP: "STATIC_IP_FROM_ABOVE"
@@ -93,11 +98,6 @@ spec:
     - port: 443
       targetPort: 8100
 ```
-
-> If you later want a CDN, Cloud Armor WAF, or URL-based routing, migrate to a GKE Ingress or
-> the Gateway API with a **global** static IP
-> (`gcloud compute addresses create ... --global`) and a Google-managed certificate — that's a
-> bigger change (dropping in-app TLS termination) and isn't needed for this initial migration.
 
 ### Outbound — static egress IP for FortiManager/SMTP/RADIUS/SNMP allowlisting
 
@@ -260,6 +260,7 @@ kubectl exec -it -n 4thealth $POD -- python manage_users.py add admin --role adm
 ## Phase 9 — Verify
 
 ```bash
+# Run from inside the VPC (Cloud VPN connected):
 STATIC_IP=$(gcloud compute addresses describe 4thealth-ingress --region us-central1 --format='get(address)')
 curl -sk https://$STATIC_IP/login | grep -i 4thealth
 

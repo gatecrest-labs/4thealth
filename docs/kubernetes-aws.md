@@ -87,16 +87,15 @@ aws eks associate-access-policy \
 
 ## Phase 3 — Networking: static IPs
 
-### Inbound — static IP for the dashboard
+### Inbound — internal Network Load Balancer
 
-**Gotcha: an Application Load Balancer (ALB) has no native static IP** — its IP addresses are
-assigned per-AZ and can change. Don't reach for an ALB here. Use a **Network Load Balancer (NLB)
-with an assigned Elastic IP** instead — this also happens to be the right choice because TLS
-stays inside the container (see the overview doc): an NLB passes TCP through untouched, where an
-ALB would terminate and re-encrypt.
+The dashboard is internal-only — not exposed to the internet. Use an **internal NLB**, reachable
+only from within the VPC (via VPN, Direct Connect, or VPC peering from your corporate network).
+An NLB is also the right choice for TLS: it passes TCP through untouched, where an ALB would
+terminate and re-encrypt (see the overview doc).
 
-First install the AWS Load Balancer Controller (needed to provision NLBs/ALBs from Kubernetes
-Service/Ingress objects):
+Install the AWS Load Balancer Controller (needed to provision NLBs from Kubernetes Service
+objects):
 
 ```bash
 # One-time: IAM policy + IRSA service account for the controller
@@ -114,11 +113,7 @@ helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
   --set serviceAccount.name=aws-load-balancer-controller
 ```
 
-Then allocate an Elastic IP and reference it on the Service:
-
-```bash
-aws ec2 allocate-address   # note the AllocationId, e.g. eipalloc-0123456789abcdef0
-```
+No Elastic IP needed — an internal NLB gets a stable private IP from the subnet CIDR:
 
 ```yaml
 apiVersion: v1
@@ -127,13 +122,19 @@ metadata:
   name: 4thealth
   annotations:
     service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-    service.beta.kubernetes.io/aws-load-balancer-eip-allocations: "eipalloc-0123456789abcdef0"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
 spec:
   type: LoadBalancer
   selector: { app: 4thealth }
   ports:
     - port: 443
       targetPort: 8100
+```
+
+Get the NLB's private DNS name after apply:
+
+```bash
+kubectl get svc 4thealth -n 4thealth -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
 ```
 
 ### Outbound — static egress IP for FortiManager/SMTP/RADIUS/SNMP allowlisting
@@ -311,8 +312,9 @@ kubectl exec -it -n 4thealth $POD -- python manage_users.py add admin --role adm
 ## Phase 9 — Verify
 
 ```bash
-STATIC_IP=$(aws ec2 describe-addresses --allocation-ids eipalloc-0123456789abcdef0 --query 'Addresses[0].PublicIp' -o text)
-curl -sk https://$STATIC_IP/login | grep -i 4thealth
+# Run from inside the VPC (VPN connected):
+NLB_HOST=$(kubectl get svc 4thealth -n 4thealth -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+curl -sk https://$NLB_HOST/login | grep -i 4thealth
 
 kubectl logs -n 4thealth deploy/4thealth | grep -i scheduler
 ```
