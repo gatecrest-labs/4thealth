@@ -48,14 +48,14 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "pyzipper", specifier = ">=0.4.0" },
     { name = "requests", specifier = ">=2.34.2" },
-    { name = "scp", specifier = ">=0.16.1" },
+    { name = "scp", specifier = ">=0.16.2" },
 ]
 provides-extras = ["prod"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
-    { name = "ruff", specifier = ">=0.16.9" },
+    { name = "ruff", specifier = ">=0.16.10" },
 ]
 
 [[package]]
@@ -875,14 +875,14 @@ wheels = [
 
 [[package]]
 name = "scp"
-version = "0.16.1"
+version = "0.16.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "paramiko" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f8/35/fcef45d52d76a6dc70778c11eea719ff0ab550594bc51e55e66d28b5f424/scp-0.16.1.tar.gz", hash = "sha256:3f2b260bf9bd4c2b6857f697a1d7e8edc26fa569282b77027e849dfe1e48580a", size = 13131, upload-time = "2026-07-29T16:00:08.265Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/c3/4d0230664b7c505ba2fa7bf9fe4bee83f6f1fa195e865ad7f92b12917e59/scp-0.16.2.tar.gz", hash = "sha256:d049f9aa77db4042c44b922cecabe97ef0716fb334a95701d68d1c7991684fc2", size = 13248, upload-time = "2026-10-06T20:52:21.711Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/97/07fcfe4bc53d9768ffd13c895bfc88c33b6b337927f53078270e51c6538a/scp-0.16.1-py2.py3-none-any.whl", hash = "sha256:52d48423ffb0d22afcec738d66c2c8d5865ab9b45e040a7508789f58b39533fe", size = 8909, upload-time = "2026-07-29T16:00:13.168Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/e9/5bcfe3b31ba522adb5983d718121e3c34879981dd39bdb7b5dd1ced5ecbf/scp-0.16.2-py2.py3-none-any.whl", hash = "sha256:98d2e9ecdbe09e6bd41c22d6b69a93f203589a6590624685373e81f8bfdc60fd", size = 8961, upload-time = "2026-10-06T20:52:32.157Z" },
 ]
 
 [[package]]
@@ -917,12 +917,12 @@ wheels = [
 
 [[package]]
 name = "werkzeug"
-version = "3.1.8"
+version = "3.1.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markupsafe" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/b2/381be8cfdee792dd117872481b6e378f85c957dd7c5bca38897b08f765fd/werkzeug-3.1.8.tar.gz", hash = "sha256:9bad61a4268dac112f1c5cd4630a56ede601b6ed420300677a869083d70a4c44", size = 875852, upload-time = "2026-04-02T18:49:14.268Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/34/4dd12fc8bb7d61c91467ec3efe415ffa7d5456f799954b40c5bbaeae470e/werkzeug-3.1.9.tar.gz", hash = "sha256:55ca7c70a75689be937aa27f8ff4b018f06ff4838fc73045560bf0f5a1291060", size = 940188, upload-time = "2026-09-27T18:33:41.637Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/8c/2e650f2afeb7ee576912636c23ddb621c91ac6a98e66dc8d29c3c69446e1/werkzeug-3.1.8-py3-none-any.whl", hash = "sha256:63a77fb8892bf28ebc3178683445222aa500e48ebad5ec77b0ad80f8726b1f50", size = 226459, upload-time = "2026-04-02T18:49:12.72Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/38/df03f564f43cec2684823f3cccae1a652ee7face1cbaa76fb223096e64d7/werkzeug-3.1.9-py3-none-any.whl", hash = "sha256:6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab", size = 228700, upload-time = "2026-09-27T18:33:39.685Z" },
 ]
