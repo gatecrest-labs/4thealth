@@ -1,0 +1,12 @@
+# Copy this file to terraform.tfvars and fill in your own values.
+# terraform.tfvars is gitignored — never commit it with real project-specific values.
+
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+cluster_name = "4thealth"
+
+subnet_cidr   = "10.60.0.0/20"
+pods_cidr     = "10.61.0.0/16"
+services_cidr = "10.62.0.0/20"
+master_cidr   = "172.16.0.0/28"
