@@ -259,6 +259,9 @@ Ansible/
 | [docs/hardening.md](docs/hardening.md) | File permissions, fail2ban, Nginx rate limiting, SELinux, master security checklist |
 | [docs/operations.md](docs/operations.md) | Monitoring, updates, backup, SSL renewal, GitLab CI/CD |
 | [container.md](container.md) | Docker and Docker Compose deployment |
+| [docs/kubernetes-overview.md](docs/kubernetes-overview.md) | Kubernetes deployment — shared design: single-replica rule, persistent storage, secrets, static IP |
+| [docs/kubernetes-aws.md](docs/kubernetes-aws.md) | Kubernetes on AWS (EKS) — cluster bring-up, kubectl access, static inbound/outbound IPs |
+| [docs/kubernetes-gcp.md](docs/kubernetes-gcp.md) | Kubernetes on GCP (GKE) — cluster bring-up, kubectl access, static inbound/outbound IPs |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and release notes |
 
 ---
