@@ -517,10 +517,35 @@ def _summary(rows: list[dict]) -> dict:
     }
 
 
+def scan_stats(data: dict) -> dict:
+    """What the run actually looked at, so an empty result can be told apart
+    from a run that never saw any packages or rules."""
+    pkgs = data["packages"]
+    ok = [p for p in pkgs if not p.get("error")]
+    return {
+        "packages_total": len(pkgs),
+        "packages_ok": len(ok),
+        "rules_scanned": sum(len(p["rules"]) for p in ok),
+    }
+
+
 def _build_summary_html(
-    adom: str, rows: list[dict], errors: list[str], generated_at: str
+    adom: str,
+    rows: list[dict],
+    errors: list[str],
+    generated_at: str,
+    stats: dict | None = None,
 ) -> str:
     s = _summary(rows)
+    stats = stats or {}
+    scanned = (
+        f"<tr><td style='padding:4px 8px'>Packages scanned</td>"
+        f"<td style='padding:4px 8px'>{stats['packages_ok']} of {stats['packages_total']}</td></tr>\n"
+        f"  <tr><td style='padding:4px 8px'>Rules scanned</td>"
+        f"<td style='padding:4px 8px'>{stats['rules_scanned']}</td></tr>\n  "
+        if stats
+        else ""
+    )
     err = (
         f"<p style='font-family:sans-serif;color:#991b1b'>{len(errors)} package(s) "
         f"could not be read and are missing from this report.</p>"
@@ -532,7 +557,7 @@ def _build_summary_html(
 <p style="font-family:sans-serif;color:#6b7280">Generated: {generated_at}</p>
 {err}
 <table style='border-collapse:collapse;font-family:sans-serif;font-size:12px'>
-  <tr><td style='padding:4px 8px'>VIPs (inbound NAT)</td><td style='padding:4px 8px'>{s["vips"]}</td></tr>
+  {scanned}<tr><td style='padding:4px 8px'>VIPs (inbound NAT)</td><td style='padding:4px 8px'>{s["vips"]}</td></tr>
   <tr><td style='padding:4px 8px'>IP Pools (outbound NAT)</td><td style='padding:4px 8px'>{s["pools"]}</td></tr>
   <tr><td style='padding:4px 8px'>Rule matches</td><td style='padding:4px 8px'>{s["rule_matches"]}</td></tr>
   <tr><td style='padding:4px 8px'>NAT objects used by no rule</td><td style='padding:4px 8px'>{s["unused"]}</td></tr>
@@ -541,7 +566,12 @@ def _build_summary_html(
 
 
 def build_attachment(
-    adom: str, rows: list[dict], errors: list[str], fmt: str, generated_at: str
+    adom: str,
+    rows: list[dict],
+    errors: list[str],
+    fmt: str,
+    generated_at: str,
+    stats: dict | None = None,
 ) -> tuple[str, bytes]:
     """Return (filename, bytes) for the report."""
     base = f"nat_report_{adom.replace(' ', '_').replace('/', '-')}_{generated_at[:10]}"
@@ -552,7 +582,7 @@ def build_attachment(
                 "report_type": "nat_report",
                 "adom": adom,
                 "exported_at": generated_at,
-                "summary": _summary(rows),
+                "summary": {**_summary(rows), **(stats or {})},
                 "package_errors": errors,
                 "rows": rows,
             },
@@ -566,6 +596,13 @@ def build_attachment(
         w.writerow(["# 4THealth NAT Report"])
         w.writerow([f"# ADOM: {adom}"])
         w.writerow([f"# Generated: {generated_at}"])
+        if stats:
+            w.writerow(
+                [
+                    f"# Packages scanned: {stats['packages_ok']} of {stats['packages_total']}"
+                    f" | Rules scanned: {stats['rules_scanned']}"
+                ]
+            )
         for e in errors:
             w.writerow([f"# Package error: {e}"])
         w.writerow([])
@@ -595,7 +632,7 @@ def build_attachment(
 </head>
 <body>
 <h1>4THealth NAT Report</h1>
-{_build_summary_html(adom, rows, errors, generated_at)}
+{_build_summary_html(adom, rows, errors, generated_at, stats)}
 <table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>
 </body></html>"""
     return f"{base}.html", html.encode()
@@ -642,6 +679,11 @@ def _execute_job(job_id: str) -> None:
         )
 
         data = _collect(adom)
+        if not data["packages"]:
+            # get_policy_packages() swallows FMG errors and returns [], which
+            # would otherwise yield a report claiming no rule uses any NAT object.
+            raise RuntimeError(f"No policy packages returned for ADOM {adom!r}")
+        stats = scan_stats(data)
         generated_at = datetime.datetime.utcnow().isoformat() + "Z"
         record["ran_at"] = generated_at
         errors = [
@@ -654,17 +696,19 @@ def _execute_job(job_id: str) -> None:
                 "nat_objects": s["vips"] + s["pools"],
                 "rule_matches": s["rule_matches"],
                 "unused": s["unused"],
-                "packages_total": len(data["packages"]),
+                "packages_total": stats["packages_total"],
+                "packages_ok": stats["packages_ok"],
+                "rules_scanned": stats["rules_scanned"],
                 "errors": errors,
             }
         )
 
-        filename, blob = build_attachment(adom, rows, errors, fmt, generated_at)
+        filename, blob = build_attachment(adom, rows, errors, fmt, generated_at, stats)
         mimetype = {"csv": "text/csv", "json": "application/json"}.get(fmt, "text/html")
         _send_email(
             email,
             f"4THealth NAT Report — {adom} — {generated_at[:10]}",
-            _build_summary_html(adom, rows, errors, generated_at),
+            _build_summary_html(adom, rows, errors, generated_at, stats),
             [{"filename": filename, "data": blob, "mimetype": mimetype}],
         )
         record["emails_sent"] = 1

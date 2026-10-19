@@ -176,3 +176,22 @@ def test_execute_job_failure_records_error(tmp_path, monkeypatch):
 
     run, sent = _run(tmp_path, monkeypatch, boom)
     assert run["status"] == "error" and "fmg down" in run["errors"][0] and not sent
+
+
+def test_scan_stats_and_report_show_what_was_scanned():
+    data = _data()
+    stats = nrs.scan_stats(data)
+    assert stats == {"packages_total": 2, "packages_ok": 2, "rules_scanned": 3}
+    rows = nrs.build_nat_rows(data, GROUPS)
+    _, html = nrs.build_attachment("A", rows, [], "html", "2026-10-19T00:00:00Z", stats)
+    assert "2 of 2" in html.decode()
+    _, js = nrs.build_attachment("A", rows, [], "json", "2026-10-19T00:00:00Z", stats)
+    assert json.loads(js)["summary"]["rules_scanned"] == 3
+
+
+def test_execute_job_errors_when_no_packages(tmp_path, monkeypatch):
+    run, sent = _run(
+        tmp_path, monkeypatch, lambda adom: {"vips": [], "pools": [], "packages": []}
+    )
+    assert run["status"] == "error" and "No policy packages" in run["errors"][0]
+    assert not sent
