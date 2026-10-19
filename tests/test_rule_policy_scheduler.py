@@ -1,3 +1,4 @@
+import datetime
 import json, pytest
 from pathlib import Path
 import app.rule_policy_scheduler as sched
@@ -533,7 +534,7 @@ def test_execute_job_records_run(monkeypatch, tmp_jobs):
         "adom": "Corp",
         "results": [],
         "skipped": [],
-        "generated_at": "2026-09-18T02:00:00Z",
+        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
     monkeypatch.setattr(sched, "_bulk_policy_adom", lambda *a, **kw: fake_bulk_result)
     monkeypatch.setattr(sched, "_build_all_attachments", lambda *a, **kw: [])
