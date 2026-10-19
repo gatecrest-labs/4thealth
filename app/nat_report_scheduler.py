@@ -239,7 +239,11 @@ def _names(val: Any) -> list[str]:
     if isinstance(val, list):
         out = []
         for m in val:
-            n = m if isinstance(m, str) else (m.get("name", "") if isinstance(m, dict) else "")
+            n = (
+                m
+                if isinstance(m, str)
+                else (m.get("name", "") if isinstance(m, dict) else "")
+            )
             if n:
                 out.append(n)
         return out
@@ -321,7 +325,9 @@ def _fetch_package(adom: str, pkg: dict) -> dict:
     try:
         with _make_client() as client:
             result["rules"] = [
-                _norm_rule(r) for r in client.get_policies(adom, pkg_path) if isinstance(r, dict)
+                _norm_rule(r)
+                for r in client.get_policies(adom, pkg_path)
+                if isinstance(r, dict)
             ]
     except Exception as exc:
         result["error"] = str(exc)
@@ -361,11 +367,15 @@ def collect_nat_data(adom: str, max_workers: int = 4) -> dict:
         pools = client.get_ippool_objects(adom) or []
         devices = client.get_devices(adom) or []
 
-    dev_names = [d.get("name", "") for d in devices if isinstance(d, dict) and d.get("name")]
+    dev_names = [
+        d.get("name", "") for d in devices if isinstance(d, dict) and d.get("name")
+    ]
     valid_pkgs = [
         p
         for p in packages
-        if isinstance(p, dict) and (p.get("type") or "").lower() != "folder" and p.get("name")
+        if isinstance(p, dict)
+        and (p.get("type") or "").lower() != "folder"
+        and p.get("name")
     ]
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -460,7 +470,9 @@ def build_nat_rows(data: dict, group_members: dict | None = None) -> list[dict]:
                     rows.append(_row(obj, p, r))
         if not matched:
             rows.append(_row(obj))
-    rows.sort(key=lambda x: (x["nat_type"], x["name"], x["package"], str(x["policyid"])))
+    rows.sort(
+        key=lambda x: (x["nat_type"], x["name"], x["package"], str(x["policyid"]))
+    )
     return rows
 
 
@@ -505,7 +517,9 @@ def _summary(rows: list[dict]) -> dict:
     }
 
 
-def _build_summary_html(adom: str, rows: list[dict], errors: list[str], generated_at: str) -> str:
+def _build_summary_html(
+    adom: str, rows: list[dict], errors: list[str], generated_at: str
+) -> str:
     s = _summary(rows)
     err = (
         f"<p style='font-family:sans-serif;color:#991b1b'>{len(errors)} package(s) "
@@ -560,9 +574,13 @@ def build_attachment(
             w.writerow(_row_cells(r))
         return f"{base}.csv", buf.getvalue().encode()
 
-    body = "".join(
-        "<tr>" + "".join(f"<td>{_esc(c)}</td>" for c in _row_cells(r)) + "</tr>\n" for r in rows
-    ) or f"<tr><td colspan='{len(CSV_COLUMNS)}' style='text-align:center'>No NAT objects found</td></tr>"
+    body = (
+        "".join(
+            "<tr>" + "".join(f"<td>{_esc(c)}</td>" for c in _row_cells(r)) + "</tr>\n"
+            for r in rows
+        )
+        or f"<tr><td colspan='{len(CSV_COLUMNS)}' style='text-align:center'>No NAT objects found</td></tr>"
+    )
     head = "".join(f"<th>{_esc(c)}</th>" for c in CSV_COLUMNS)
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -589,7 +607,9 @@ def build_attachment(
 def _execute_job(job_id: str) -> None:
     lock_fh = _try_acquire_job_lock(job_id)
     if lock_fh is None:
-        app_log("INFO", "nat_report_scheduler", f"Job {job_id} already running — skipping")
+        app_log(
+            "INFO", "nat_report_scheduler", f"Job {job_id} already running — skipping"
+        )
         return
     with _lock:
         _running_jobs.add(job_id)
@@ -624,7 +644,9 @@ def _execute_job(job_id: str) -> None:
         data = _collect(adom)
         generated_at = datetime.datetime.utcnow().isoformat() + "Z"
         record["ran_at"] = generated_at
-        errors = [f"{p['package']}: {p['error']}" for p in data["packages"] if p.get("error")]
+        errors = [
+            f"{p['package']}: {p['error']}" for p in data["packages"] if p.get("error")
+        ]
         rows = build_nat_rows(data, _group_members(adom))
         s = _summary(rows)
         record.update(
@@ -656,7 +678,9 @@ def _execute_job(job_id: str) -> None:
     except Exception as exc:
         record["status"] = "error"
         record["errors"] = record.get("errors") or [str(exc)]
-        app_log("ERROR", "nat_report_scheduler", f"NAT Report job {job_id} failed: {exc}")
+        app_log(
+            "ERROR", "nat_report_scheduler", f"NAT Report job {job_id} failed: {exc}"
+        )
     finally:
         _append_run(job_id, record)
         from app.smtp_client import load_smtp_config as _load_smtp_cfg

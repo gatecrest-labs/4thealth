@@ -23,31 +23,65 @@ def _job_data(**overrides):
 
 def _rule(pid, dst=(), pool=(), name=""):
     return {
-        "policyid": pid, "name": name or f"r{pid}", "status": "enable",
-        "action": "accept", "srcaddr": ["all"], "dstaddr": list(dst),
-        "service": ["HTTPS"], "poolname": list(pool),
+        "policyid": pid,
+        "name": name or f"r{pid}",
+        "status": "enable",
+        "action": "accept",
+        "srcaddr": ["all"],
+        "dstaddr": list(dst),
+        "service": ["HTTPS"],
+        "poolname": list(pool),
     }
 
 
 def _pkg(name, rules, scope=()):
-    return {"package": name, "package_name": name, "scope_members": list(scope),
-            "rules": rules, "error": None}
+    return {
+        "package": name,
+        "package_name": name,
+        "scope_members": list(scope),
+        "rules": rules,
+        "error": None,
+    }
 
 
 def _data():
-    vip = nrs._norm_vip({"name": "vip-web", "extip": ["203.0.113.10"],
-                         "mappedip": [{"range": "10.0.0.5"}]})
-    dev_vip = nrs._norm_vip({"name": "vip-dev", "extip": "203.0.113.20", "mappedip": "10.0.0.6",
-                             "_source_device": "fw-a", "_source_vdom": "root"})
+    vip = nrs._norm_vip(
+        {
+            "name": "vip-web",
+            "extip": ["203.0.113.10"],
+            "mappedip": [{"range": "10.0.0.5"}],
+        }
+    )
+    dev_vip = nrs._norm_vip(
+        {
+            "name": "vip-dev",
+            "extip": "203.0.113.20",
+            "mappedip": "10.0.0.6",
+            "_source_device": "fw-a",
+            "_source_vdom": "root",
+        }
+    )
     unused = nrs._norm_vip({"name": "vip-unused", "extip": "203.0.113.30"})
-    pool = nrs._norm_pool({"name": "pool-out", "startip": "198.51.100.1", "endip": "198.51.100.5"})
+    pool = nrs._norm_pool(
+        {"name": "pool-out", "startip": "198.51.100.1", "endip": "198.51.100.5"}
+    )
     return {
         "vips": [vip, dev_vip, unused],
         "pools": [pool],
         "packages": [
-            _pkg("pkgA", [_rule(1, dst=["grp-dmz"]), _rule(2, dst=["vip-dev"], pool=["pool-out"])],
-                 scope=[{"name": "fw-a", "vdom": "root"}]),
-            _pkg("pkgB", [_rule(3, dst=["vip-dev"])], scope=[{"name": "fw-b", "vdom": "root"}]),
+            _pkg(
+                "pkgA",
+                [
+                    _rule(1, dst=["grp-dmz"]),
+                    _rule(2, dst=["vip-dev"], pool=["pool-out"]),
+                ],
+                scope=[{"name": "fw-a", "vdom": "root"}],
+            ),
+            _pkg(
+                "pkgB",
+                [_rule(3, dst=["vip-dev"])],
+                scope=[{"name": "fw-b", "vdom": "root"}],
+            ),
         ],
     }
 
@@ -58,7 +92,9 @@ GROUPS = {"grp-dmz": {"type": "group", "detail": "", "members": ["vip-web", "oth
 def test_rows_identify_type_and_match_through_groups():
     rows = nrs.build_nat_rows(_data(), GROUPS)
     web = [r for r in rows if r["name"] == "vip-web"]
-    assert [(r["nat_type"], r["package"], r["policyid"]) for r in web] == [("VIP", "pkgA", 1)]
+    assert [(r["nat_type"], r["package"], r["policyid"]) for r in web] == [
+        ("VIP", "pkgA", 1)
+    ]
     assert web[0]["nat_ip"] == "203.0.113.10" and web[0]["mapped_ip"] == "10.0.0.5"
     pool = [r for r in rows if r["name"] == "pool-out"]
     assert [(r["nat_type"], r["policyid"]) for r in pool] == [("IP Pool", 2)]
@@ -82,7 +118,9 @@ def test_errored_package_is_skipped():
     assert not [r for r in nrs.build_nat_rows(d, GROUPS) if r["package"] == "pkgA"]
 
 
-@pytest.mark.parametrize("fmt,ext", [("csv", "csv"), ("json", "json"), ("html", "html")])
+@pytest.mark.parametrize(
+    "fmt,ext", [("csv", "csv"), ("json", "json"), ("html", "html")]
+)
 def test_attachment_formats(fmt, ext):
     rows = nrs.build_nat_rows(_data(), GROUPS)
     name, blob = nrs.build_attachment("My ADOM", rows, [], fmt, "2026-10-19T01:00:00Z")
@@ -92,7 +130,11 @@ def test_attachment_formats(fmt, ext):
     if fmt == "json":
         assert json.loads(text)["summary"]["pools"] == 1
     if fmt == "csv":
-        body = [l for l in csv.reader(io.StringIO(text)) if l and not l[0].startswith("#")]
+        body = [
+            row
+            for row in csv.reader(io.StringIO(text))
+            if row and not row[0].startswith("#")
+        ]
         assert body[0] == nrs.CSV_COLUMNS
 
 
