@@ -13,7 +13,7 @@
       if (btn.dataset.panel === 'map-regions' && !_mapRegionsLoaded) loadMapRegions();
       if (btn.dataset.panel === 'external-api' && !_extApiLoaded) loadExtApi();
       if (btn.dataset.panel === 'scheduled') {
-        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadRPJobs(); loadPCAlerts();
+        loadSMTP(); loadJobs(); loadDRJobs(); loadRHJobs(); loadNATJobs(); loadRPJobs(); loadPCAlerts();
         _wireJobPageSizes();
       }
       if (btn.dataset.panel === 'backup') { window.loadBackupConfig(); window.loadBackupJobs(); }
@@ -781,6 +781,9 @@ let _drPage = 0, _drPageSize = 10;
 let _rhJobs = [];
 let _rhPage = 0, _rhPageSize = 10;
 
+let _natJobs = [];
+let _natPage = 0, _natPageSize = 10;
+
 let _rpJobs = [];
 
 function renderPager(id, page, totalPages, onNav) {
@@ -806,6 +809,7 @@ function _wireJobPageSizes() {
     { id: 'jobsPageSize',   get: () => _cdiffPageSize, set: v => { _cdiffPageSize = v; _cdiffPage = 0; renderJobsTable(); } },
     { id: 'drJobsPageSize', get: () => _drPageSize,    set: v => { _drPageSize = v;    _drPage = 0;    renderDRJobsTable(); } },
     { id: 'rhJobsPageSize', get: () => _rhPageSize,    set: v => { _rhPageSize = v;    _rhPage = 0;    renderRHJobsTable(); } },
+    { id: 'natJobsPageSize', get: () => _natPageSize,  set: v => { _natPageSize = v;  _natPage = 0;  renderNATJobsTable(); } },
   ];
   defs.forEach(({ id, get, set }) => {
     const sel = document.getElementById(id);
@@ -1407,6 +1411,151 @@ async function pollRHJobStatus(id, btn) {
   } else {
     if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
     loadRHJobs();
+  }
+}
+
+// ── NAT Report Scheduled Jobs ────────────────────────────────────────────────
+
+async function loadNATJobs() {
+  const res = await fetch('/admin/api/nat-report/jobs');
+  _natJobs = res.ok ? await res.json() : [];
+  renderNATJobsTable();
+}
+
+function renderNATJobsTable() {
+  const tbody = document.getElementById('natJobsTableBody');
+  if (!tbody) return;
+  const total = _natJobs.length;
+  const pageCount = Math.max(1, Math.ceil(total / _natPageSize));
+  if (_natPage >= pageCount) _natPage = pageCount - 1;
+  const start = _natPage * _natPageSize;
+  const slice = total ? _natJobs.slice(start, start + _natPageSize) : [];
+  const countEl = document.getElementById('natJobsCount');
+
+  if (!total) {
+    tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted);text-align:center">No scheduled jobs.</td></tr>';
+    if (countEl) countEl.textContent = '';
+  } else {
+    tbody.innerHTML = slice.map(j => {
+      const lastRun = j.runs && j.runs[0];
+      const lastRunStr = lastRun ? lastRun.ran_at.slice(0,16).replace('T',' ') + ' UTC' : '—';
+      const statusBadge = !lastRun
+        ? '<span class="badge badge-gray">Never run</span>'
+        : lastRun.status === 'ok'
+          ? '<span class="badge badge-green">OK</span>'
+          : `<span class="badge badge-red" title="${escH((lastRun.errors || []).join('; '))}">Error</span>`;
+      const enabledBadge = j.enabled
+        ? '<span class="badge badge-green">Enabled</span>'
+        : '<span class="badge badge-gray">Disabled</span>';
+      return `<tr>
+        <td>${escH(j.name)}</td>
+        <td>${escH(j.adom)}</td>
+        <td>${escH((j.days_of_week || []).join(', '))}</td>
+        <td>${escH(j.time)}</td>
+        <td>${escH(j.format || 'html')}</td>
+        <td>${escH(j.email)}</td>
+        <td style="font-size:11px">${escH(lastRunStr)}</td>
+        <td>${statusBadge}</td>
+        <td>${enabledBadge}</td>
+        <td>
+          <button class="btn-sm" onclick="showNATJobForm('${j.id}')">Edit</button>
+          <button class="btn-sm" id="natRunBtn-${j.id}" onclick="runNATJobNow('${j.id}')">Run Now</button>
+          <button class="btn-sm btn-danger" onclick="deleteNATJob('${j.id}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+    if (countEl) countEl.textContent = `Showing ${start+1}–${Math.min(start+_natPageSize, total)} of ${total}`;
+  }
+  renderPager('natJobsPager', _natPage, pageCount, p => { _natPage = p; renderNATJobsTable(); });
+}
+
+function showNATJobForm(id) {
+  document.getElementById('natJobForm').style.display = '';
+  document.getElementById('natJobFormId').value = id || '';
+  document.getElementById('natJobFormMsg').textContent = '';
+
+  const adomSel = document.getElementById('natJobFormAdom');
+  adomSel.innerHTML = '<option value="">Loading…</option>';
+  fetch('/admin/api/adoms').then(r => r.json()).then(data => {
+    adomSel.innerHTML = (data.adoms || []).map(a => `<option value="${escH(a)}">${escH(a)}</option>`).join('');
+    const job = id ? _natJobs.find(j => j.id === id) : null;
+    document.getElementById('natJobFormTitle').textContent = job ? 'Edit NAT Report Job' : 'New NAT Report Job';
+    document.getElementById('natJobFormName').value = job ? (job.name || '') : '';
+    if (job) adomSel.value = job.adom || '';
+    document.getElementById('natJobFormTime').value = job ? (job.time || '04:00') : '04:00';
+    ['SUN','MON','TUE','WED','THU','FRI','SAT'].forEach(d => {
+      document.getElementById(`natDayChk-${d}`).checked = job ? (job.days_of_week || []).includes(d) : false;
+    });
+    document.getElementById('natJobFormFormat').value = job ? (job.format || 'html') : 'html';
+    document.getElementById('natJobFormEmail').value = job ? (job.email || '') : '';
+    document.getElementById('natJobFormEnabled').checked = job ? !!job.enabled : true;
+  });
+}
+
+function cancelNATJobForm() {
+  document.getElementById('natJobForm').style.display = 'none';
+}
+
+async function saveNATJob() {
+  const id = document.getElementById('natJobFormId').value;
+  const days = ['SUN','MON','TUE','WED','THU','FRI','SAT']
+    .filter(d => document.getElementById(`natDayChk-${d}`).checked);
+  const payload = {
+    name: document.getElementById('natJobFormName').value.trim(),
+    adom: document.getElementById('natJobFormAdom').value,
+    days_of_week: days,
+    time: document.getElementById('natJobFormTime').value,
+    format: document.getElementById('natJobFormFormat').value,
+    email: document.getElementById('natJobFormEmail').value.trim(),
+    enabled: document.getElementById('natJobFormEnabled').checked,
+  };
+  const url    = id ? `/admin/api/nat-report/jobs/${id}` : '/admin/api/nat-report/jobs';
+  const method = id ? 'PUT' : 'POST';
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById('natJobFormMsg').textContent = data.error || 'Save failed';
+    return;
+  }
+  cancelNATJobForm();
+  loadNATJobs();
+}
+
+async function deleteNATJob(id) {
+  if (!confirm('Delete this NAT report job?')) return;
+  const res = await fetch(`/admin/api/nat-report/jobs/${id}`, {
+    method: 'DELETE', headers: { 'X-CSRF-Token': getCSRF() },
+  });
+  if (!res.ok) { alert('Delete failed'); return; }
+  loadNATJobs();
+}
+
+async function runNATJobNow(id) {
+  const btn = document.getElementById(`natRunBtn-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  const runRes = await fetch(`/admin/api/nat-report/jobs/${id}/run`, {
+    method: 'POST', headers: { 'X-CSRF-Token': getCSRF() },
+  });
+  if (!runRes.ok) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    alert('Failed to start job.');
+    return;
+  }
+  pollNATJobStatus(id, btn);
+}
+
+async function pollNATJobStatus(id, btn) {
+  const res  = await fetch(`/admin/api/nat-report/jobs/${id}/status`);
+  const data = await res.json();
+  if (data.running) {
+    setTimeout(() => pollNATJobStatus(id, btn), 3000);
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Now'; }
+    loadNATJobs();
   }
 }
 
