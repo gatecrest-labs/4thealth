@@ -257,7 +257,7 @@ def _save_rule_state(rule_id: str, sent: dict | None, record: dict) -> None:
 _MIME = {"html": "text/html", "csv": "text/csv", "json": "application/json"}
 
 _DIFF_TYPE_STYLE: dict[str, tuple[str, str]] = {
-    "add":    ("+", "display:block;white-space:pre;background:#dcfce7;color:#166534"),
+    "add": ("+", "display:block;white-space:pre;background:#dcfce7;color:#166534"),
     "remove": ("-", "display:block;white-space:pre;background:#fee2e2;color:#b91c1c"),
     "modify": ("~", "display:block;white-space:pre;background:#fef3c7;color:#92400e"),
 }
@@ -312,8 +312,8 @@ def build_diff_attachment(
                     pad = "padding:1px 4px"
                     parts.append(
                         f'<span style="{style};{pad}">'
-                        f'{html.escape(prefix + " " if prefix else "")}'
-                        f'{html.escape(c["line"])}'
+                        f"{html.escape(prefix + ' ' if prefix else '')}"
+                        f"{html.escape(c['line'])}"
                         f"</span>"
                     )
                 parts.append("</div>")
