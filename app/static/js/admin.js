@@ -2580,6 +2580,10 @@ async function _rpPopulateAdomDropdown(selected) {
 
 let _pcaRules = [];
 let _pcaCdJobs = [];
+let _pcaAllPackages = [];
+let _pcaCheckedPackages = new Set();
+let _pcaPage = 0;
+let _pcaPageSize = 25;
 
 async function loadPCAlerts() {
   const tbody = document.getElementById('pca-rules-tbody');
@@ -2658,27 +2662,95 @@ async function _pcaPopulateAdomDropdown(selected) {
 
 async function pcaLoadPackages(selectedPkgs) {
   const adom = document.getElementById('pca-adom').value;
-  const listDiv = document.getElementById('pca-package-list');
   const warn = document.getElementById('pca-adom-warning');
   warn.style.display = adom && !_pcaHasConfigDeltaJob(adom) ? '' : 'none';
   warn.textContent = 'No enabled Config-Delta job exists for this ADOM — this rule will not fire until one is created.';
-  if (!adom) { listDiv.innerHTML = '<em style="color:var(--text-muted)">Select an ADOM first</em>'; return; }
-  listDiv.innerHTML = '<em style="color:var(--text-muted)">Loading…</em>';
+  _pcaAllPackages = [];
+  _pcaCheckedPackages = new Set(selectedPkgs || []);
+  _pcaPage = 0;
+  const searchEl = document.getElementById('pca-pkg-search');
+  if (searchEl) searchEl.value = '';
+  if (!adom) {
+    document.getElementById('pca-pkg-items').innerHTML = '<em style="color:var(--text-muted)">Select an ADOM first</em>';
+    document.getElementById('pca-pkg-pagination').style.display = 'none';
+    return;
+  }
+  document.getElementById('pca-pkg-items').innerHTML = '<em style="color:var(--text-muted)">Loading…</em>';
   try {
     const resp = await fetch(`/api/hygiene/adoms/${encodeURIComponent(adom)}/packages`);
     const pkgs = resp.ok ? await resp.json() : [];
-    if (!pkgs.length) { listDiv.innerHTML = '<em style="color:var(--text-muted)">No packages found.</em>'; return; }
-    listDiv.innerHTML = pkgs.map(p => {
-      const name = typeof p === 'string' ? p : (p.name || p);
-      const checked = (selectedPkgs || []).includes(name) ? 'checked' : '';
+    _pcaAllPackages = pkgs.map(p => (typeof p === 'string' ? p : (p.name || p)));
+    _pcaRenderPackagePicker();
+  } catch (e) {
+    document.getElementById('pca-pkg-items').innerHTML = `<em style="color:var(--danger)">Error: ${escH(String(e))}</em>`;
+    document.getElementById('pca-pkg-pagination').style.display = 'none';
+  }
+}
+
+function _pcaPkgSearchChanged() {
+  _pcaPage = 0;
+  _pcaRenderPackagePicker();
+}
+
+function _pcaRenderPackagePicker() {
+  const search = (document.getElementById('pca-pkg-search')?.value || '').toLowerCase();
+  const filtered = _pcaAllPackages.filter(p => p.toLowerCase().includes(search));
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / _pcaPageSize));
+  if (_pcaPage >= totalPages) _pcaPage = totalPages - 1;
+  const start = _pcaPage * _pcaPageSize;
+  const page = filtered.slice(start, start + _pcaPageSize);
+
+  const itemsEl = document.getElementById('pca-pkg-items');
+  if (!page.length) {
+    itemsEl.innerHTML = '<em style="color:var(--text-muted)">No packages found.</em>';
+  } else {
+    itemsEl.innerHTML = page.map(name => {
+      const checked = _pcaCheckedPackages.has(name) ? 'checked' : '';
       return `<label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer;padding:2px 0">
         <input type="checkbox" class="pca-pkg-check" value="${escH(name)}" ${checked}>
         <span>${escH(name)}</span>
       </label>`;
     }).join('');
-  } catch (e) {
-    listDiv.innerHTML = `<em style="color:var(--danger)">Error: ${escH(String(e))}</em>`;
+    itemsEl.querySelectorAll('.pca-pkg-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) _pcaCheckedPackages.add(cb.value);
+        else _pcaCheckedPackages.delete(cb.value);
+      });
+    });
   }
+
+  const pagEl = document.getElementById('pca-pkg-pagination');
+  if (totalPages <= 1 && total <= _pcaPageSize) {
+    pagEl.style.display = 'none';
+    return;
+  }
+  pagEl.style.display = 'flex';
+  const sizeOpts = [10, 25, 50].map(n =>
+    `<option value="${n}" ${n === _pcaPageSize ? 'selected' : ''}>${n}</option>`
+  ).join('');
+  const btnStyle = (disabled) => `style="padding:1px 6px;font-size:.82rem;cursor:${disabled ? 'default' : 'pointer'}"${disabled ? ' disabled' : ''}`;
+  pagEl.innerHTML =
+    `<button ${btnStyle(_pcaPage === 0)} onclick="_pcaGoPage(0)">&laquo;</button>` +
+    `<button ${btnStyle(_pcaPage === 0)} onclick="_pcaGoPage(${_pcaPage - 1})">&lsaquo;</button>` +
+    `<span style="padding:0 4px">${start + 1}–${Math.min(start + _pcaPageSize, total)} of ${total}</span>` +
+    `<button ${btnStyle(_pcaPage >= totalPages - 1)} onclick="_pcaGoPage(${_pcaPage + 1})">&rsaquo;</button>` +
+    `<button ${btnStyle(_pcaPage >= totalPages - 1)} onclick="_pcaGoPage(${totalPages - 1})">&raquo;</button>` +
+    `<select onchange="_pcaSetPageSize(+this.value)" style="font-size:.82rem;margin-left:4px">${sizeOpts}</select>`;
+}
+
+function _pcaGoPage(n) {
+  const search = (document.getElementById('pca-pkg-search')?.value || '').toLowerCase();
+  const filtered = _pcaAllPackages.filter(p => p.toLowerCase().includes(search));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / _pcaPageSize));
+  _pcaPage = Math.max(0, Math.min(n, totalPages - 1));
+  _pcaRenderPackagePicker();
+}
+
+function _pcaSetPageSize(n) {
+  _pcaPageSize = n;
+  _pcaPage = 0;
+  _pcaRenderPackagePicker();
 }
 
 function pcaTogglePackageList() {
@@ -2693,7 +2765,12 @@ function pcaOpenNewModal() {
   document.getElementById('pca-adom').innerHTML = '<option value="">— select ADOM —</option>';
   document.getElementById('pca-all-packages').checked = true;
   document.getElementById('pca-package-list').style.display = 'none';
-  document.getElementById('pca-package-list').innerHTML = '<em style="color:var(--text-muted)">Select an ADOM first</em>';
+  document.getElementById('pca-pkg-items').innerHTML = '<em style="color:var(--text-muted)">Select an ADOM first</em>';
+  document.getElementById('pca-pkg-pagination').style.display = 'none';
+  if (document.getElementById('pca-pkg-search')) document.getElementById('pca-pkg-search').value = '';
+  _pcaAllPackages = [];
+  _pcaCheckedPackages = new Set();
+  _pcaPage = 0;
   document.getElementById('pca-adom-warning').style.display = 'none';
   document.getElementById('pca-format').value = 'html';
   document.getElementById('pca-email').value = '';
@@ -2730,7 +2807,7 @@ function _pcaCollectFormData() {
   return {
     name: document.getElementById('pca-name').value.trim(),
     adom: document.getElementById('pca-adom').value,
-    packages: all ? [] : [...document.querySelectorAll('.pca-pkg-check:checked')].map(cb => cb.value),
+    packages: all ? [] : [..._pcaCheckedPackages],
     format: document.getElementById('pca-format').value,
     email: document.getElementById('pca-email').value.trim(),
     enabled: document.getElementById('pca-enabled').checked,

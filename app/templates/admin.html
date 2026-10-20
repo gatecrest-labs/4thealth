@@ -1304,8 +1304,14 @@
             <input type="checkbox" id="pca-all-packages" checked onchange="pcaTogglePackageList()">
             <span>All packages</span>
           </label>
-          <div id="pca-package-list" style="display:none;max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:8px;margin-top:6px">
-            <em style="color:var(--text-muted)">Select an ADOM first</em>
+          <div id="pca-package-list" style="display:none;border:1px solid var(--border);border-radius:4px;margin-top:6px">
+            <div style="padding:6px 8px;border-bottom:1px solid var(--border)">
+              <input type="text" id="pca-pkg-search" placeholder="Search packages…" style="width:100%;box-sizing:border-box;font-size:.88rem" oninput="_pcaPkgSearchChanged()">
+            </div>
+            <div id="pca-pkg-items" style="max-height:180px;overflow-y:auto;padding:6px 8px">
+              <em style="color:var(--text-muted)">Select an ADOM first</em>
+            </div>
+            <div id="pca-pkg-pagination" style="display:none;padding:6px 8px;border-top:1px solid var(--border);align-items:center;gap:6px;flex-wrap:wrap;font-size:.82rem"></div>
           </div>
         </div>
       </div>
