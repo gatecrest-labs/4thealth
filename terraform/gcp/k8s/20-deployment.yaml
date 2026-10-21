@@ -1,0 +1,95 @@
+# Single replica + Recreate: the app keeps state in local JSON/SQLite files and runs its own
+# background scheduler, so never run two pods at once (see docs/kubernetes-overview.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: 4thealth
+  namespace: 4thealth
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: { app: 4thealth }
+  template:
+    metadata:
+      labels: { app: 4thealth }
+    spec:
+      # Lets the non-root app user (uid unknown to us) read/write the PVC; the init container
+      # chgrps the data to this GID.
+      securityContext:
+        fsGroup: 2000
+      initContainers:
+        # subPath file mounts of files that don't exist yet are created as *directories*, and
+        # gunicorn needs certs/cert.pem at startup. So seed the PVC before the app starts.
+        # Only creates what is missing, so real data copied in later is never overwritten.
+        - name: seed-data
+          image: alpine/openssl:latest
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              cd /data
+              mkdir -p certs
+              if [ ! -f certs/cert.pem ] || [ ! -f certs/key.pem ]; then
+                openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
+                  -keyout certs/key.pem -out certs/cert.pem -subj "/CN=4thealth.local"
+              fi
+              seed() { [ -f "$1" ] || printf '%s\n' "$2" > "$1"; }
+              seed users.json '{}'
+              seed groups.json '{}'
+              seed infra_targets.json '[]'
+              seed policy_db.json '{}'
+              seed app_settings.json '{"external_api_enabled": false}'
+              seed api_tokens.json '{"tokens": []}'
+              seed summary_history.json '[]'
+              seed smtp_config.json '{"host": "", "port": 25, "tls_mode": "none", "username": "", "password": "", "from_address": "", "run_history_days": 30, "enabled": false}'
+              seed config_diff_jobs.json '[]'
+              seed device_review_jobs.json '[]'
+              seed rule_hygiene_jobs.json '[]'
+              seed rule_policy_jobs.json '[]'
+              seed package_change_alerts.json '[]'
+              seed backup_config.json '{"password": "", "backup_dir": "/tmp/backups", "max_files": 20, "exclude_tls_key": false, "ftp": {"enabled": false, "protocol": "sftp", "host": "", "port": 22, "username": "", "password": "", "remote_dir": "/backups/4thealth"}, "jobs": []}'
+              chown -R 0:2000 /data
+              chmod -R g+rwX /data
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+      containers:
+        - name: 4thealth
+          # Build and push with this exact tag (see k8s/README.md), or `kubectl set image`.
+          image: us-central1-docker.pkg.dev/t-application-environment/four-t-health/app:test
+          ports: [{ containerPort: 8100 }]
+          envFrom:
+            - secretRef: { name: 4thealth-env }
+          volumeMounts:
+            - { name: data, mountPath: /app/certs, subPath: certs }
+            - { name: data, mountPath: /app/users.json, subPath: users.json }
+            - { name: data, mountPath: /app/groups.json, subPath: groups.json }
+            - { name: data, mountPath: /app/infra_targets.json, subPath: infra_targets.json }
+            - { name: data, mountPath: /app/policy_db.json, subPath: policy_db.json }
+            - { name: data, mountPath: /app/app_settings.json, subPath: app_settings.json }
+            - { name: data, mountPath: /app/api_tokens.json, subPath: api_tokens.json }
+            - { name: data, mountPath: /app/summary_history.json, subPath: summary_history.json }
+            - { name: data, mountPath: /app/smtp_config.json, subPath: smtp_config.json }
+            - { name: data, mountPath: /app/config_diff_jobs.json, subPath: config_diff_jobs.json }
+            - { name: data, mountPath: /app/device_review_jobs.json, subPath: device_review_jobs.json }
+            - { name: data, mountPath: /app/rule_hygiene_jobs.json, subPath: rule_hygiene_jobs.json }
+            - { name: data, mountPath: /app/rule_policy_jobs.json, subPath: rule_policy_jobs.json }
+            - { name: data, mountPath: /app/package_change_alerts.json, subPath: package_change_alerts.json }
+            - { name: data, mountPath: /app/backup_config.json, subPath: backup_config.json }
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 8100, scheme: HTTPS }
+            initialDelaySeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: 8100, scheme: HTTPS }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: 4thealth-data }

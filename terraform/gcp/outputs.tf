@@ -28,3 +28,25 @@ output "kms_key_id" {
 output "configure_kubectl" {
   value = "gcloud container clusters get-credentials ${google_container_cluster.autopilot.name} --region ${var.region} --project ${var.project_id}"
 }
+
+output "public_test_ip" {
+  description = "Static external IP for temporary test access; browse to https://<ip>. Null unless enable_public_access is true."
+  value       = one(google_compute_address.public_test[*].address)
+}
+
+output "public_lb_manifest" {
+  description = "Service manifest for the temporary public endpoint: terraform output -raw public_lb_manifest | kubectl apply -f -"
+  value = var.enable_public_access ? yamlencode({
+    apiVersion = "v1"
+    kind       = "Service"
+    metadata   = { name = "fourthealth-public", namespace = "4thealth" }
+    spec = {
+      type                     = "LoadBalancer"
+      loadBalancerIP           = google_compute_address.public_test[0].address
+      loadBalancerSourceRanges = var.public_access_cidrs
+      externalTrafficPolicy    = "Local"
+      selector                 = { app = "4thealth" }
+      ports                    = [{ port = 443, targetPort = 8100 }]
+    }
+  }) : null
+}

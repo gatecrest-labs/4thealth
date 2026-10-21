@@ -10,9 +10,9 @@ variable "region" {
 }
 
 variable "cluster_name" {
-  description = "Name for the GKE Autopilot cluster and the resources derived from it."
+  description = "Name for the GKE Autopilot cluster and the resources derived from it. Must start with a letter — GCP rejects names like \"4thealth\"."
   type        = string
-  default     = "4thealth"
+  default     = "fourthealth"
 }
 
 variable "subnet_cidr" {
@@ -37,4 +37,21 @@ variable "master_cidr" {
   description = "CIDR block for the private GKE control plane (/28 required by GKE)."
   type        = string
   default     = "172.16.0.0/28"
+}
+
+variable "enable_public_access" {
+  description = "Temporary test access: reserve a static external IP and render a Service manifest that exposes 4THealth over HTTPS, restricted to public_access_cidrs. Leave false except while testing."
+  type        = bool
+  default     = false
+}
+
+variable "public_access_cidrs" {
+  description = "Source CIDRs allowed to reach the public test endpoint, e.g. [\"203.0.113.7/32\"] (your public IP). Required when enable_public_access is true."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !contains(var.public_access_cidrs, "0.0.0.0/0")
+    error_message = "0.0.0.0/0 would open the test endpoint to the whole internet; list specific CIDRs."
+  }
 }

@@ -1,0 +1,14 @@
+# ClusterIP for testing via `kubectl port-forward`. The name must start with a letter
+# (Service names are DNS-1035 labels), unlike the namespace/Deployment.
+# For the real internal load balancer, apply internal-lb/service.yaml instead.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fourthealth
+  namespace: 4thealth
+spec:
+  type: ClusterIP
+  selector: { app: 4thealth }
+  ports:
+    - port: 443
+      targetPort: 8100
