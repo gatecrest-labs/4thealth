@@ -1,0 +1,18 @@
+# Production-style Service: internal passthrough Network LB on the reserved IP from Terraform.
+# Reachable only inside the VPC (Cloud VPN / Interconnect). Replaces 30-service.yaml, so delete
+# that one first: `kubectl delete -f k8s/30-service.yaml`.
+# Get the IP with: terraform output -raw ingress_internal_ip
+apiVersion: v1
+kind: Service
+metadata:
+  name: fourthealth
+  namespace: 4thealth
+  annotations:
+    networking.gke.io/load-balancer-type: "Internal"
+spec:
+  type: LoadBalancer
+  loadBalancerIP: "10.60.0.2"   # replace with `terraform output -raw ingress_internal_ip`
+  selector: { app: 4thealth }
+  ports:
+    - port: 443
+      targetPort: 8100
