@@ -1,4 +1,5 @@
 """Tests for get_vip_objects and get_ippool_objects FMG client methods."""
+
 from unittest.mock import patch
 from app.fmg_client import FMGClient
 
@@ -15,10 +16,23 @@ def _make_client():
 
 def test_get_vip_objects_returns_merged_list():
     client = _make_client()
-    adom_vips = [{"name": "vip1", "extip": "1.2.3.4", "mappedip": [{"range": "10.0.0.1-10.0.0.1"}]}]
-    global_vips = [{"name": "vip_global", "extip": "5.6.7.8", "mappedip": [{"range": "10.0.0.2-10.0.0.2"}]}]
+    adom_vips = [
+        {
+            "name": "vip1",
+            "extip": "1.2.3.4",
+            "mappedip": [{"range": "10.0.0.1-10.0.0.1"}],
+        }
+    ]
+    global_vips = [
+        {
+            "name": "vip_global",
+            "extip": "5.6.7.8",
+            "mappedip": [{"range": "10.0.0.2-10.0.0.2"}],
+        }
+    ]
 
     call_count = {"n": 0}
+
     def fake_paged(url):
         call_count["n"] += 1
         if "global" in url:

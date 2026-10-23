@@ -44,9 +44,9 @@ Viewer tab access is the **union** of all tabs granted by the groups the user be
 Already set in `app/config.py`:
 
 ```python
-SESSION_COOKIE_HTTPONLY = True      # JS cannot read the cookie
-SESSION_COOKIE_SAMESITE = "Lax"    # CSRF mitigation
-SESSION_COOKIE_SECURE   = True      # Set automatically when TLS is detected
+SESSION_COOKIE_HTTPONLY = True  # JS cannot read the cookie
+SESSION_COOKIE_SAMESITE = "Lax"  # CSRF mitigation
+SESSION_COOKIE_SECURE = True  # Set automatically when TLS is detected
 PERMANENT_SESSION_LIFETIME = 3600  # 1-hour session expiry
 ```
 
@@ -84,16 +84,16 @@ AD_VERIFY_SSL=false
 Add inside `Config`:
 
 ```python
-AD_ENABLED       = os.environ.get("AD_ENABLED", "false").lower() == "true"
-AD_SERVER        = os.environ.get("AD_SERVER", "")
-AD_DOMAIN        = os.environ.get("AD_DOMAIN", "")
-AD_BASE_DN       = os.environ.get("AD_BASE_DN", "")
-AD_BIND_USER     = os.environ.get("AD_BIND_USER", "")
+AD_ENABLED = os.environ.get("AD_ENABLED", "false").lower() == "true"
+AD_SERVER = os.environ.get("AD_SERVER", "")
+AD_DOMAIN = os.environ.get("AD_DOMAIN", "")
+AD_BASE_DN = os.environ.get("AD_BASE_DN", "")
+AD_BIND_USER = os.environ.get("AD_BIND_USER", "")
 AD_BIND_PASSWORD = os.environ.get("AD_BIND_PASSWORD", "")
-AD_USER_SEARCH   = os.environ.get("AD_USER_SEARCH", "")
-AD_GROUP_ADMIN   = os.environ.get("AD_GROUP_ADMIN", "")
-AD_GROUP_VIEWER  = os.environ.get("AD_GROUP_VIEWER", "")
-AD_VERIFY_SSL    = os.environ.get("AD_VERIFY_SSL", "false").lower() == "true"
+AD_USER_SEARCH = os.environ.get("AD_USER_SEARCH", "")
+AD_GROUP_ADMIN = os.environ.get("AD_GROUP_ADMIN", "")
+AD_GROUP_VIEWER = os.environ.get("AD_GROUP_VIEWER", "")
+AD_VERIFY_SSL = os.environ.get("AD_VERIFY_SSL", "false").lower() == "true"
 ```
 
 ### Phase 4.4 — Update app/auth.py
@@ -171,6 +171,7 @@ Keep two groups (`admin`, `viewer`) in `groups.json` and rely solely on the `AD_
 def get_allowed_tabs(username: str, ad_groups: list[str] | None = None) -> set[str]:
     """ad_groups: list of CN values resolved from AD memberOf, or None for local auth."""
     from app.auth import _load_users
+
     users = _load_users()
     user_entry = users.get(username, {})
     if user_entry.get("role") == "admin":

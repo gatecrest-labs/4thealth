@@ -258,19 +258,25 @@ def test_diff_attachment_html_escapes():
 
 
 def test_diff_attachment_html_colored_prefixes():
-    diffs = {"FW1": {"root": [
-        _c("set action accept", "add"),
-        _c("set action deny", "remove"),
-        _c("set logtraffic all", "modify"),
-    ]}}
-    att = pca.build_diff_attachment("Corp", "Pkg", diffs, "html", "2026-10-20T01:00:00Z")
+    diffs = {
+        "FW1": {
+            "root": [
+                _c("set action accept", "add"),
+                _c("set action deny", "remove"),
+                _c("set logtraffic all", "modify"),
+            ]
+        }
+    }
+    att = pca.build_diff_attachment(
+        "Corp", "Pkg", diffs, "html", "2026-10-20T01:00:00Z"
+    )
     body = att["data"].decode()
     assert "+ set action accept" in body
     assert "- set action deny" in body
     assert "~ set logtraffic all" in body
-    assert "#dcfce7" in body   # green bg for add
-    assert "#fee2e2" in body   # red bg for remove
-    assert "#fef3c7" in body   # amber bg for modify
+    assert "#dcfce7" in body  # green bg for add
+    assert "#fee2e2" in body  # red bg for remove
+    assert "#fef3c7" in body  # amber bg for modify
 
 
 def test_build_email_html_lists_devices_and_escapes():

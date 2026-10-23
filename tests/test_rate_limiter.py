@@ -1,13 +1,15 @@
-import os, time
+import os
+import time
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
-from unittest.mock import patch
 import importlib
 
 
 def _fresh_module():
     """Import auth_routes with a clean rate-limiter state."""
     import app.routes.auth_routes as m
+
     importlib.reload(m)
     return m
 

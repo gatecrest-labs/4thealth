@@ -1,6 +1,6 @@
 import datetime
-import json, pytest
-from pathlib import Path
+import json
+import pytest
 import app.rule_policy_scheduler as sched
 
 
@@ -130,7 +130,11 @@ def test_delete_job_raises_on_missing():
 
 def _simple_addr_catalog():
     return {
-        "WebServers": {"type": "group", "detail": "2 members", "members": ["10.1.1.10/32", "10.1.1.11/32"]},
+        "WebServers": {
+            "type": "group",
+            "detail": "2 members",
+            "members": ["10.1.1.10/32", "10.1.1.11/32"],
+        },
         "10.1.1.10/32": {"type": "ipmask", "detail": "10.1.1.10/32", "members": None},
         "10.1.1.11/32": {"type": "ipmask", "detail": "10.1.1.11/32", "members": None},
         "AllHosts": {"type": "group", "detail": "1 members", "members": ["WebServers"]},
@@ -139,7 +143,10 @@ def _simple_addr_catalog():
 
 def test_build_addr_catalog_creates_leaf_entries():
     from app.rule_policy_scheduler import _build_addr_catalog
-    addr_objects = [{"name": "Host1", "type": "ipmask", "subnet": "10.0.0.1 255.255.255.255"}]
+
+    addr_objects = [
+        {"name": "Host1", "type": "ipmask", "subnet": "10.0.0.1 255.255.255.255"}
+    ]
     addr_groups = [{"name": "G1", "member": [{"name": "Host1"}]}]
     catalog = _build_addr_catalog(addr_objects, addr_groups)
     assert "Host1" in catalog
@@ -150,6 +157,7 @@ def test_build_addr_catalog_creates_leaf_entries():
 
 def test_build_svc_catalog_creates_service_entries():
     from app.rule_policy_scheduler import _build_svc_catalog
+
     svc_objects = [{"name": "HTTP", "tcp-portrange": "80"}]
     svc_groups = [{"name": "Web-SG", "member": [{"name": "HTTP"}]}]
     catalog = _build_svc_catalog(svc_objects, svc_groups)
@@ -161,6 +169,7 @@ def test_build_svc_catalog_creates_service_entries():
 
 def test_expand_group_returns_leaf_members():
     from app.rule_policy_scheduler import _expand_group
+
     catalog = _simple_addr_catalog()
     result = _expand_group("WebServers", catalog)
     assert len(result) == 2
@@ -171,6 +180,7 @@ def test_expand_group_returns_leaf_members():
 
 def test_expand_group_handles_nested():
     from app.rule_policy_scheduler import _expand_group
+
     catalog = _simple_addr_catalog()
     result = _expand_group("AllHosts", catalog)
     assert len(result) == 2
@@ -179,6 +189,7 @@ def test_expand_group_handles_nested():
 
 def test_expand_group_detects_circular():
     from app.rule_policy_scheduler import _expand_group
+
     catalog = {
         "GA": {"type": "group", "detail": "", "members": ["GB"]},
         "GB": {"type": "group", "detail": "", "members": ["GA"]},
@@ -189,8 +200,12 @@ def test_expand_group_detects_circular():
 
 def test_expand_group_caps_max_depth():
     from app.rule_policy_scheduler import _expand_group, MAX_GROUP_DEPTH
+
     # Build chain of 10 nested groups (exceeds MAX_GROUP_DEPTH=8)
-    catalog = {f"G{i}": {"type": "group", "detail": "", "members": [f"G{i+1}"]} for i in range(10)}
+    catalog = {
+        f"G{i}": {"type": "group", "detail": "", "members": [f"G{i + 1}"]}
+        for i in range(10)
+    }
     catalog["G10"] = {"type": "ipmask", "detail": "1.1.1.1/32", "members": None}
     result = _expand_group("G0", catalog)
     # The node at depth MAX_GROUP_DEPTH (G8) must be the one capped, not a deeper one
@@ -201,6 +216,7 @@ def test_expand_group_caps_max_depth():
 
 def test_expand_group_diamond_no_false_cycle():
     from app.rule_policy_scheduler import _expand_group
+
     # Diamond: Root → A,B; A → Leaf; B → Leaf (same Leaf)
     catalog = {
         "Root": {"type": "group", "detail": "", "members": ["A", "B"]},
@@ -216,6 +232,7 @@ def test_expand_group_diamond_no_false_cycle():
 
 def test_collect_groups_only_includes_groups():
     from app.rule_policy_scheduler import _collect_groups_from_rules
+
     addr_catalog = {
         "WebGrp": {"type": "group", "detail": "", "members": ["10.0.0.1/32"]},
         "10.0.0.1/32": {"type": "ipmask", "detail": "10.0.0.1/32", "members": None},
@@ -305,6 +322,7 @@ class _FakeBulkClient:
 
 def test_policy_for_pkg_success(monkeypatch):
     from app.rule_policy_scheduler import _policy_for_pkg
+
     fake = _FakePkgClient(rules=[_make_rule(1), _make_rule(2)])
     monkeypatch.setattr("app.rule_policy_scheduler._make_client", lambda: fake)
     pkg = {"name": "Corp", "path": "Corp", "scope member": []}
@@ -326,6 +344,7 @@ def test_policy_for_pkg_success(monkeypatch):
 
 def test_policy_for_pkg_error(monkeypatch):
     from app.rule_policy_scheduler import _policy_for_pkg
+
     fake = _FakePkgClient(raise_on_policies=True)
     monkeypatch.setattr("app.rule_policy_scheduler._make_client", lambda: fake)
     pkg = {"name": "Corp", "path": "Corp", "scope member": []}
@@ -338,6 +357,7 @@ def test_policy_for_pkg_error(monkeypatch):
 
 def test_bulk_policy_adom_all_packages(monkeypatch):
     from app.rule_policy_scheduler import bulk_policy_adom
+
     fake = _FakeBulkClient()
     monkeypatch.setattr("app.rule_policy_scheduler._make_client", lambda: fake)
     out = bulk_policy_adom("ADOM", [], False, False, 1)
@@ -351,6 +371,7 @@ def test_bulk_policy_adom_all_packages(monkeypatch):
 
 def test_bulk_policy_adom_filter_packages(monkeypatch):
     from app.rule_policy_scheduler import bulk_policy_adom
+
     fake = _FakeBulkClient()
     monkeypatch.setattr("app.rule_policy_scheduler._make_client", lambda: fake)
     out = bulk_policy_adom("ADOM", ["pkg1"], False, False, 1)
@@ -363,6 +384,7 @@ def test_bulk_policy_adom_filter_packages(monkeypatch):
 
 def test_bulk_policy_adom_skipped(monkeypatch):
     from app.rule_policy_scheduler import bulk_policy_adom
+
     fake = _FakeBulkClient()
     monkeypatch.setattr("app.rule_policy_scheduler._make_client", lambda: fake)
     out = bulk_policy_adom("ADOM", ["pkg1", "missing"], False, False, 1)
@@ -378,33 +400,61 @@ def test_bulk_policy_adom_skipped(monkeypatch):
 
 def _sample_result():
     return {
-        "package": "Corp/Policy", "package_name": "Policy", "device": "FW-01",
+        "package": "Corp/Policy",
+        "package_name": "Policy",
+        "device": "FW-01",
         "scope_members": [{"name": "FW-01", "vdom": "root"}],
         "rules": [
             {
-                "seq": 1, "policyid": 1, "name": "Allow-Web", "status": "enable",
-                "srcintf": ["port1"], "dstintf": ["port2"],
-                "srcaddr": ["CorpUsers"], "dstaddr": ["WebServers"],
+                "seq": 1,
+                "policyid": 1,
+                "name": "Allow-Web",
+                "status": "enable",
+                "srcintf": ["port1"],
+                "dstintf": ["port2"],
+                "srcaddr": ["CorpUsers"],
+                "dstaddr": ["WebServers"],
                 "service": ["HTTP-SG"],
-                "action": "accept", "nat": "enable", "logtraffic": "all",
-                "hit_count": 42, "hit_count_source": "cached",
+                "action": "accept",
+                "nat": "enable",
+                "logtraffic": "all",
+                "hit_count": 42,
+                "hit_count_source": "cached",
                 "comments": "Allow web",
             },
             {
-                "seq": 2, "policyid": 2, "name": "Stealth", "status": "disable",
-                "srcintf": ["any"], "dstintf": ["any"],
-                "srcaddr": ["all"], "dstaddr": ["all"], "service": ["ALL"],
-                "action": "deny", "nat": "disable", "logtraffic": "disable",
-                "hit_count": None, "hit_count_source": "disabled",
+                "seq": 2,
+                "policyid": 2,
+                "name": "Stealth",
+                "status": "disable",
+                "srcintf": ["any"],
+                "dstintf": ["any"],
+                "srcaddr": ["all"],
+                "dstaddr": ["all"],
+                "service": ["ALL"],
+                "action": "deny",
+                "nat": "disable",
+                "logtraffic": "disable",
+                "hit_count": None,
+                "hit_count_source": "disabled",
                 "comments": "",
             },
         ],
         "group_details": {
             "addr": {
-                "CorpUsers": [{"name": "10.0.0.0/8", "leaf": True, "cycle": False, "detail": "10.0.0.0/8"}],
+                "CorpUsers": [
+                    {
+                        "name": "10.0.0.0/8",
+                        "leaf": True,
+                        "cycle": False,
+                        "detail": "10.0.0.0/8",
+                    }
+                ],
             },
             "svc": {
-                "HTTP-SG": [{"name": "HTTP", "leaf": True, "cycle": False, "detail": "tcp/80"}],
+                "HTTP-SG": [
+                    {"name": "HTTP", "leaf": True, "cycle": False, "detail": "tcp/80"}
+                ],
             },
         },
         "pulled_at": "2026-09-18T02:00:00Z",
@@ -416,6 +466,7 @@ def _sample_result():
 
 def test_build_attachment_html_contains_rule_rows():
     from app.rule_policy_scheduler import _build_attachment_rp
+
     files = _build_attachment_rp(_sample_result(), {}, "html")
     assert len(files) == 1
     fname, data = files[0]
@@ -428,6 +479,7 @@ def test_build_attachment_html_contains_rule_rows():
 
 def test_build_attachment_html_greyed_hit_count_disabled():
     from app.rule_policy_scheduler import _build_attachment_rp
+
     _, data = _build_attachment_rp(_sample_result(), {}, "html")[0]
     html = data.decode()
     assert "Disabled" in html  # hit_count_source=disabled rendered as "Disabled"
@@ -435,25 +487,34 @@ def test_build_attachment_html_greyed_hit_count_disabled():
 
 def test_build_attachment_csv_returns_two_files():
     from app.rule_policy_scheduler import _build_attachment_rp
+
     files = _build_attachment_rp(_sample_result(), {}, "csv")
     assert len(files) == 2
     fnames = {f[0] for f in files}
-    assert any("rules" in n or n.endswith("_rules.csv") or n.endswith(".csv") for n in fnames)
+    assert any(
+        "rules" in n or n.endswith("_rules.csv") or n.endswith(".csv") for n in fnames
+    )
     assert any("groups" in n for n in fnames)
 
 
 def test_build_attachment_csv_rules_has_correct_columns():
     from app.rule_policy_scheduler import _build_attachment_rp
+
     files = _build_attachment_rp(_sample_result(), {}, "csv")
     rules_file = next(f for f in files if "group" not in f[0])
-    import csv as _csv, io as _io
+    import csv as _csv
+    import io as _io
+
     rows = list(_csv.reader(_io.StringIO(rules_file[1].decode())))
-    header_row = next(r for r in rows if "Policy ID" in r or "policyid" in r or "Seq" in r)
+    header_row = next(
+        r for r in rows if "Policy ID" in r or "policyid" in r or "Seq" in r
+    )
     assert any("Hit" in c or "hit" in c for c in header_row)
 
 
 def test_build_attachment_json_has_required_keys():
     from app.rule_policy_scheduler import _build_attachment_rp
+
     files = _build_attachment_rp(_sample_result(), {}, "json")
     assert len(files) == 1
     payload = json.loads(files[0][1])
@@ -464,6 +525,7 @@ def test_build_attachment_json_has_required_keys():
 
 def test_build_summary_html_shows_counts():
     from app.rule_policy_scheduler import _build_summary_html
+
     results = [_sample_result()]
     html = _build_summary_html("Corp", results, ["MissingPkg"], "2026-09-18T02:00:00Z")
     assert "Corp" in html
@@ -473,7 +535,9 @@ def test_build_summary_html_shows_counts():
 
 def test_make_zip_contains_all_files():
     from app.rule_policy_scheduler import _make_zip
-    import zipfile as _zipfile, io as _io
+    import zipfile as _zipfile
+    import io as _io
+
     attachments = [
         ("file1.html", b"<html>test1</html>"),
         ("file2.csv", b"col1,col2\nval1,val2"),
@@ -492,6 +556,7 @@ def test_make_zip_contains_all_files():
 def test_make_trigger_daily():
     from app.rule_policy_scheduler import _make_trigger
     from apscheduler.triggers.cron import CronTrigger
+
     job = {**_valid_weekly(), "schedule_type": "daily", "time": "03:30"}
     trigger = _make_trigger(job)
     assert isinstance(trigger, CronTrigger)
@@ -504,7 +569,13 @@ def test_make_trigger_daily():
 def test_make_trigger_weekly():
     from app.rule_policy_scheduler import _make_trigger
     from apscheduler.triggers.cron import CronTrigger
-    job = {**_valid_weekly(), "schedule_type": "weekly", "days_of_week": ["MON", "FRI"], "time": "02:00"}
+
+    job = {
+        **_valid_weekly(),
+        "schedule_type": "weekly",
+        "days_of_week": ["MON", "FRI"],
+        "time": "02:00",
+    }
     trigger = _make_trigger(job)
     assert isinstance(trigger, CronTrigger)
     fields = {f.name: str(f) for f in trigger.fields}
@@ -515,7 +586,13 @@ def test_make_trigger_weekly():
 def test_make_trigger_monthly_end():
     from app.rule_policy_scheduler import _make_trigger
     from apscheduler.triggers.cron import CronTrigger
-    job = {**_valid_weekly(), "schedule_type": "monthly", "monthly_position": "end", "time": "01:00"}
+
+    job = {
+        **_valid_weekly(),
+        "schedule_type": "monthly",
+        "monthly_position": "end",
+        "time": "01:00",
+    }
     trigger = _make_trigger(job)
     assert isinstance(trigger, CronTrigger)
     fields = {f.name: str(f) for f in trigger.fields}
@@ -524,6 +601,7 @@ def test_make_trigger_monthly_end():
 
 def test_make_trigger_monthly_beginning():
     from app.rule_policy_scheduler import _make_trigger
+
     job = {"schedule_type": "monthly", "monthly_position": "beginning", "time": "03:00"}
     t = _make_trigger(job)
     assert t is not None

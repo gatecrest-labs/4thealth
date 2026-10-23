@@ -10,6 +10,7 @@ os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")
 @pytest.fixture
 def app():
     from app import create_app
+
     application = create_app()
     application.config["TESTING"] = True
     return application

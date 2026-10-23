@@ -1,4 +1,5 @@
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 
@@ -8,8 +9,10 @@ def test_proxy_fix_applied_when_env_set(monkeypatch):
     # Re-import wsgi to pick up the env var change
     import importlib
     import wsgi as wsgi_mod
+
     importlib.reload(wsgi_mod)
     from werkzeug.middleware.proxy_fix import ProxyFix
+
     assert isinstance(wsgi_mod.app, ProxyFix)
 
 
@@ -18,6 +21,8 @@ def test_proxy_fix_not_applied_by_default(monkeypatch):
     monkeypatch.delenv("TRUSTED_PROXY_COUNT", raising=False)
     import importlib
     import wsgi as wsgi_mod
+
     importlib.reload(wsgi_mod)
     from werkzeug.middleware.proxy_fix import ProxyFix
+
     assert not isinstance(wsgi_mod.app, ProxyFix)

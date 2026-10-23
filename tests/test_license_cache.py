@@ -1,5 +1,4 @@
 import time
-import pytest
 from app.fmg_helpers import parse_license_payload
 
 
@@ -44,13 +43,15 @@ def test_non_dict_input():
         assert "subscriptions" in result
 
 
-import app.license_cache as lc
+import app.license_cache as lc  # noqa: E402
 
 
 def test_get_cached_initial_state(monkeypatch):
-    monkeypatch.setattr(lc, "_store", {
-        "devices": [], "last_updated": None, "status": "pending", "error": None
-    })
+    monkeypatch.setattr(
+        lc,
+        "_store",
+        {"devices": [], "last_updated": None, "status": "pending", "error": None},
+    )
     cached = lc.get_cached()
     assert cached["status"] == "pending"
     assert cached["devices"] == []
@@ -68,10 +69,20 @@ def test_get_cached_adom_filter(monkeypatch):
         "_store",
         {
             "devices": [
-                {"name": "FW-A", "adom": "Corp", "status": "licensed",
-                 "expires": "2026-12-31", "firmware": "v7.4.3"},
-                {"name": "FW-B", "adom": "Dev", "status": "expired",
-                 "expires": None, "firmware": "v7.2.1"},
+                {
+                    "name": "FW-A",
+                    "adom": "Corp",
+                    "status": "licensed",
+                    "expires": "2026-12-31",
+                    "firmware": "v7.4.3",
+                },
+                {
+                    "name": "FW-B",
+                    "adom": "Dev",
+                    "status": "expired",
+                    "expires": None,
+                    "firmware": "v7.2.1",
+                },
             ],
             "last_updated": "2026-09-16T12:00:00+00:00",
             "status": "ok",

@@ -13,9 +13,12 @@ def client(tmp_path):
     groups_path = tmp_path / "groups.json"
     groups_path.write_text("{}")
 
-    with patch("app.groups.GROUPS_FILE", groups_path), \
-         patch("app.auth._load_users", return_value=users):
+    with (
+        patch("app.groups.GROUPS_FILE", groups_path),
+        patch("app.auth._load_users", return_value=users),
+    ):
         from app import create_app
+
         app = create_app()
         app.config["TESTING"] = True
         with app.test_client() as c:

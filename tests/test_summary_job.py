@@ -22,6 +22,7 @@ def _make_client_mock(adom_names, devices_by_adom):
 def _reset_store():
     """Re-import summary_job to get a clean module-level _store."""
     import app.summary_job as sj
+
     importlib.reload(sj)
     return sj
 
