@@ -1,6 +1,5 @@
 import json
 import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 
@@ -13,23 +12,40 @@ def jobs_path(tmp_path, monkeypatch):
 
 def test_get_all_jobs_empty(jobs_path):
     from app import config_diff_scheduler as sched
+
     assert sched.get_all_jobs() == []
 
 
 def test_create_job_assigns_id(jobs_path):
     from app import config_diff_scheduler as sched
-    job = sched.create_job({
-        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
-        "format": "pdf", "email": "x@x.com", "enabled": True
-    })
+
+    job = sched.create_job(
+        {
+            "adom": "TEST",
+            "days_of_week": ["MON"],
+            "time": "06:00",
+            "format": "pdf",
+            "email": "x@x.com",
+            "enabled": True,
+        }
+    )
     assert "id" in job
     assert len(sched.get_all_jobs()) == 1
 
 
 def test_update_job(jobs_path):
     from app import config_diff_scheduler as sched
-    job = sched.create_job({"adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
-                             "format": "pdf", "email": "x@x.com", "enabled": True})
+
+    job = sched.create_job(
+        {
+            "adom": "TEST",
+            "days_of_week": ["MON"],
+            "time": "06:00",
+            "format": "pdf",
+            "email": "x@x.com",
+            "enabled": True,
+        }
+    )
     updated = sched.update_job(job["id"], {**job, "email": "new@x.com"})
     assert updated["email"] == "new@x.com"
     assert sched.get_all_jobs()[0]["email"] == "new@x.com"
@@ -37,8 +53,17 @@ def test_update_job(jobs_path):
 
 def test_delete_job(jobs_path):
     from app import config_diff_scheduler as sched
-    job = sched.create_job({"adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
-                             "format": "pdf", "email": "x@x.com", "enabled": True})
+
+    job = sched.create_job(
+        {
+            "adom": "TEST",
+            "days_of_week": ["MON"],
+            "time": "06:00",
+            "format": "pdf",
+            "email": "x@x.com",
+            "enabled": True,
+        }
+    )
     sched.delete_job(job["id"])
     assert sched.get_all_jobs() == []
 
@@ -46,14 +71,35 @@ def test_delete_job(jobs_path):
 def test_prune_old_runs(jobs_path):
     from app import config_diff_scheduler as sched
     import datetime
-    old_ts = (datetime.datetime.utcnow() - datetime.timedelta(days=40)).isoformat() + "Z"
+
+    old_ts = (
+        datetime.datetime.utcnow() - datetime.timedelta(days=40)
+    ).isoformat() + "Z"
     recent_ts = datetime.datetime.utcnow().isoformat() + "Z"
-    job = sched.create_job({"adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
-                             "format": "pdf", "email": "x@x.com", "enabled": True})
+    job = sched.create_job(
+        {
+            "adom": "TEST",
+            "days_of_week": ["MON"],
+            "time": "06:00",
+            "format": "pdf",
+            "email": "x@x.com",
+            "enabled": True,
+        }
+    )
     jobs = json.loads(jobs_path.read_text())
     jobs[0]["runs"] = [
-        {"ran_at": old_ts, "status": "ok", "devices_total": 1, "devices_with_changes": 0},
-        {"ran_at": recent_ts, "status": "ok", "devices_total": 1, "devices_with_changes": 1},
+        {
+            "ran_at": old_ts,
+            "status": "ok",
+            "devices_total": 1,
+            "devices_with_changes": 0,
+        },
+        {
+            "ran_at": recent_ts,
+            "status": "ok",
+            "devices_total": 1,
+            "devices_with_changes": 1,
+        },
     ]
     jobs_path.write_text(json.dumps(jobs))
     sched._prune_runs(job["id"], retention_days=30)
@@ -64,10 +110,17 @@ def test_prune_old_runs(jobs_path):
 
 def test_create_job_multi_day(jobs_path):
     from app import config_diff_scheduler as sched
-    job = sched.create_job({
-        "adom": "TEST", "days_of_week": ["MON", "THU"], "time": "06:00",
-        "format": "pdf", "email": "x@x.com", "enabled": True
-    })
+
+    job = sched.create_job(
+        {
+            "adom": "TEST",
+            "days_of_week": ["MON", "THU"],
+            "time": "06:00",
+            "format": "pdf",
+            "email": "x@x.com",
+            "enabled": True,
+        }
+    )
     assert job["days_of_week"] == ["MON", "THU"]
     stored = sched.get_all_jobs()[0]
     assert stored["days_of_week"] == ["MON", "THU"]
@@ -75,44 +128,73 @@ def test_create_job_multi_day(jobs_path):
 
 def test_validate_empty_days(jobs_path):
     from app import config_diff_scheduler as sched
+
     with pytest.raises(ValueError, match="days_of_week"):
-        sched.create_job({
-            "adom": "TEST", "days_of_week": [], "time": "06:00",
-            "format": "pdf", "email": "x@x.com", "enabled": True
-        })
+        sched.create_job(
+            {
+                "adom": "TEST",
+                "days_of_week": [],
+                "time": "06:00",
+                "format": "pdf",
+                "email": "x@x.com",
+                "enabled": True,
+            }
+        )
 
 
 def test_validate_invalid_day_code(jobs_path):
     from app import config_diff_scheduler as sched
+
     with pytest.raises(ValueError, match="days_of_week"):
-        sched.create_job({
-            "adom": "TEST", "days_of_week": ["MONDAY"], "time": "06:00",
-            "format": "pdf", "email": "x@x.com", "enabled": True
-        })
+        sched.create_job(
+            {
+                "adom": "TEST",
+                "days_of_week": ["MONDAY"],
+                "time": "06:00",
+                "format": "pdf",
+                "email": "x@x.com",
+                "enabled": True,
+            }
+        )
 
 
 def test_validate_single_day_still_works(jobs_path):
     from app import config_diff_scheduler as sched
-    job = sched.create_job({
-        "adom": "TEST", "days_of_week": ["FRI"], "time": "08:00",
-        "format": "csv", "email": "x@x.com", "enabled": True
-    })
+
+    job = sched.create_job(
+        {
+            "adom": "TEST",
+            "days_of_week": ["FRI"],
+            "time": "08:00",
+            "format": "csv",
+            "email": "x@x.com",
+            "enabled": True,
+        }
+    )
     assert job["days_of_week"] == ["FRI"]
 
 
 def test_register_multi_day_cron_string(jobs_path):
     from app import config_diff_scheduler as sched
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     mock_scheduler = MagicMock()
     sched._scheduler = mock_scheduler
     try:
         with patch("apscheduler.triggers.cron.CronTrigger") as mock_trigger:
-            sched.create_job({
-                "adom": "TEST", "days_of_week": ["MON", "THU"], "time": "06:00",
-                "format": "pdf", "email": "x@x.com", "enabled": True
-            })
-            mock_trigger.assert_called_once_with(day_of_week="mon,thu", hour=6, minute=0)
+            sched.create_job(
+                {
+                    "adom": "TEST",
+                    "days_of_week": ["MON", "THU"],
+                    "time": "06:00",
+                    "format": "pdf",
+                    "email": "x@x.com",
+                    "enabled": True,
+                }
+            )
+            mock_trigger.assert_called_once_with(
+                day_of_week="mon,thu", hour=6, minute=0
+            )
     finally:
         sched._scheduler = None
 
@@ -179,15 +261,38 @@ def test_build_attachment_csv_has_metadata_header(jobs_path):
 def test_alert_failure_does_not_fail_config_delta_job(jobs_path):
     from app import config_diff_scheduler as sched
 
-    job = sched.create_job({
-        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
-        "format": "json", "email": "x@x.com", "enabled": False,
-    })
-    results = [{"device": "FW1", "ip": "1.1.1.1", "status": "no_changes",
-                "pkg_status": "nochange", "summary": {}, "vdoms": [], "raw": "", "error": None}]
-    with patch("app.routes.pending_changes_routes.bulk_preview_adom", return_value=results), \
-         patch("app.smtp_client.send_email") as send, \
-         patch("app.package_change_alerts.evaluate_alerts", side_effect=RuntimeError("boom")):
+    job = sched.create_job(
+        {
+            "adom": "TEST",
+            "days_of_week": ["MON"],
+            "time": "06:00",
+            "format": "json",
+            "email": "x@x.com",
+            "enabled": False,
+        }
+    )
+    results = [
+        {
+            "device": "FW1",
+            "ip": "1.1.1.1",
+            "status": "no_changes",
+            "pkg_status": "nochange",
+            "summary": {},
+            "vdoms": [],
+            "raw": "",
+            "error": None,
+        }
+    ]
+    with (
+        patch(
+            "app.routes.pending_changes_routes.bulk_preview_adom", return_value=results
+        ),
+        patch("app.smtp_client.send_email") as send,
+        patch(
+            "app.package_change_alerts.evaluate_alerts",
+            side_effect=RuntimeError("boom"),
+        ),
+    ):
         sched._execute_job(job["id"])
     assert send.called  # digest email still sent
     assert sched.get_all_jobs()[0]["runs"][0]["status"] == "ok"
@@ -196,13 +301,23 @@ def test_alert_failure_does_not_fail_config_delta_job(jobs_path):
 def test_config_delta_job_calls_alert_evaluator(jobs_path):
     from app import config_diff_scheduler as sched
 
-    job = sched.create_job({
-        "adom": "TEST", "days_of_week": ["MON"], "time": "06:00",
-        "format": "json", "email": "x@x.com", "enabled": False,
-    })
+    job = sched.create_job(
+        {
+            "adom": "TEST",
+            "days_of_week": ["MON"],
+            "time": "06:00",
+            "format": "json",
+            "email": "x@x.com",
+            "enabled": False,
+        }
+    )
     results = []
-    with patch("app.routes.pending_changes_routes.bulk_preview_adom", return_value=results), \
-         patch("app.smtp_client.send_email"), \
-         patch("app.package_change_alerts.evaluate_alerts") as ev:
+    with (
+        patch(
+            "app.routes.pending_changes_routes.bulk_preview_adom", return_value=results
+        ),
+        patch("app.smtp_client.send_email"),
+        patch("app.package_change_alerts.evaluate_alerts") as ev,
+    ):
         sched._execute_job(job["id"])
     ev.assert_called_once_with("TEST", results)

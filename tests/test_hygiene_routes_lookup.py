@@ -1,4 +1,5 @@
 """Tests for interface and NAT lookup endpoints."""
+
 import os
 import json
 import time
@@ -11,6 +12,7 @@ def app():
     os.environ.setdefault("SECRET_KEY", "test-secret")
     os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")
     from app import create_app
+
     return create_app()
 
 
@@ -19,8 +21,10 @@ _TEST_USERS = {"admin": {"password_hash": "$2b$12$placeholder", "role": "admin"}
 
 @pytest.fixture
 def client(app):
-    with app.test_client() as c, \
-         patch("app.auth._load_users", return_value=_TEST_USERS):
+    with (
+        app.test_client() as c,
+        patch("app.auth._load_users", return_value=_TEST_USERS),
+    ):
         with c.session_transaction() as sess:
             sess["user"] = "admin"
             sess["role"] = "admin"
@@ -41,17 +45,34 @@ def _post(client, url, payload):
 
 # ── Interface Lookup ──────────────────────────────────────────────────────────
 
+
 def test_interface_lookup_returns_match(client):
     devices = [{"name": "FW-01"}]
     interfaces = [
-        {"name": "port1", "ip": "10.1.2.3 255.255.255.0", "vdom": "root", "type": "physical", "status": "up"},
-        {"name": "port2", "ip": "192.168.1.1 255.255.255.0", "vdom": "root", "type": "physical", "status": "up"},
+        {
+            "name": "port1",
+            "ip": "10.1.2.3 255.255.255.0",
+            "vdom": "root",
+            "type": "physical",
+            "status": "up",
+        },
+        {
+            "name": "port2",
+            "ip": "192.168.1.1 255.255.255.0",
+            "vdom": "root",
+            "type": "physical",
+            "status": "up",
+        },
     ]
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value
         inst.get_devices.return_value = devices
         inst.get_device_interfaces_all_vdoms.return_value = interfaces
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/interfaces/lookup", {"ips": ["10.1.2.3"]})
+        resp = _post(
+            client,
+            "/api/hygiene/adoms/TestADOM/interfaces/lookup",
+            {"ips": ["10.1.2.3"]},
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -63,13 +84,23 @@ def test_interface_lookup_returns_match(client):
 def test_interface_lookup_not_found(client):
     devices = [{"name": "FW-01"}]
     interfaces = [
-        {"name": "port1", "ip": "192.168.1.1 255.255.255.0", "vdom": "root", "type": "physical", "status": "up"},
+        {
+            "name": "port1",
+            "ip": "192.168.1.1 255.255.255.0",
+            "vdom": "root",
+            "type": "physical",
+            "status": "up",
+        },
     ]
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value
         inst.get_devices.return_value = devices
         inst.get_device_interfaces_all_vdoms.return_value = interfaces
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/interfaces/lookup", {"ips": ["10.1.2.3"]})
+        resp = _post(
+            client,
+            "/api/hygiene/adoms/TestADOM/interfaces/lookup",
+            {"ips": ["10.1.2.3"]},
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 0
@@ -82,20 +113,34 @@ def test_interface_lookup_skips_unreachable_device(client):
     def fake_ifaces(adom, device):
         if device == "FW-02":
             raise Exception("unreachable")
-        return [{"name": "port1", "ip": "10.1.2.3 255.255.255.0", "vdom": "root", "type": "physical", "status": "up"}]
+        return [
+            {
+                "name": "port1",
+                "ip": "10.1.2.3 255.255.255.0",
+                "vdom": "root",
+                "type": "physical",
+                "status": "up",
+            }
+        ]
 
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value
         inst.get_devices.return_value = devices
         inst.get_device_interfaces_all_vdoms.side_effect = fake_ifaces
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/interfaces/lookup", {"ips": ["10.1.2.3"]})
+        resp = _post(
+            client,
+            "/api/hygiene/adoms/TestADOM/interfaces/lookup",
+            {"ips": ["10.1.2.3"]},
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert "FW-02" in data["skipped_devices"]
 
 
 def test_interface_lookup_invalid_ip(client):
-    resp = _post(client, "/api/hygiene/adoms/TestADOM/interfaces/lookup", {"ips": ["not-an-ip"]})
+    resp = _post(
+        client, "/api/hygiene/adoms/TestADOM/interfaces/lookup", {"ips": ["not-an-ip"]}
+    )
     assert resp.status_code == 400
     assert "invalid" in resp.get_json()["error"].lower()
 
@@ -106,6 +151,7 @@ def test_interface_lookup_missing_ips(client):
 
 
 # ── NAT Lookup ────────────────────────────────────────────────────────────────
+
 
 def test_nat_lookup_matches_vip_extip(client):
     vips = [
@@ -125,7 +171,9 @@ def test_nat_lookup_matches_vip_extip(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.10"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.10"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -151,7 +199,9 @@ def test_nat_lookup_matches_vip_mapped_ip(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.0.7"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.0.7"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -177,7 +227,9 @@ def test_nat_lookup_matches_vip_single_mapped_ip(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "170.152.57.68"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "170.152.57.68"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -203,7 +255,9 @@ def test_nat_lookup_matches_vip_extip_range(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.15"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.15"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -224,7 +278,9 @@ def test_nat_lookup_matches_ippool(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = []
         inst.get_ippool_objects.return_value = pools
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.10"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.10"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -234,15 +290,35 @@ def test_nat_lookup_matches_ippool(client):
 
 def test_nat_lookup_response_includes_objects_checked(client):
     """Response must include objects_checked with shared_vips/device_vips/devices/pools counts."""
-    vips = [{"name": "v1", "extip": "1.2.3.4", "mappedip": [{"range": "10.0.0.1"}],
-             "portforward": "disable", "protocol": "", "extport": "", "mappedport": "", "comment": ""}]
-    pools = [{"name": "p1", "startip": "5.6.7.8", "endip": "5.6.7.9", "type": "overload", "comments": ""}]
+    vips = [
+        {
+            "name": "v1",
+            "extip": "1.2.3.4",
+            "mappedip": [{"range": "10.0.0.1"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        }
+    ]
+    pools = [
+        {
+            "name": "p1",
+            "startip": "5.6.7.8",
+            "endip": "5.6.7.9",
+            "type": "overload",
+            "comments": "",
+        }
+    ]
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = pools
         inst.get_devices.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "9.9.9.9"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "9.9.9.9"}
+        )
     data = resp.get_json()
     assert "objects_checked" in data
     oc = data["objects_checked"]
@@ -270,12 +346,14 @@ def test_nat_lookup_finds_per_device_vip(client):
     devices = [{"name": "FW-EDGE-01"}]
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value
-        inst.get_vip_objects.return_value = []        # no ADOM-level VIPs
+        inst.get_vip_objects.return_value = []  # no ADOM-level VIPs
         inst.get_ippool_objects.return_value = []
         inst.get_devices.return_value = devices
         inst.get_device_vdoms.return_value = [{"name": "root"}]
         inst.get_device_vip_objects.return_value = device_vips
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.10.10.1"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.10.10.1"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -304,7 +382,9 @@ def test_nat_lookup_matches_vip_hyphenated_mapped_ip(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.0.99"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.0.99"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -330,7 +410,9 @@ def test_nat_lookup_matches_vip_extip_as_list(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.55"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.55"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -357,7 +439,9 @@ def test_nat_lookup_matches_vip_mappedip_plain_string(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.1.50"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.1.50"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -383,7 +467,9 @@ def test_nat_lookup_matches_vip_mappedip_list_of_strings(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = vips
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.2.75"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.2.75"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 1
@@ -395,7 +481,9 @@ def test_nat_lookup_not_found(client):
         inst = mc.return_value.__enter__.return_value
         inst.get_vip_objects.return_value = []
         inst.get_ippool_objects.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "1.2.3.4"})
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "1.2.3.4"}
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["total"] == 0
@@ -413,13 +501,26 @@ def test_nat_lookup_missing_ip(client):
 
 # ── Where Used ────────────────────────────────────────────────────────────────
 
+
 def test_where_used_direct_address_match(client):
     packages = [{"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0}]
     policies = [
-        {"policyid": 42, "name": "permit-srv", "action": "accept",
-         "srcaddr": [{"name": "HOST-10.1.1.1"}], "dstaddr": [{"name": "any"}], "service": []},
-        {"policyid": 99, "name": "other-rule", "action": "accept",
-         "srcaddr": [{"name": "other-obj"}], "dstaddr": [{"name": "any"}], "service": []},
+        {
+            "policyid": 42,
+            "name": "permit-srv",
+            "action": "accept",
+            "srcaddr": [{"name": "HOST-10.1.1.1"}],
+            "dstaddr": [{"name": "any"}],
+            "service": [],
+        },
+        {
+            "policyid": 99,
+            "name": "other-rule",
+            "action": "accept",
+            "srcaddr": [{"name": "other-obj"}],
+            "dstaddr": [{"name": "any"}],
+            "service": [],
+        },
     ]
     addr_groups = []
     with patch("app.routes.hygiene_routes.make_client") as mc:
@@ -427,8 +528,11 @@ def test_where_used_direct_address_match(client):
         inst.get_policy_packages.return_value = packages
         inst.get_policies.return_value = policies
         inst.get_address_groups.return_value = addr_groups
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
-                     {"name": "HOST-10.1.1.1", "category": "address"})
+        resp = _post(
+            client,
+            "/api/hygiene/adoms/TestADOM/objects/where-used",
+            {"name": "HOST-10.1.1.1", "category": "address"},
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["name"] == "HOST-10.1.1.1"
@@ -444,11 +548,20 @@ def test_where_used_direct_address_match(client):
 def test_where_used_indirect_via_group(client):
     packages = [{"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0}]
     policies = [
-        {"policyid": 55, "name": "block-out", "action": "deny",
-         "srcaddr": [{"name": "SERVERS"}], "dstaddr": [{"name": "any"}], "service": []},
+        {
+            "policyid": 55,
+            "name": "block-out",
+            "action": "deny",
+            "srcaddr": [{"name": "SERVERS"}],
+            "dstaddr": [{"name": "any"}],
+            "service": [],
+        },
     ]
     addr_groups = [
-        {"name": "SERVERS", "member": [{"name": "HOST-10.1.1.1"}, {"name": "HOST-10.1.1.2"}]},
+        {
+            "name": "SERVERS",
+            "member": [{"name": "HOST-10.1.1.1"}, {"name": "HOST-10.1.1.2"}],
+        },
         {"name": "OTHER-GROUP", "member": [{"name": "HOST-10.2.2.2"}]},
     ]
     with patch("app.routes.hygiene_routes.make_client") as mc:
@@ -456,8 +569,11 @@ def test_where_used_indirect_via_group(client):
         inst.get_policy_packages.return_value = packages
         inst.get_policies.return_value = policies
         inst.get_address_groups.return_value = addr_groups
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
-                     {"name": "HOST-10.1.1.1", "category": "address"})
+        resp = _post(
+            client,
+            "/api/hygiene/adoms/TestADOM/objects/where-used",
+            {"name": "HOST-10.1.1.1", "category": "address"},
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert len(data["groups"]) == 1
@@ -470,16 +586,25 @@ def test_where_used_indirect_via_group(client):
 def test_where_used_not_referenced(client):
     packages = [{"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0}]
     policies = [
-        {"policyid": 1, "name": "some-rule", "action": "accept",
-         "srcaddr": [{"name": "other-obj"}], "dstaddr": [{"name": "any"}], "service": []},
+        {
+            "policyid": 1,
+            "name": "some-rule",
+            "action": "accept",
+            "srcaddr": [{"name": "other-obj"}],
+            "dstaddr": [{"name": "any"}],
+            "service": [],
+        },
     ]
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value
         inst.get_policy_packages.return_value = packages
         inst.get_policies.return_value = policies
         inst.get_address_groups.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
-                     {"name": "UNUSED-OBJ", "category": "address"})
+        resp = _post(
+            client,
+            "/api/hygiene/adoms/TestADOM/objects/where-used",
+            {"name": "UNUSED-OBJ", "category": "address"},
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["groups"] == []
@@ -490,17 +615,25 @@ def test_where_used_not_referenced(client):
 def test_where_used_service_category(client):
     packages = [{"name": "Corp-Policy", "path": "Corp-Policy", "obj ver": 0}]
     policies = [
-        {"policyid": 10, "name": "web-rule", "action": "accept",
-         "srcaddr": [{"name": "any"}], "dstaddr": [{"name": "any"}],
-         "service": [{"name": "HTTPS-8443"}]},
+        {
+            "policyid": 10,
+            "name": "web-rule",
+            "action": "accept",
+            "srcaddr": [{"name": "any"}],
+            "dstaddr": [{"name": "any"}],
+            "service": [{"name": "HTTPS-8443"}],
+        },
     ]
     with patch("app.routes.hygiene_routes.make_client") as mc:
         inst = mc.return_value.__enter__.return_value
         inst.get_policy_packages.return_value = packages
         inst.get_policies.return_value = policies
         inst.get_service_groups.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
-                     {"name": "HTTPS-8443", "category": "service"})
+        resp = _post(
+            client,
+            "/api/hygiene/adoms/TestADOM/objects/where-used",
+            {"name": "HTTPS-8443", "category": "service"},
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert len(data["rules"]) == 1
@@ -516,13 +649,26 @@ def test_where_used_multiple_packages(client):
         {"name": "Edge-Policy", "path": "Folder/Edge-Policy", "obj ver": 0},
     ]
     policies_corp = [
-        {"policyid": 1, "name": "rule-a", "action": "accept",
-         "srcaddr": [{"name": "HOST-10.1.1.1"}], "dstaddr": [{"name": "any"}], "service": []},
+        {
+            "policyid": 1,
+            "name": "rule-a",
+            "action": "accept",
+            "srcaddr": [{"name": "HOST-10.1.1.1"}],
+            "dstaddr": [{"name": "any"}],
+            "service": [],
+        },
     ]
     policies_edge = [
-        {"policyid": 2, "name": "rule-b", "action": "deny",
-         "srcaddr": [{"name": "any"}], "dstaddr": [{"name": "HOST-10.1.1.1"}], "service": []},
+        {
+            "policyid": 2,
+            "name": "rule-b",
+            "action": "deny",
+            "srcaddr": [{"name": "any"}],
+            "dstaddr": [{"name": "HOST-10.1.1.1"}],
+            "service": [],
+        },
     ]
+
     def side_effect(adom, pkg_path):
         if pkg_path == "Corp-Policy":
             return policies_corp
@@ -535,8 +681,11 @@ def test_where_used_multiple_packages(client):
         inst.get_policy_packages.return_value = packages
         inst.get_policies.side_effect = side_effect
         inst.get_address_groups.return_value = []
-        resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
-                     {"name": "HOST-10.1.1.1", "category": "address"})
+        resp = _post(
+            client,
+            "/api/hygiene/adoms/TestADOM/objects/where-used",
+            {"name": "HOST-10.1.1.1", "category": "address"},
+        )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["packages_scanned"] == 2
@@ -548,12 +697,18 @@ def test_where_used_multiple_packages(client):
 
 
 def test_where_used_missing_name_returns_400(client):
-    resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
-                 {"category": "address"})
+    resp = _post(
+        client,
+        "/api/hygiene/adoms/TestADOM/objects/where-used",
+        {"category": "address"},
+    )
     assert resp.status_code == 400
 
 
 def test_where_used_invalid_category_returns_400(client):
-    resp = _post(client, "/api/hygiene/adoms/TestADOM/objects/where-used",
-                 {"name": "HOST-10.1.1.1", "category": "vip"})
+    resp = _post(
+        client,
+        "/api/hygiene/adoms/TestADOM/objects/where-used",
+        {"name": "HOST-10.1.1.1", "category": "vip"},
+    )
     assert resp.status_code == 400

@@ -84,12 +84,12 @@ The check registry in `app/device_review.py` is the single place to add checks:
 
 ```python
 {
-    "key":          "my_check",
-    "name":         "Display Name",
-    "description":  "One-line summary",
-    "data_keys":    ["interfaces"],       # which device data blobs to fetch
-    "params_schema": [],                  # [] = binary, or list of input descriptors
-    "run":          _my_check_function,   # callable(device_name, device_data, params) -> list[Row]
+    "key": "my_check",
+    "name": "Display Name",
+    "description": "One-line summary",
+    "data_keys": ["interfaces"],  # which device data blobs to fetch
+    "params_schema": [],  # [] = binary, or list of input descriptors
+    "run": _my_check_function,  # callable(device_name, device_data, params) -> list[Row]
 }
 ```
 

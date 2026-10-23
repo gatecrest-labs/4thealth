@@ -1,4 +1,5 @@
 import os
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 import app.zone_db as zdb
@@ -6,16 +7,25 @@ import app.zone_db as zdb
 
 def _zone(name, trust_level=None):
     return {
-        "domain": "Default", "is_shared": False, "description": "",
-        "subnets": [], "children": [], "parents": [],
+        "domain": "Default",
+        "is_shared": False,
+        "description": "",
+        "subnets": [],
+        "children": [],
+        "parents": [],
         **({"trust_level": trust_level} if trust_level is not None else {}),
     }
 
 
 def _policy(from_zone, to_zone, access_type="allow all"):
     return {
-        "policy_set": "Corp", "from_zone": from_zone, "to_zone": to_zone,
-        "access_type": access_type, "severity": "high", "services": [], "description": "",
+        "policy_set": "Corp",
+        "from_zone": from_zone,
+        "to_zone": to_zone,
+        "access_type": access_type,
+        "severity": "high",
+        "services": [],
+        "description": "",
     }
 
 
@@ -81,7 +91,10 @@ def test_no_trust_levels_no_mismatches():
 def test_trust_mismatch_flagged():
     """Allow-all from low-trust (10) to high-trust (90) zone is flagged."""
     db = {
-        "zones": {"Guest": _zone("Guest", trust_level=10), "Server": _zone("Server", trust_level=90)},
+        "zones": {
+            "Guest": _zone("Guest", trust_level=10),
+            "Server": _zone("Server", trust_level=90),
+        },
         "policies": [_policy("Guest", "Server", "allow all")],
     }
     report = zdb.compute_segmentation_report(db)
@@ -106,7 +119,10 @@ def test_trust_mismatch_below_threshold_not_flagged():
 def test_trust_mismatch_block_policy_not_flagged():
     """block-all policy between mismatched trust zones is not a mismatch."""
     db = {
-        "zones": {"Guest": _zone("Guest", trust_level=10), "Server": _zone("Server", trust_level=90)},
+        "zones": {
+            "Guest": _zone("Guest", trust_level=10),
+            "Server": _zone("Server", trust_level=90),
+        },
         "policies": [_policy("Guest", "Server", "block all")],
     }
     report = zdb.compute_segmentation_report(db)

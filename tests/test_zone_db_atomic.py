@@ -1,10 +1,14 @@
-import os, json, inspect
+import os
+import json
+import inspect
+
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-ci")
 
 
 def test_save_db_is_atomic(tmp_path, monkeypatch):
     """save_db should write to a temp file and rename, not write in-place."""
     import app.zone_db as zdb
+
     monkeypatch.setattr(zdb, "DB_PATH", tmp_path / "policy_db.json")
 
     db = {"zones": {}, "policies": []}
@@ -19,6 +23,8 @@ def test_save_db_is_atomic(tmp_path, monkeypatch):
 def test_save_db_uses_replace(tmp_path, monkeypatch):
     """Verify os.replace is used (not a plain open write) by inspecting source."""
     import app.zone_db as zdb
+
     src = inspect.getsource(zdb.save_db)
-    assert "os.replace" in src or "replace(" in src or "atomic_write_json(" in src, \
+    assert "os.replace" in src or "replace(" in src or "atomic_write_json(" in src, (
         "save_db must use os.replace or atomic_write_json for atomic writes"
+    )

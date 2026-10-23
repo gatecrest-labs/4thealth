@@ -1,4 +1,5 @@
 """Smoke tests — verify the app can be imported and instantiated."""
+
 import os
 
 import pytest
@@ -9,6 +10,7 @@ def app():
     os.environ.setdefault("SECRET_KEY", "test-secret")
     os.environ.setdefault("FMG_PRIMARY_HOST", "127.0.0.1")
     from app import create_app
+
     return create_app()
 
 

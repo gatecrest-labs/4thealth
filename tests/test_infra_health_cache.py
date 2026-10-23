@@ -59,9 +59,7 @@ def test_poll_all_targets_populates_cache_for_supported_types(snmp_targets):
 
 
 def test_poll_all_targets_skips_unsupported_type(snmp_targets):
-    with patch.object(
-        cache_mod, "_snmp_get", new=AsyncMock(return_value=[1.0, 2.0])
-    ):
+    with patch.object(cache_mod, "_snmp_get", new=AsyncMock(return_value=[1.0, 2.0])):
         cache_mod.poll_all_targets()
 
     assert cache_mod.get_cached("10.0.0.4") is None
@@ -121,7 +119,11 @@ def test_resolve_snmp_creds_per_device_override(monkeypatch):
     monkeypatch.setattr(cache_mod.Config, "SNMP_AUTH_PROTOCOL", "SHA")
     monkeypatch.setattr(cache_mod.Config, "SNMP_PRIV_PROTOCOL", "AES")
 
-    target = {"host": "10.0.0.9", "type": "FortiAuthenticator", "snmp_user": "override-user"}
+    target = {
+        "host": "10.0.0.9",
+        "type": "FortiAuthenticator",
+        "snmp_user": "override-user",
+    }
     creds = cache_mod._resolve_snmp_creds(target)
 
     assert creds["user"] == "override-user"
@@ -139,6 +141,7 @@ def test_poll_all_targets_skips_target_missing_host(snmp_targets, monkeypatch):
             {"label": "FMG-01", "host": "10.0.0.1", "type": "FortiManager"},
         ],
     )
+
     async def _fake(host, oids, creds):
         return [1.0, 2.0, 100.0] if len(oids) == 3 else [1.0, 2.0]
 

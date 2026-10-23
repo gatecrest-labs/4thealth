@@ -448,6 +448,7 @@ all rows into the new database:
 ```python
 #!/usr/bin/env python3
 """migrate_to_sqlite.py — run once to seed zone.db from policy_db.json"""
+
 import json, sqlite3, sys
 from pathlib import Path
 
@@ -468,24 +469,38 @@ con.execute("""CREATE TABLE IF NOT EXISTS policies (
 )""")
 
 for name, z in db_json["zones"].items():
-    con.execute("INSERT OR REPLACE INTO zones VALUES (?,?,?,?,?,?,?)", (
-        name, z.get("domain","Default"), int(z.get("is_shared", False)),
-        z.get("description",""),
-        json.dumps(z.get("subnets",[])),
-        json.dumps(z.get("children",[])),
-        json.dumps(z.get("parents",[])),
-    ))
+    con.execute(
+        "INSERT OR REPLACE INTO zones VALUES (?,?,?,?,?,?,?)",
+        (
+            name,
+            z.get("domain", "Default"),
+            int(z.get("is_shared", False)),
+            z.get("description", ""),
+            json.dumps(z.get("subnets", [])),
+            json.dumps(z.get("children", [])),
+            json.dumps(z.get("parents", [])),
+        ),
+    )
 
 for p in db_json["policies"]:
-    con.execute("INSERT INTO policies (policy_set,from_zone,to_zone,access_type,severity,services,description) VALUES (?,?,?,?,?,?,?)", (
-        p.get("policy_set",""), p.get("from_zone",""), p.get("to_zone",""),
-        p.get("access_type",""), p.get("severity",""),
-        json.dumps(p.get("services",[])), p.get("description",""),
-    ))
+    con.execute(
+        "INSERT INTO policies (policy_set,from_zone,to_zone,access_type,severity,services,description) VALUES (?,?,?,?,?,?,?)",
+        (
+            p.get("policy_set", ""),
+            p.get("from_zone", ""),
+            p.get("to_zone", ""),
+            p.get("access_type", ""),
+            p.get("severity", ""),
+            json.dumps(p.get("services", [])),
+            p.get("description", ""),
+        ),
+    )
 
 con.commit()
 con.close()
-print(f"Migrated {len(db_json['zones'])} zones and {len(db_json['policies'])} policies to {dst}")
+print(
+    f"Migrated {len(db_json['zones'])} zones and {len(db_json['policies'])} policies to {dst}"
+)
 ```
 
 Run it once before starting the containers:

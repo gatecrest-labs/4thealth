@@ -1,8 +1,8 @@
 """Tests for /admin/api/rule-policy/* endpoints in admin_routes.py."""
+
 import json
 import os
 import time
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -19,6 +19,7 @@ _TEST_USERS = {"admin": {"password_hash": "$2b$12$placeholder", "role": "admin"}
 @pytest.fixture
 def app():
     from app import create_app
+
     return create_app()
 
 
@@ -43,6 +44,7 @@ def admin_session(client):
 def tmp_jobs(tmp_path, monkeypatch):
     """Redirect the scheduler's jobs file to a temp path for test isolation."""
     import app.rule_policy_scheduler as sched
+
     monkeypatch.setattr(sched, "_JOBS_PATH", tmp_path / "rule_policy_jobs.json")
     yield
 
@@ -119,7 +121,9 @@ def test_create_and_list_job(client, admin_session):
 
 
 def test_update_job_not_found(client, admin_session):
-    resp = _put(client, "/admin/api/rule-policy/jobs/nonexistent-id", _valid_job(name="Updated"))
+    resp = _put(
+        client, "/admin/api/rule-policy/jobs/nonexistent-id", _valid_job(name="Updated")
+    )
     assert resp.status_code == 404
     assert "error" in resp.get_json()
 
@@ -146,6 +150,7 @@ def test_run_job_starts_thread(client, admin_session):
     job_id = create_resp.get_json()["id"]
 
     import app.rule_policy_scheduler as sched
+
     with mock.patch.object(sched, "run_job_now") as mock_run:
         resp = _post(client, f"/admin/api/rule-policy/jobs/{job_id}/run")
         assert resp.status_code == 202

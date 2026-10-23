@@ -47,7 +47,12 @@ def test_infrastructure_uses_snmp_cache_for_fortimanager(monkeypatch, logged_in_
     )
     with patch(
         "app.infra_health_cache.get_cached",
-        return_value={"cpu": 41.0, "mem": 62.0, "snmp_status": "ok", "last_updated": "2026-07-03T00:00:00"},
+        return_value={
+            "cpu": 41.0,
+            "mem": 62.0,
+            "snmp_status": "ok",
+            "last_updated": "2026-07-03T00:00:00",
+        },
     ):
         resp = logged_in_admin.get("/api/infrastructure")
     assert resp.status_code == 200
@@ -63,11 +68,23 @@ def test_infrastructure_shows_gray_on_snmp_timeout(monkeypatch, logged_in_admin)
     monkeypatch.setattr(
         Config,
         "INFRA_TARGETS",
-        [{"label": "FAC-01", "host": "10.0.0.3", "type": "FortiAuthenticator", "token": "x"}],
+        [
+            {
+                "label": "FAC-01",
+                "host": "10.0.0.3",
+                "type": "FortiAuthenticator",
+                "token": "x",
+            }
+        ],
     )
     with patch(
         "app.infra_health_cache.get_cached",
-        return_value={"cpu": None, "mem": None, "snmp_status": "timeout", "last_updated": "2026-07-03T00:00:00"},
+        return_value={
+            "cpu": None,
+            "mem": None,
+            "snmp_status": "timeout",
+            "last_updated": "2026-07-03T00:00:00",
+        },
     ):
         resp = logged_in_admin.get("/api/infrastructure")
     data = resp.get_json()
@@ -80,7 +97,14 @@ def test_infrastructure_no_cache_entry_yet(monkeypatch, logged_in_admin):
     monkeypatch.setattr(
         Config,
         "INFRA_TARGETS",
-        [{"label": "FAZ-01", "host": "10.0.0.2", "type": "FortiAnalyzer", "token": "x"}],
+        [
+            {
+                "label": "FAZ-01",
+                "host": "10.0.0.2",
+                "type": "FortiAnalyzer",
+                "token": "x",
+            }
+        ],
     )
     with patch("app.infra_health_cache.get_cached", return_value=None):
         resp = logged_in_admin.get("/api/infrastructure")

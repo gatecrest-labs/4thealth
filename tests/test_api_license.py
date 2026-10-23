@@ -48,7 +48,9 @@ def test_all_license_returns_cache(logged_in):
         "status": "ok",
         "error": None,
     }
-    with patch("app.routes.api_routes.license_cache.get_cached", return_value=fake_cache):
+    with patch(
+        "app.routes.api_routes.license_cache.get_cached", return_value=fake_cache
+    ):
         rv = logged_in.get("/api/devices/all/license")
     assert rv.status_code == 200
     data = json.loads(rv.data)
