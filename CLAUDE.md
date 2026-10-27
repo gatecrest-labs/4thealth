@@ -221,6 +221,8 @@ Two-section layout (permission key: `versions`):
 
 1. **Device Version** (top) — global all-ADOM firmware version bar chart (pre-warmed cache, `app/versions_cache.py`) + per-ADOM version bar chart. Select ADOM from dropdown; click a bar to list devices on that version.
 
+   **Hardware Model charts** sit beneath each version chart (global and per-ADOM): same bar style, online devices only, bucketed by `platform_str` via `modelBucket()` in `versions.js`. Any model matching `VM` (FortiGate-VM64-AWS/-AZURE/-GCP/-KVM…) is grouped into one **Virtual** bar; blank/`n/a` models are **Unknown**. Global bars open a device list (CSV/JSON/PDF); per-ADOM bars filter the device list below, combinable with the version filter. `versions_cache.py` records `ip`, `serial` and `platform` per device to support this.
+
 2. **License Status** (below) — SVG donut chart showing Licensed / Expired / Unknown device counts for the selected ADOM. Data sourced from `app/license_cache.py` (background cache, default 60-minute refresh, configurable via `LICENSE_CACHE_INTERVAL_MIN` env var). Click a donut slice or legend item to expand a paginated device list (Device, Status, Expires, Firmware, ADOM). Export the list as CSV, JSON, or PDF. A **Refresh** button triggers an immediate cache rebuild via `POST /api/devices/all/license/refresh`.
 
 **License API endpoints** (all `@tab_required("versions")`):

@@ -94,6 +94,11 @@ def _run_job(app):
                         result.append(
                             {
                                 "name": d.get("name", ""),
+                                "ip": d.get("ip", d.get("mgmt_ip", "n/a")),
+                                "serial": d.get("sn", d.get("serial", "n/a")),
+                                "platform": d.get(
+                                    "platform_str", d.get("platform", "n/a")
+                                ),
                                 "version": version,
                                 "adom": adom,
                                 "status": "green" if conn_status == 1 else "offline",
