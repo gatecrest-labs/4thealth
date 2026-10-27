@@ -90,6 +90,15 @@ function normalizeVersions(devices) {
   });
 }
 
+/* ── HA role badge ─────────────────────────────────────────────────────── */
+function haRoleBadge(role) {
+  if (!role) return '';
+  const colour = role === 'Primary'
+    ? 'background:#dbeafe;color:#1e40af'
+    : 'background:#f3f4f6;color:#374151';
+  return ` <span style="display:inline-block;font-size:.65em;padding:1px 5px;border-radius:3px;${colour};font-weight:600;vertical-align:middle;margin-left:4px">${escHtml(role)}</span>`;
+}
+
 /* ── Hardware model bucketing ──────────────────────────────────────────── */
 // VM-based FortiGates (FortiGate-VM64-KVM, -AWS, -AZURE, -GCP, …) share one
 // "Virtual" bar; devices with no model reported fall into "Unknown".
@@ -141,7 +150,7 @@ function buildGlobalModelChart(devices) {
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="version-summary">
     <span class="version-total">${online.length}</span>
-    <span class="version-total-label">online device${online.length !== 1 ? 's' : ''} by hardware model — <strong>All ADOMs</strong>${offlineNote}</span>
+    <span class="version-total-label">online unit${online.length !== 1 ? 's' : ''} by hardware model — <strong>All ADOMs</strong>${offlineNote}</span>
   </div>
   <div class="version-chart" id="globalModelChart">${modelChartRows(online, globalSelModel, m => m)}</div>
 </div>`;
@@ -189,7 +198,7 @@ function _renderGlobalModelDetail(model) {
 
   const tableRows = slice.map(d => `
 <tr>
-  <td>${escHtml(d.name)}</td>
+  <td>${escHtml(d.name)}${haRoleBadge(d.ha_role)}</td>
   <td><code>${escHtml(d.ip)}</code></td>
   <td>${escHtml(d.platform)}</td>
   <td>${escHtml(d.version || 'unknown')}</td>
@@ -205,7 +214,7 @@ function _renderGlobalModelDetail(model) {
   panel.innerHTML = `
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="table-controls" style="margin-bottom:.75rem">
-    <span style="font-weight:600">${escHtml(model)} &mdash; ${matched.length} device${matched.length !== 1 ? 's' : ''} across all ADOMs &mdash; page ${globalModelPage} of ${pageTotal}</span>
+    <span style="font-weight:600">${escHtml(model)} &mdash; ${matched.length} unit${matched.length !== 1 ? 's' : ''} across all ADOMs &mdash; page ${globalModelPage} of ${pageTotal}</span>
     <div class="table-controls-right">
       <select id="globalModelSize" class="form-select-sm">${sizeOpts}</select>
       <span>per page</span>
@@ -404,7 +413,7 @@ function _renderGlobalDetail(ver) {
 
   const tableRows = slice.map(d => `
 <tr>
-  <td>${escHtml(d.name)}</td>
+  <td>${escHtml(d.name)}${haRoleBadge(d.ha_role)}</td>
   <td><code>${escHtml(d.ip)}</code></td>
   <td>${escHtml(d.platform)}</td>
   <td>${escHtml(d.adom || '—')}</td>
@@ -418,7 +427,7 @@ function _renderGlobalDetail(ver) {
   panel.innerHTML = `
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="table-controls" style="margin-bottom:.75rem">
-    <span style="font-weight:600">${escHtml(ver)} &mdash; ${matched.length} device${matched.length !== 1 ? 's' : ''} across all ADOMs &mdash; page ${globalDetPage} of ${pageTotal}</span>
+    <span style="font-weight:600">${escHtml(ver)} &mdash; ${matched.length} unit${matched.length !== 1 ? 's' : ''} across all ADOMs &mdash; page ${globalDetPage} of ${pageTotal}</span>
     <div class="table-controls-right">
       <select id="globalDetSize" class="form-select-sm">${sizeOpts}</select>
       <span>per page</span>
@@ -569,7 +578,7 @@ async function loadVersions(adom) {
   container.innerHTML = '<div class="loading-placeholder">Loading devices…</div>';
   loadLicenseStatus(adom);
   try {
-    const resp = await fetch(`/api/adoms/${encodeURIComponent(adom)}/devices`);
+    const resp = await fetch(`/api/adoms/${encodeURIComponent(adom)}/units`);
     if (resp.status === 401) { location.href = '/login'; return; }
     const data = await resp.json();
     if (!Array.isArray(data)) {
@@ -657,7 +666,7 @@ function renderPage() {
     const isOffline = d.status === 'offline';
     return `
 <tr${isOffline ? ' style="opacity:0.6"' : ''}>
-  <td>${escHtml(d.name)}${isOffline ? offlineBadge : ''}</td>
+  <td>${escHtml(d.name)}${isOffline ? offlineBadge : ''}${haRoleBadge(d.ha_role)}</td>
   <td><code>${escHtml(d.ip)}</code></td>
   <td>${escHtml(d.platform)}</td>
   <td>${escHtml(d.version || 'unknown')}</td>
@@ -672,7 +681,7 @@ function renderPage() {
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="version-summary">
     <span class="version-total">${chartTotal}</span>
-    <span class="version-total-label">online device${chartTotal !== 1 ? 's' : ''} in <strong>${escHtml(currentAdom)}</strong>${offlineNote}</span>
+    <span class="version-total-label">online unit${chartTotal !== 1 ? 's' : ''} in <strong>${escHtml(currentAdom)}</strong>${offlineNote}</span>
     ${selectedVer || selectedModel ? `<button class="btn btn-sm" id="clearFilter" style="margin-left:1rem;background:var(--surface-alt);border:1px solid var(--border);color:var(--text)">&#10005; Clear filter</button>` : ''}
   </div>
   <div class="version-chart" id="versionChart">${chartRows}</div>
@@ -682,7 +691,7 @@ function renderPage() {
 <div class="table-wrapper" style="padding:1.5rem;margin-bottom:1.5rem">
   <div class="version-summary">
     <span class="version-total">${chartTotal}</span>
-    <span class="version-total-label">online device${chartTotal !== 1 ? 's' : ''} by hardware model in <strong>${escHtml(currentAdom)}</strong>${offlineNote}</span>
+    <span class="version-total-label">online unit${chartTotal !== 1 ? 's' : ''} by hardware model in <strong>${escHtml(currentAdom)}</strong>${offlineNote}</span>
   </div>
   <div class="version-chart" id="modelChart">${modelChartRows(online, selectedModel, m => `Click to filter devices by ${m}`)}</div>
   <p class="version-click-hint">Click a model bar to filter the device list below.</p>
