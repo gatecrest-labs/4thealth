@@ -54,7 +54,7 @@ def _run_job(app):
     t0 = _time.monotonic()
 
     try:
-        from app.fmg_helpers import make_client
+        from app.fmg_helpers import make_client, expand_ha_members
 
         result = []
         with make_client() as client:
@@ -91,19 +91,11 @@ def _run_job(app):
                         conn_status = d.get(
                             "conn_status", d.get("connection_status", -1)
                         )
-                        result.append(
-                            {
-                                "name": d.get("name", ""),
-                                "ip": d.get("ip", d.get("mgmt_ip", "n/a")),
-                                "serial": d.get("sn", d.get("serial", "n/a")),
-                                "platform": d.get(
-                                    "platform_str", d.get("platform", "n/a")
-                                ),
-                                "version": version,
-                                "adom": adom,
-                                "status": "green" if conn_status == 1 else "offline",
-                            }
-                        )
+                        try:
+                            conn_status = int(conn_status)
+                        except (TypeError, ValueError):
+                            conn_status = -1
+                        result.extend(expand_ha_members(d, version, adom, conn_status))
                 except Exception as exc:
                     logger.warning(
                         "versions_cache: get_devices(%s) failed: %s", adom, exc

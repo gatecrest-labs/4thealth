@@ -42,6 +42,57 @@ _FORTIGUARD_SUBS = [
 ]
 
 
+def expand_ha_members(d: dict, version: str, adom: str, conn_status: int):
+    """Yield one device-record dict per physical unit in an HA cluster (or one for standalone).
+
+    FortiManager returns one record per HA cluster; the primary's ``ha_slave`` list
+    holds the peer members.  This function expands that into individual entries so
+    counts reflect real hardware units.
+
+    Each yielded dict has the same keys as the versions-cache records:
+        name, ip, serial, platform, version, adom, status, ha_role
+
+    ``ha_role`` is "Primary" / "Secondary" for HA members, "" for standalone.
+    """
+    platform = str(d.get("platform_str") or d.get("platform") or "n/a").strip() or "n/a"
+    try:
+        ha_mode = int(d.get("ha_mode", 0))
+    except (TypeError, ValueError):
+        ha_mode = 0
+
+    slaves = [s for s in (d.get("ha_slave") or []) if isinstance(s, dict)]
+    is_ha = ha_mode != 0 and bool(slaves)
+
+    # Primary / standalone entry
+    yield {
+        "name": d.get("name", ""),
+        "ip": str(d.get("ip") or d.get("mgmt_ip") or "n/a"),
+        "serial": str(d.get("sn") or d.get("serial") or "n/a"),
+        "platform": platform,
+        "version": version,
+        "adom": adom,
+        "status": "green" if conn_status == 1 else "offline",
+        "ha_role": "Primary" if is_ha else "",
+    }
+
+    # HA peer members
+    for slave in slaves:
+        try:
+            sc = int(slave.get("conn_status", conn_status))
+        except (TypeError, ValueError):
+            sc = conn_status
+        yield {
+            "name": str(slave.get("name") or d.get("name") or ""),
+            "ip": str(slave.get("ip") or slave.get("mgmt_ip") or "n/a"),
+            "serial": str(slave.get("sn") or slave.get("serial") or "n/a"),
+            "platform": platform,  # same model as primary
+            "version": version,  # same firmware as primary
+            "adom": adom,
+            "status": "green" if sc == 1 else "offline",
+            "ha_role": "Secondary",
+        }
+
+
 def parse_license_payload(raw_payload) -> dict:
     """Parse FortiOS /api/v2/monitor/license/status results dict.
 
