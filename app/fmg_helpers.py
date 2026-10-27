@@ -93,7 +93,14 @@ def expand_ha_members(d: dict, version: str, adom: str, conn_status: int):
             sc = conn_status
         yield {
             "name": str(slave.get("name") or d.get("name") or ""),
-            "ip": str(slave.get("ip") or slave.get("mgmt_ip") or "n/a"),
+            # Members rarely report their own IP; fall back to the cluster's
+            "ip": str(
+                slave.get("ip")
+                or slave.get("mgmt_ip")
+                or d.get("ip")
+                or d.get("mgmt_ip")
+                or "n/a"
+            ),
             "serial": str(slave.get("sn") or slave.get("serial") or "n/a"),
             "platform": platform,
             "version": version,
