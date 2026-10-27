@@ -45,14 +45,15 @@ _FORTIGUARD_SUBS = [
 def expand_ha_members(d: dict, version: str, adom: str, conn_status: int):
     """Yield one device-record dict per physical unit in an HA cluster (or one for standalone).
 
-    FortiManager returns one record per HA cluster; the primary's ``ha_slave`` list
-    holds the peer members.  This function expands that into individual entries so
-    counts reflect real hardware units.
+    FortiManager stores HA clusters as a single logical record whose ``ha_slave``
+    list contains ALL physical members (the cluster record itself is not a unit).
+    Standalone devices (no ha_slave entries) yield their own record unchanged.
 
     Each yielded dict has the same keys as the versions-cache records:
         name, ip, serial, platform, version, adom, status, ha_role
 
-    ``ha_role`` is "Primary" / "Secondary" for HA members, "" for standalone.
+    ``ha_role`` is "Primary" / "Secondary" (derived from the ``prio`` field — higher
+    priority = primary; first entry wins on a tie).  Standalone devices get "".
     """
     platform = str(d.get("platform_str") or d.get("platform") or "n/a").strip() or "n/a"
     try:
@@ -61,22 +62,31 @@ def expand_ha_members(d: dict, version: str, adom: str, conn_status: int):
         ha_mode = 0
 
     slaves = [s for s in (d.get("ha_slave") or []) if isinstance(s, dict)]
-    is_ha = ha_mode != 0 and bool(slaves)
 
-    # Primary / standalone entry
-    yield {
-        "name": d.get("name", ""),
-        "ip": str(d.get("ip") or d.get("mgmt_ip") or "n/a"),
-        "serial": str(d.get("sn") or d.get("serial") or "n/a"),
-        "platform": platform,
-        "version": version,
-        "adom": adom,
-        "status": "green" if conn_status == 1 else "offline",
-        "ha_role": "Primary" if is_ha else "",
-    }
+    # Standalone device — yield the record as-is
+    if ha_mode == 0 or not slaves:
+        yield {
+            "name": d.get("name", ""),
+            "ip": str(d.get("ip") or d.get("mgmt_ip") or "n/a"),
+            "serial": str(d.get("sn") or d.get("serial") or "n/a"),
+            "platform": platform,
+            "version": version,
+            "adom": adom,
+            "status": "green" if conn_status == 1 else "offline",
+            "ha_role": "",
+        }
+        return
 
-    # HA peer members
-    for slave in slaves:
+    # HA cluster — the cluster record is logical; physical units are in ha_slave.
+    # Determine which member is primary using HA priority (higher prio = primary).
+    def _prio(s):
+        try:
+            return int(s.get("prio", 0))
+        except (TypeError, ValueError):
+            return 0
+
+    slaves_sorted = sorted(slaves, key=_prio, reverse=True)
+    for idx, slave in enumerate(slaves_sorted):
         try:
             sc = int(slave.get("conn_status", conn_status))
         except (TypeError, ValueError):
@@ -85,11 +95,11 @@ def expand_ha_members(d: dict, version: str, adom: str, conn_status: int):
             "name": str(slave.get("name") or d.get("name") or ""),
             "ip": str(slave.get("ip") or slave.get("mgmt_ip") or "n/a"),
             "serial": str(slave.get("sn") or slave.get("serial") or "n/a"),
-            "platform": platform,  # same model as primary
-            "version": version,  # same firmware as primary
+            "platform": platform,
+            "version": version,
             "adom": adom,
             "status": "green" if sc == 1 else "offline",
-            "ha_role": "Secondary",
+            "ha_role": "Primary" if idx == 0 else "Secondary",
         }
 
 
