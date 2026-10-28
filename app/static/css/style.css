@@ -724,6 +724,10 @@ a:hover { text-decoration: underline; }
 
 .version-row:hover { background: var(--surface-alt); }
 
+/* Hardware model names (e.g. FortiGateRugged-60F, FortiGate-ARM64-AWS) are longer than version strings */
+.version-row.model-row { grid-template-columns: 220px 1fr 120px 60px; }
+.version-row.model-row .version-name { overflow: hidden; text-overflow: ellipsis; }
+
 .version-row.ver-row-active {
   background: rgba(59,130,246,.12);
   outline: 2px solid var(--accent);
