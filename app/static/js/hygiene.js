@@ -69,7 +69,7 @@ async function loadAdoms() {
     if (resp.status === 401) { location.href = '/login'; return; }
     const adoms = await resp.json();
     if (!Array.isArray(adoms)) return;
-    ['pvAdom', 'olAdom', 'ilAdom', 'nlAdom'].forEach(id => {
+    ['pvAdom', 'rlAdom', 'olAdom', 'ilAdom', 'nlAdom'].forEach(id => {
       const sel = document.getElementById(id);
       adoms.forEach(a => {
         const opt = document.createElement('option');

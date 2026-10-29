@@ -150,6 +150,14 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         init_license_scheduler(app)
 
+    if not app.config.get("TESTING") and not app.config.get(
+        "_RULE_LOOKUP_CACHE_STARTED"
+    ):
+        app.config["_RULE_LOOKUP_CACHE_STARTED"] = True
+        from app.rule_lookup_cache import init_scheduler as init_rule_lookup_scheduler
+
+        init_rule_lookup_scheduler(app)
+
     if not app.config.get("TESTING") and not app.config.get("_ADOM_CACHE_STARTED"):
         app.config["_ADOM_CACHE_STARTED"] = True
         from app.adom_cache import init_scheduler as init_adom_scheduler
