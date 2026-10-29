@@ -77,7 +77,10 @@ def _rule(name, **kw):
 
 def _entry(rules):
     ctx = Context(
-        addr={"corp": frozenset({N("10.1.0.0/16")}), "other": frozenset({N("9.9.0.0/16")})},
+        addr={
+            "corp": frozenset({N("10.1.0.0/16")}),
+            "other": frozenset({N("9.9.0.0/16")}),
+        },
         svc=ServiceCatalog(
             [{"name": "HTTPS", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "443"}], []
         ),
@@ -211,7 +214,13 @@ def test_unsearchable_ports_are_400(client, port):
 
 def test_system_adom_is_404(client):
     with patch("app.rule_lookup_cache.refresh_adom_async") as refresh:
-        r = _post(client, "/api/hygiene/adoms/FortiManager_Managed/rule-lookup", {"src": "10.1.1.1"})
-        r2 = _post(client, "/api/hygiene/adoms/FortiManager_Managed/rule-lookup/refresh", {})
+        r = _post(
+            client,
+            "/api/hygiene/adoms/FortiManager_Managed/rule-lookup",
+            {"src": "10.1.1.1"},
+        )
+        r2 = _post(
+            client, "/api/hygiene/adoms/FortiManager_Managed/rule-lookup/refresh", {}
+        )
     assert r.status_code == 404 and r2.status_code == 404
     refresh.assert_not_called()

@@ -53,9 +53,16 @@ def test_parse_ip_query_rejects_bad_input(text):
 
 
 def test_compare_networks_labels():
-    assert compare_networks([N("10.1.1.5/32")], frozenset({N("10.1.0.0/16")})) == "broader"
-    assert compare_networks([N("10.1.1.0/24")], frozenset({N("10.1.1.2/32")})) == "narrower"
-    assert compare_networks([N("10.1.1.0/24")], frozenset({N("10.1.1.0/24")})) == "exact"
+    assert (
+        compare_networks([N("10.1.1.5/32")], frozenset({N("10.1.0.0/16")})) == "broader"
+    )
+    assert (
+        compare_networks([N("10.1.1.0/24")], frozenset({N("10.1.1.2/32")}))
+        == "narrower"
+    )
+    assert (
+        compare_networks([N("10.1.1.0/24")], frozenset({N("10.1.1.0/24")})) == "exact"
+    )
     assert (
         compare_networks(
             [N("10.1.0.0/16")], frozenset({N("10.1.0.0/24"), N("10.2.0.0/24")})
@@ -98,7 +105,10 @@ def test_compare_ranges():
         compare_ranges([PortRange("tcp", 443, 443)], [PortRange("tcp", 443, 443)])
         == "exact"
     )
-    assert compare_ranges([PortRange("tcp", 443, 443)], [PortRange("icmp", 0, 65535)]) is None
+    assert (
+        compare_ranges([PortRange("tcp", 443, 443)], [PortRange("icmp", 0, 65535)])
+        is None
+    )
     assert compare_ranges([PortRange("tcp", 443, 443)], None) is None
 
 
@@ -126,7 +136,12 @@ def _ctx(addr=None, svc_objects=None):
 
 
 def test_match_rule_src_broader_and_names_detail():
-    ctx = _ctx(addr={"corp": frozenset({N("10.1.0.0/16")}), "other": frozenset({N("9.9.9.0/24")})})
+    ctx = _ctx(
+        addr={
+            "corp": frozenset({N("10.1.0.0/16")}),
+            "other": frozenset({N("9.9.9.0/24")}),
+        }
+    )
     q = Query(src=[N("10.1.1.5/32")], dst=None, port=None)
     m = match_rule(_rule(srcaddr=["corp", "other"]), q, ctx)
     assert m["src"]["label"] == "broader"
@@ -173,7 +188,9 @@ def test_match_rule_service_names_resolved_through_catalog():
 def test_search_port_only_is_counted_not_listed():
     ctx = _ctx(
         addr={"corp": frozenset({N("10.1.0.0/16")}), "x": frozenset({N("9.9.0.0/16")})},
-        svc_objects=[{"name": "HTTPS", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "443"}],
+        svc_objects=[
+            {"name": "HTTPS", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "443"}
+        ],
     )
     rules = [
         _rule(name="src-hit", srcaddr=["corp"], service=["HTTPS"]),
@@ -188,16 +205,28 @@ def test_search_port_only_is_counted_not_listed():
 
 
 def test_search_port_only_query_lists_port_matches_directly():
-    ctx = _ctx(svc_objects=[{"name": "HTTPS", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "443"}])
+    ctx = _ctx(
+        svc_objects=[
+            {"name": "HTTPS", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "443"}
+        ]
+    )
     q = Query(src=None, dst=None, port=[[PortRange("tcp", 443, 443)]])
-    res = search([_rule(name="a", service=["HTTPS"]), _rule(name="b", service=["SSH"])], q, ctx, False)
+    res = search(
+        [_rule(name="a", service=["HTTPS"]), _rule(name="b", service=["SSH"])],
+        q,
+        ctx,
+        False,
+    )
     assert [r["name"] for r in res["rows"]] == ["a"]
     assert res["port_only_count"] == 0
 
 
 def test_search_counts_skipped_and_sorts_full_matches_first():
     ctx = _ctx(
-        addr={"corp": frozenset({N("10.1.0.0/16")}), "dstnet": frozenset({N("10.2.0.0/16")})}
+        addr={
+            "corp": frozenset({N("10.1.0.0/16")}),
+            "dstnet": frozenset({N("10.2.0.0/16")}),
+        }
     )
     rules = [
         _rule(name="src-only", srcaddr=["corp"]),
@@ -216,7 +245,9 @@ def test_search_counts_skipped_and_sorts_full_matches_first():
 
 def test_resolve_groups_keeps_resolvable_members_of_partly_unresolvable_group():
     leaves = {"n24": frozenset({N("10.1.1.0/24")}), "fq": None}
-    groups = [{"name": "g", "member": [{"name": "n24"}, {"name": "fq"}, {"name": "gone"}]}]
+    groups = [
+        {"name": "g", "member": [{"name": "n24"}, {"name": "fq"}, {"name": "gone"}]}
+    ]
     out = resolve_groups(leaves, groups)
     assert out["g"] == frozenset({N("10.1.1.0/24")})
     assert out["n24"] == frozenset({N("10.1.1.0/24")})
@@ -234,7 +265,10 @@ def test_resolve_groups_handles_cycles_and_nested_groups():
 
 
 def test_resolve_groups_drops_ipv6_networks():
-    leaves = {"v6": frozenset({ipaddress.ip_network("2001:db8::/32")}), "v4": frozenset({N("10.0.0.0/8")})}
+    leaves = {
+        "v6": frozenset({ipaddress.ip_network("2001:db8::/32")}),
+        "v4": frozenset({N("10.0.0.0/8")}),
+    }
     out = resolve_groups(leaves, [{"name": "g", "member": ["v6", "v4"]}])
     assert out["v6"] is None
     assert out["g"] == frozenset({N("10.0.0.0/8")})

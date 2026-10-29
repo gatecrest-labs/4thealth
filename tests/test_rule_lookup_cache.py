@@ -109,13 +109,13 @@ def test_rules_stored_with_firewall_and_package():
     assert by_pkg["PkgA"]["srcaddr"] == ["corp"]
     assert by_pkg["PkgA"]["srcaddr_negate"] is False
     assert entry["ctx"].svc_names == {"https": "HTTPS"}
-    assert entry["ctx"].addr["corp"] == frozenset(
-        {ipaddress.ip_network("10.1.0.0/16")}
-    )
+    assert entry["ctx"].addr["corp"] == frozenset({ipaddress.ip_network("10.1.0.0/16")})
 
 
 def test_negate_flag_is_captured():
-    client = FakeClient([_pkg("P")], {"P": [_policy(1, **{"srcaddr-negate": "enable"})]})
+    client = FakeClient(
+        [_pkg("P")], {"P": [_policy(1, **{"srcaddr-negate": "enable"})]}
+    )
     assert _run(client)["rules"][0]["srcaddr_negate"] is True
 
 

@@ -53,7 +53,9 @@ def _flag(val) -> bool:
     return val in (1, "enable", True)
 
 
-def _record(adom: str, pkg_path: str, firewalls: list[str], p: dict, block: str) -> dict:
+def _record(
+    adom: str, pkg_path: str, firewalls: list[str], p: dict, block: str
+) -> dict:
     return {
         "adom": adom,
         "package": pkg_path,
