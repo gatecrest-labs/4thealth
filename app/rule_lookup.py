@@ -18,7 +18,7 @@ from __future__ import annotations
 import fnmatch
 import ipaddress
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from app.planner.matching import PortRange, ServiceCatalog, parse_service_request
@@ -43,6 +43,13 @@ class Query:
 class Context:
     addr: dict  # name -> frozenset[IPv4Network] | None (from build_addr_resolver)
     svc: ServiceCatalog
+    svc_names: dict = field(default_factory=dict)  # lower-case name -> real name
+
+
+def resolve_service_name(ctx: Context, text: str) -> list[PortRange] | None:
+    """Resolve a service object/group name (case-insensitive) to port ranges."""
+    real = ctx.svc_names.get(text.strip().lower())
+    return ctx.svc.ranges_for_ref(real) if real else None
 
 
 # ── Parsing ───────────────────────────────────────────────────────────────────

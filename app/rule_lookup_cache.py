@@ -139,6 +139,11 @@ def _build_adom(adom: str) -> dict:
         "ctx": Context(
             addr=build_addr_resolver(addr_objects, addr_groups, vip_objects),
             svc=ServiceCatalog(svc_objects, svc_groups),
+            svc_names={
+                o["name"].lower(): o["name"]
+                for o in svc_objects + svc_groups
+                if isinstance(o, dict) and o.get("name")
+            },
         ),
         "package_errors": package_errors,
     }

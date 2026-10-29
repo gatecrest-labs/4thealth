@@ -105,6 +105,7 @@ def test_rules_stored_with_firewall_and_package():
     assert by_pkg["PkgB"]["firewalls"] == ["fw2 / dmz"]
     assert by_pkg["PkgA"]["srcaddr"] == ["corp"]
     assert by_pkg["PkgA"]["srcaddr_negate"] is False
+    assert entry["ctx"].svc_names == {"https": "HTTPS"}
     assert entry["ctx"].addr["corp"] == frozenset(
         {ipaddress.ip_network("10.1.0.0/16")}
     )

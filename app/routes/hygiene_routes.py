@@ -11,6 +11,7 @@ API (JSON, all read-only):
 """
 
 import ipaddress
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from flask import Blueprint, render_template, session, jsonify, request
@@ -18,7 +19,7 @@ from app.decorators import tab_required, check_adom_access
 from app.fmg_helpers import make_client
 from app.fmg_client import FMGError
 from app.hygiene import run_checks, CHECKS, _status, _action
-from app import registry
+from app import registry, rule_lookup, rule_lookup_cache
 from app.security import internal_api_error, upstream_api_error
 
 bp = Blueprint("hygiene", __name__)
@@ -594,6 +595,86 @@ def hygiene_policy_pblocks():
         return internal_api_error("hygiene", exc)
 
     return jsonify({"pblocks": pblocks})
+
+
+# ── API: rule lookup (cached rules, see app/rule_lookup_cache.py) ─────────────
+
+_IPISH_RE = re.compile(r"^[\d.*/]+$")
+_NAME_RE = re.compile(r"^[\w\-.*/ ()]+$")
+
+
+def _parse_addr_search(text: str):
+    """IP/CIDR/wildcard -> list of networks; otherwise a name pattern (str)."""
+    text = text.strip()
+    try:
+        return rule_lookup.parse_ip_query(text)
+    except ValueError:
+        if _IPISH_RE.match(text) or not _NAME_RE.match(text):
+            raise
+        return text
+
+
+@bp.route("/api/hygiene/adoms/<adom>/rule-lookup", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup(adom: str):
+    """Search cached policy rules of an ADOM by source, destination and port.
+
+    Body: { src, dst, port, include_port_only }
+    """
+    if err := check_adom_access(adom):
+        return err
+    data = request.get_json(silent=True) or {}
+    src_t = (data.get("src") or "").strip()
+    dst_t = (data.get("dst") or "").strip()
+    port_t = (data.get("port") or "").strip()
+    if not (src_t or dst_t or port_t):
+        return jsonify({"error": "Enter a source, destination or port"}), 400
+
+    entry = rule_lookup_cache.get_adom(adom)
+    if entry is None:
+        rule_lookup_cache.refresh_adom_async(adom)
+        return jsonify({"status": "warming"}), 202
+    ctx = entry["ctx"]
+
+    try:
+        q = rule_lookup.Query(
+            src=_parse_addr_search(src_t) if src_t else None,
+            dst=_parse_addr_search(dst_t) if dst_t else None,
+            port=rule_lookup.parse_port_query(
+                port_t, lambda n: rule_lookup.resolve_service_name(ctx, n)
+            )
+            if port_t
+            else None,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        result = rule_lookup.search(
+            entry["rules"], q, ctx, bool(data.get("include_port_only"))
+        )
+    except Exception as exc:
+        return internal_api_error("hygiene", exc)
+    return jsonify(
+        {
+            **result,
+            "total": len(result["rows"]),
+            "last_updated": entry.get("last_updated"),
+            "status": entry.get("status"),
+            "error": entry.get("error"),
+            "package_errors": entry.get("package_errors", []),
+            "searched": {"src": src_t, "dst": dst_t, "port": port_t},
+        }
+    )
+
+
+@bp.route("/api/hygiene/adoms/<adom>/rule-lookup/refresh", methods=["POST"])
+@tab_required("rule_hygiene")
+def hygiene_rule_lookup_refresh(adom: str):
+    if err := check_adom_access(adom):
+        return err
+    rule_lookup_cache.refresh_adom_async(adom)
+    return jsonify({"status": "refreshing"}), 202
 
 
 # ── API: object expansion maps (deferred, called after policy table renders) ──
