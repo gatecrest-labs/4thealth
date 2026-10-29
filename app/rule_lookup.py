@@ -25,6 +25,7 @@ from app.planner.matching import PortRange, ServiceCatalog, parse_service_reques
 
 _BARE_PORT_RE = re.compile(r"^\d+(-\d+)?$")
 _ALL_NAMES = ("all", "any")
+_NON_PORT_PROTOCOLS = ("ip", "icmp")
 
 # Lower is better when a field has several matching names.
 _RANK = {"exact": 0, "name": 0, "broader": 1, "narrower": 2, "overlap": 3}
@@ -50,6 +51,46 @@ def resolve_service_name(ctx: Context, text: str) -> list[PortRange] | None:
     """Resolve a service object/group name (case-insensitive) to port ranges."""
     real = ctx.svc_names.get(text.strip().lower())
     return ctx.svc.ranges_for_ref(real) if real else None
+
+
+# ── Group resolution ──────────────────────────────────────────────────────────
+
+
+def _v4_only(nets) -> frozenset | None:
+    v4 = frozenset(n for n in (nets or ()) if n.version == 4)
+    return v4 or None
+
+
+def resolve_groups(leaves: dict, groups: list) -> dict:
+    """Resolve address groups to the union of their resolvable member networks.
+
+    Unlike the hygiene resolver, a member that cannot be resolved (FQDN,
+    geography, deleted object) is skipped rather than poisoning the whole group,
+    and cycles are tolerated. IPv6 networks are dropped (the lookup is IPv4).
+    """
+    out = {name: _v4_only(nets) for name, nets in leaves.items()}
+    members: dict[str, list[str]] = {}
+    for g in groups:
+        if isinstance(g, dict) and g.get("name"):
+            members[g["name"]] = [
+                (m if isinstance(m, str) else m.get("name", ""))
+                for m in (g.get("member") or [])
+            ]
+    for gname in members:
+        seen: set = set()
+        stack = [gname]
+        nets: set = set()
+        while stack:
+            n = stack.pop()
+            if n in seen:
+                continue
+            seen.add(n)
+            if n in members:
+                stack.extend(members[n])
+            elif out.get(n):
+                nets |= out[n]
+        out[gname] = frozenset(nets) or None
+    return out
 
 
 # ── Parsing ───────────────────────────────────────────────────────────────────
@@ -87,6 +128,19 @@ def parse_ip_query(text: str) -> list[ipaddress.IPv4Network]:
         raise ValueError(f"Invalid IP query {raw!r}: {exc}") from None
 
 
+def _validated(alts: list[list[PortRange]]) -> list[list[PortRange]]:
+    for alt in alts:
+        for r in alt:
+            if r.protocol in _NON_PORT_PROTOCOLS:
+                raise ValueError(
+                    "Port search must be a TCP/UDP port or service "
+                    "(ICMP, IP-protocol and all/any cannot be searched by port)"
+                )
+            if not (0 <= r.start <= r.end <= 65535):
+                raise ValueError(f"Invalid port range {r.start}-{r.end}")
+    return alts
+
+
 def parse_port_query(
     text: str, resolve_name: Callable[[str], list[PortRange] | None]
 ) -> list[list[PortRange]]:
@@ -104,12 +158,14 @@ def parse_port_query(
         low, high = int(lo), int(hi or lo)
         if not (0 <= low <= high <= 65535):
             raise ValueError(f"Invalid port {raw!r}")
-        return [[PortRange("tcp", low, high)], [PortRange("udp", low, high)]]
+        return _validated(
+            [[PortRange("tcp", low, high)], [PortRange("udp", low, high)]]
+        )
     if "/" not in raw:
         resolved = resolve_name(raw)
         if resolved:
-            return [list(resolved)]
-    return [parse_service_request(raw)]
+            return _validated([list(resolved)])
+    return _validated([parse_service_request(raw)])
 
 
 # ── Comparison ────────────────────────────────────────────────────────────────
@@ -194,8 +250,16 @@ def _match_port_field(
     for name in names:
         if _is_all(name):
             continue
-        ranges = ctx.svc.ranges_for_ref(name)
-        label = _best(compare_ranges(alt, ranges) for alt in wanted)
+        try:
+            ranges = ctx.svc.ranges_for_ref(name)
+        except (ValueError, TypeError, KeyError):
+            ranges = None  # malformed service object: cannot be compared
+        if not ranges:
+            continue
+        if any(r.protocol == "ip" for r in ranges):
+            skipped = True  # IP-protocol wildcard behaves like ALL
+        usable = [r for r in ranges if r.protocol not in _NON_PORT_PROTOCOLS]
+        label = _best(compare_ranges(alt, usable) for alt in wanted)
         if label:
             hits[name] = label
     return {"label": _best(hits.values()), "names": hits}, skipped

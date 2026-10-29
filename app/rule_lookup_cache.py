@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from app.fmg_helpers import make_client
 from app.hygiene import _action, _status
 from app.planner.matching import ServiceCatalog
-from app.rule_lookup import Context
+from app.rule_lookup import Context, resolve_groups
 
 logger = logging.getLogger(__name__)
 
@@ -82,22 +82,31 @@ def _firewalls(pkg: dict) -> list[str]:
     return out
 
 
-def _fetch_package(adom: str, pkg: dict) -> list[dict]:
+def _fetch_package(adom: str, pkg: dict) -> tuple[list[dict], list[str]]:
+    """Return (rules, errors); a failed policy block is an error, not silence."""
     pkg_path = pkg.get("path") or pkg.get("name", "")
     firewalls = _firewalls(pkg)
     rules: list[dict] = []
+    errors: list[str] = []
     with make_client() as client:
         for p in client.get_policies(adom, pkg_path):
             if not isinstance(p, dict):
                 continue
             block = str(p.get("_policy_block") or "").strip()
             if block:
-                for bp in client.get_pblock_policies(adom, block):
+                try:
+                    block_rules = client.get_pblock_policies(adom, block, strict=True)
+                except Exception as exc:
+                    errors.append(
+                        f"{pkg.get('name')}: policy block {block} failed: {exc}"
+                    )
+                    continue
+                for bp in block_rules:
                     if isinstance(bp, dict):
                         rules.append(_record(adom, pkg_path, firewalls, bp, block))
                 continue
             rules.append(_record(adom, pkg_path, firewalls, p, ""))
-    return rules
+    return rules, errors
 
 
 def _build_adom(adom: str) -> dict:
@@ -124,20 +133,22 @@ def _build_adom(adom: str) -> dict:
 
     def _work(pkg):
         try:
-            return pkg, _fetch_package(adom, pkg), None
+            pkg_rules, errs = _fetch_package(adom, pkg)
+            return pkg_rules, errs
         except Exception as exc:
-            return pkg, [], str(exc)
+            return [], [f"{pkg.get('name')}: {exc}"]
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for pkg, pkg_rules, err in pool.map(_work, pkgs):
-            if err:
-                package_errors.append(f"{pkg.get('name')}: {err}")
+        for pkg_rules, errs in pool.map(_work, pkgs):
+            package_errors.extend(errs)
             rules.extend(pkg_rules)
 
     return {
         "rules": rules,
         "ctx": Context(
-            addr=build_addr_resolver(addr_objects, addr_groups, vip_objects),
+            addr=resolve_groups(
+                build_addr_resolver(addr_objects, [], vip_objects), addr_groups
+            ),
             svc=ServiceCatalog(svc_objects, svc_groups),
             svc_names={
                 o["name"].lower(): o["name"]

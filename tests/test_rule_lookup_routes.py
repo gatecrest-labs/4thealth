@@ -192,3 +192,26 @@ def test_page_renders_rule_lookup_section_with_every_js_id(client):
     assert not missing
     assert html.index("Rule Lookup") < html.index("Object Lookup")
     assert "js/rule_lookup.js" in html
+
+
+@pytest.mark.parametrize(
+    "payload", [{"src": ["10.1.1.1"]}, {"src": 123}, {"port": {"a": 1}}, [1], "str"]
+)
+def test_non_string_fields_are_400_not_500(client, payload):
+    with _seed([]):
+        r = _post(client, URL, payload)
+    assert r.status_code == 400
+
+
+@pytest.mark.parametrize("port", ["all", "icmp", "tcp/99999", "tcp/443-80"])
+def test_unsearchable_ports_are_400(client, port):
+    with _seed([]):
+        assert _post(client, URL, {"port": port}).status_code == 400
+
+
+def test_system_adom_is_404(client):
+    with patch("app.rule_lookup_cache.refresh_adom_async") as refresh:
+        r = _post(client, "/api/hygiene/adoms/FortiManager_Managed/rule-lookup", {"src": "10.1.1.1"})
+        r2 = _post(client, "/api/hygiene/adoms/FortiManager_Managed/rule-lookup/refresh", {})
+    assert r.status_code == 404 and r2.status_code == 404
+    refresh.assert_not_called()

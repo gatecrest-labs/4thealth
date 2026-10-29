@@ -13,6 +13,7 @@ from app.rule_lookup import (
     match_rule,
     parse_ip_query,
     parse_port_query,
+    resolve_groups,
     search,
 )
 
@@ -208,3 +209,63 @@ def test_search_counts_skipped_and_sorts_full_matches_first():
     assert [r["name"] for r in res["rows"]] == ["both", "src-only"]
     assert res["skipped_count"] == 1
     assert res["rows"][0]["match"]["dst"]["label"] == "broader"
+
+
+# ── Review-pass fixes ─────────────────────────────────────────────────────────
+
+
+def test_resolve_groups_keeps_resolvable_members_of_partly_unresolvable_group():
+    leaves = {"n24": frozenset({N("10.1.1.0/24")}), "fq": None}
+    groups = [{"name": "g", "member": [{"name": "n24"}, {"name": "fq"}, {"name": "gone"}]}]
+    out = resolve_groups(leaves, groups)
+    assert out["g"] == frozenset({N("10.1.1.0/24")})
+    assert out["n24"] == frozenset({N("10.1.1.0/24")})
+
+
+def test_resolve_groups_handles_cycles_and_nested_groups():
+    leaves = {"a": frozenset({N("10.0.0.0/24")})}
+    groups = [
+        {"name": "g1", "member": ["g2", "a"]},
+        {"name": "g2", "member": ["g1"]},
+    ]
+    out = resolve_groups(leaves, groups)
+    assert out["g1"] == frozenset({N("10.0.0.0/24")})
+    assert out["g2"] == frozenset({N("10.0.0.0/24")})
+
+
+def test_resolve_groups_drops_ipv6_networks():
+    leaves = {"v6": frozenset({ipaddress.ip_network("2001:db8::/32")}), "v4": frozenset({N("10.0.0.0/8")})}
+    out = resolve_groups(leaves, [{"name": "g", "member": ["v6", "v4"]}])
+    assert out["v6"] is None
+    assert out["g"] == frozenset({N("10.0.0.0/8")})
+
+
+@pytest.mark.parametrize(
+    "text", ["all", "any", "ip/0", "icmp", "ping", "tcp/99999", "tcp/443-80"]
+)
+def test_parse_port_query_rejects_unsearchable_or_invalid(text):
+    with pytest.raises(ValueError):
+        parse_port_query(text, _resolve_none)
+
+
+def test_parse_port_query_rejects_resolver_result_with_icmp_or_ip():
+    with pytest.raises(ValueError):
+        parse_port_query("PING", lambda n: [PortRange("icmp", 0, 65535)])
+
+
+def test_icmp_and_ip_services_never_match_on_port_and_ip_wildcard_is_skipped():
+    svc = [
+        {"name": "PING", "protocol": "ICMP"},
+        {"name": "ALLIP", "protocol": "IP"},
+    ]
+    q = Query(src=None, dst=None, port=[[PortRange("tcp", 443, 443)]])
+    m = match_rule(_rule(service=["PING", "ALLIP"]), q, _ctx(svc_objects=svc))
+    assert m["port"]["label"] is None
+    assert m["skipped"] is True
+
+
+def test_malformed_service_object_does_not_break_search():
+    svc = [{"name": "BAD", "protocol": "IP", "protocol-number": ""}]
+    q = Query(src=None, dst=None, port=[[PortRange("tcp", 443, 443)]])
+    m = match_rule(_rule(service=["BAD"]), q, _ctx(svc_objects=svc))
+    assert m["port"]["label"] is None

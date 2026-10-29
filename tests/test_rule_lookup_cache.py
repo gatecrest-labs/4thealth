@@ -36,8 +36,11 @@ class FakeClient:
             raise val
         return val
 
-    def get_pblock_policies(self, adom, name):
-        return self.pblocks.get(name, [])
+    def get_pblock_policies(self, adom, name, strict=False):
+        val = self.pblocks.get(name, [])
+        if isinstance(val, Exception):
+            raise val
+        return val
 
     def get_address_objects(self, adom, scope="all"):
         return [{"name": "corp", "subnet": ["10.1.0.0", "255.255.0.0"]}]
@@ -168,3 +171,29 @@ def test_job_skips_forti_adoms():
     ):
         rlc._run_job(None)
     assert seen == ["Ent"]
+
+
+def test_failed_policy_block_is_reported_not_silently_dropped():
+    client = FakeClient(
+        [_pkg("P")],
+        {"P": [{"_policy_block": "Blk"}, _policy(2)]},
+        pblocks={"Blk": RuntimeError("pblock denied")},
+    )
+    entry = _run(client)
+    assert [r["name"] for r in entry["rules"]] == ["rule2"]
+    assert any("Blk" in e for e in entry["package_errors"])
+
+
+def test_group_with_unresolvable_member_still_resolves_other_members():
+    class C(FakeClient):
+        def get_address_groups(self, adom, scope="all"):
+            return [{"name": "g", "member": ["corp", "fqdn-obj"]}]
+
+        def get_address_objects(self, adom, scope="all"):
+            return [
+                {"name": "corp", "subnet": ["10.1.0.0", "255.255.0.0"]},
+                {"name": "fqdn-obj", "type": "fqdn", "fqdn": "x.example.com"},
+            ]
+
+    entry = _run(C([_pkg("P")], {"P": [_policy(1)]}))
+    assert entry["ctx"].addr["g"] == frozenset({ipaddress.ip_network("10.1.0.0/16")})

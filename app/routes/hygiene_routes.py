@@ -623,10 +623,18 @@ def hygiene_rule_lookup(adom: str):
     """
     if err := check_adom_access(adom):
         return err
-    data = request.get_json(silent=True) or {}
-    src_t = (data.get("src") or "").strip()
-    dst_t = (data.get("dst") or "").strip()
-    port_t = (data.get("port") or "").strip()
+    if adom.lower().startswith("forti"):
+        return jsonify({"error": "Unknown ADOM"}), 404
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+    fields = []
+    for key in ("src", "dst", "port"):
+        val = data.get(key)
+        if val is not None and not isinstance(val, str):
+            return jsonify({"error": f"{key} must be a string"}), 400
+        fields.append((val or "").strip())
+    src_t, dst_t, port_t = fields
     if not (src_t or dst_t or port_t):
         return jsonify({"error": "Enter a source, destination or port"}), 400
 
@@ -673,6 +681,8 @@ def hygiene_rule_lookup(adom: str):
 def hygiene_rule_lookup_refresh(adom: str):
     if err := check_adom_access(adom):
         return err
+    if adom.lower().startswith("forti"):
+        return jsonify({"error": "Unknown ADOM"}), 404
     rule_lookup_cache.refresh_adom_async(adom)
     return jsonify({"status": "refreshing"}), 202
 
