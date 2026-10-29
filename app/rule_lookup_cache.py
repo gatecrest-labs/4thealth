@@ -1,0 +1,220 @@
+"""Rule Lookup cache — every policy rule of every non-system ADOM.
+
+Backs the Rule Lookup section of the Rule Review tab. Runs at startup and every
+RULE_LOOKUP_CACHE_INTERVAL_MIN minutes (default 60), mirroring license_cache.
+
+Per-ADOM entry in _store:
+  rules          list[dict]  one record per rule (policy-block rules expanded)
+  ctx            Context     resolved address networks + service catalog
+  last_updated   str         ISO-8601 UTC
+  status         str         "ok" | "running" | "error"
+  error          str | None  last whole-ADOM failure (old data is kept)
+  package_errors list[str]   packages that failed to fetch on the last build
+
+Rule record keys: adom, package, firewalls, policyid, name, status, action,
+srcintf, dstintf, srcaddr, dstaddr, service, srcaddr_negate, dstaddr_negate,
+comment, policy_block ("" when the rule is not inside a policy block).
+"""
+
+import logging
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+
+from app.fmg_helpers import make_client
+from app.hygiene import _action, _status
+from app.planner.matching import ServiceCatalog
+from app.rule_lookup import Context
+
+logger = logging.getLogger(__name__)
+
+_store: dict = {}
+_lock = threading.Lock()
+_building: set = set()
+
+
+def get_adom(adom: str) -> dict | None:
+    """Return a shallow copy of an ADOM's cache entry, or None if never built."""
+    with _lock:
+        entry = _store.get(adom)
+        return dict(entry) if entry else None
+
+
+def _names(val) -> list[str]:
+    if not val:
+        return []
+    if isinstance(val, str):
+        return [val]
+    return [(i.get("name", str(i)) if isinstance(i, dict) else str(i)) for i in val]
+
+
+def _flag(val) -> bool:
+    return val in (1, "enable", True)
+
+
+def _record(adom: str, pkg_path: str, firewalls: list[str], p: dict, block: str) -> dict:
+    return {
+        "adom": adom,
+        "package": pkg_path,
+        "firewalls": firewalls,
+        "policyid": p.get("policyid", ""),
+        "name": p.get("name") or "",
+        "status": _status(p),
+        "action": _action(p),
+        "srcintf": _names(p.get("srcintf")),
+        "dstintf": _names(p.get("dstintf")),
+        "srcaddr": _names(p.get("srcaddr")),
+        "dstaddr": _names(p.get("dstaddr")),
+        "service": _names(p.get("service")),
+        "srcaddr_negate": _flag(p.get("srcaddr-negate")),
+        "dstaddr_negate": _flag(p.get("dstaddr-negate")),
+        "comment": p.get("comments") or p.get("comment") or "",
+        "policy_block": block,
+    }
+
+
+def _firewalls(pkg: dict) -> list[str]:
+    out = []
+    for m in pkg.get("scope member") or []:
+        if isinstance(m, dict) and m.get("name"):
+            out.append(f"{m['name']} / {m.get('vdom') or 'root'}")
+    return out
+
+
+def _fetch_package(adom: str, pkg: dict) -> list[dict]:
+    pkg_path = pkg.get("path") or pkg.get("name", "")
+    firewalls = _firewalls(pkg)
+    rules: list[dict] = []
+    with make_client() as client:
+        for p in client.get_policies(adom, pkg_path):
+            if not isinstance(p, dict):
+                continue
+            block = str(p.get("_policy_block") or "").strip()
+            if block:
+                for bp in client.get_pblock_policies(adom, block):
+                    if isinstance(bp, dict):
+                        rules.append(_record(adom, pkg_path, firewalls, bp, block))
+                continue
+            rules.append(_record(adom, pkg_path, firewalls, p, ""))
+    return rules
+
+
+def _build_adom(adom: str) -> dict:
+    from app.routes.hygiene_routes import build_addr_resolver
+
+    with make_client() as client:
+        all_pkgs = client.get_policy_packages(adom)
+        addr_objects = client.get_address_objects(adom, scope="all") or []
+        addr_groups = client.get_address_groups(adom, scope="all") or []
+        vip_objects = client.get_vip_objects(adom) or []
+        svc_objects = client.get_service_objects(adom, scope="all") or []
+        svc_groups = client.get_service_groups(adom, scope="all") or []
+
+    pkgs = [
+        p
+        for p in all_pkgs
+        if isinstance(p, dict)
+        and (p.get("type") or "").lower() != "folder"
+        and p.get("name")
+    ]
+
+    rules: list[dict] = []
+    package_errors: list[str] = []
+
+    def _work(pkg):
+        try:
+            return pkg, _fetch_package(adom, pkg), None
+        except Exception as exc:
+            return pkg, [], str(exc)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for pkg, pkg_rules, err in pool.map(_work, pkgs):
+            if err:
+                package_errors.append(f"{pkg.get('name')}: {err}")
+            rules.extend(pkg_rules)
+
+    return {
+        "rules": rules,
+        "ctx": Context(
+            addr=build_addr_resolver(addr_objects, addr_groups, vip_objects),
+            svc=ServiceCatalog(svc_objects, svc_groups),
+        ),
+        "package_errors": package_errors,
+    }
+
+
+def refresh_adom(adom: str) -> None:
+    """Rebuild one ADOM's entry (blocking). A failure keeps any previous data."""
+    with _lock:
+        if adom in _building:
+            return
+        _building.add(adom)
+        if adom in _store:
+            _store[adom] = {**_store[adom], "status": "running"}
+    try:
+        built = _build_adom(adom)
+        with _lock:
+            _store[adom] = {
+                **built,
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+                "status": "ok",
+                "error": None,
+            }
+    except Exception as exc:
+        logger.exception("rule_lookup_cache: %s refresh failed", adom)
+        with _lock:
+            old = _store.get(adom) or {
+                "rules": [],
+                "ctx": Context(addr={}, svc=ServiceCatalog([], [])),
+                "package_errors": [],
+                "last_updated": None,
+            }
+            _store[adom] = {**old, "status": "error", "error": str(exc)}
+    finally:
+        with _lock:
+            _building.discard(adom)
+
+
+def refresh_adom_async(adom: str) -> None:
+    threading.Thread(
+        target=refresh_adom, args=[adom], name=f"rule_lookup_{adom}", daemon=True
+    ).start()
+
+
+def _run_job(app) -> None:
+    try:
+        with make_client() as client:
+            adoms = [
+                a.get("name", "")
+                for a in client.get_adoms()
+                if isinstance(a, dict) and a.get("name")
+            ]
+    except Exception:
+        logger.exception("rule_lookup_cache: could not list ADOMs")
+        return
+    for name in adoms:
+        if not name.lower().startswith("forti"):
+            refresh_adom(name)
+
+
+def init_scheduler(app):
+    """Start the interval scheduler and fire an immediate warm-up."""
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    interval_min = int(os.environ.get("RULE_LOOKUP_CACHE_INTERVAL_MIN", "60"))
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        func=_run_job,
+        args=[app],
+        trigger="interval",
+        minutes=interval_min,
+        id="rule_lookup_cache_refresh",
+        name="Rule lookup cache refresh",
+    )
+    scheduler.start()
+    logger.info("rule_lookup_cache: scheduler started — every %d minutes", interval_min)
+    threading.Thread(
+        target=_run_job, args=[app], name="rule_lookup_cache_startup", daemon=True
+    ).start()
+    return scheduler
