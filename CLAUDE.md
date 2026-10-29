@@ -32,6 +32,7 @@ FMG_API_TOKEN=your-bearer-token-here   # preferred
 FMG_VERIFY_SSL=false
 CPU_WARN=70  CPU_CRIT=90
 MEM_WARN=75  MEM_CRIT=90
+RULE_LOOKUP_CACHE_INTERVAL_MIN=60  # Rule Lookup cache refresh interval
 SUMMARY_REFRESH_HOUR=1   # nightly summary recalculation hour (default 01:00)
 SUMMARY_REFRESH_MINUTE=0
 SNMP_ENABLED=false       # enable SNMPv3 polling for FortiManager/FortiAnalyzer/FortiAuthenticator CPU/mem
@@ -92,6 +93,8 @@ app/
   config.py            # Reads .env into a Config object
   auth.py              # Session-based login; bcrypt password verify against users.json
   fmg_client.py        # FortiManager JSON-RPC client (context manager: auto login/logout)
+  rule_lookup.py       # Rule Lookup matching engine (IP/port/name labels, no Flask)
+  rule_lookup_cache.py # Background cache of all ADOM rules for Rule Lookup
   hygiene.py           # Rule hygiene check engine (7 checks: unnamed, unlogged, shadow, disabled, expired, unhit, redundant rules)
   device_review.py     # Audit Review check engine — interface protocol checks; add new checks here
   rule_review.py       # Policy analysis + route-tracing engine; delegates matching to app/planner/
@@ -184,6 +187,15 @@ Single-section layout (tab displays as "Rule Review" in the nav; internal key re
    - Export (CSV/JSON/PDF) — each export includes a filter header block at the top (package, ADOM, timestamp, search terms, total/filtered counts)
 
 Backend: `POST /api/hygiene/policies` returns `srcaddr_exp`, `dstaddr_exp`, `service_exp` arrays with `{name, type, members?, detail?}` objects alongside the flat name lists. Also returns `srcintf`/`dstintf`.
+
+#### Rule Lookup (section on the Rule Review page)
+
+Searches every policy rule of an ADOM by source, destination and port without live FMG calls. Files: `app/rule_lookup.py` (pure matching engine), `app/rule_lookup_cache.py` (cache), `app/static/js/rule_lookup.js` (UI), route `POST /api/hygiene/adoms/<adom>/rule-lookup` (+ `/refresh`) in `hygiene_routes.py`, tab key `rule_hygiene`.
+
+- **Cache:** `rule_lookup_cache` mirrors `license_cache` — rebuilds all non-"forti" ADOMs at startup and every `RULE_LOOKUP_CACHE_INTERVAL_MIN` minutes (default 60); the first search before an ADOM is built returns 202 "warming". Policy-block rules are expanded (`policy_block` field). A failed refresh keeps the previous data and reports `status: error`; a package that fails is listed in `package_errors`.
+- **Inputs:** source/destination accept IP, CIDR, dotted netmask, trailing-octet wildcard (`10.1.*.*`) or an address/group name pattern (`grp-App*`); port accepts `tcp/443`, a bare port (tcp or udp), a range, or a service name.
+- **Labels per field:** `exact`, `broader` (rule contains the search), `narrower` (rule inside the search), `overlap`, `name`. A rule is listed if source or destination matches; rules matching only on port are counted and shown on request (`include_port_only`). When only a port is searched, port matches are listed directly.
+- **Not matched:** fields that are `all`/`any` or negated (`srcaddr-negate`/`dstaddr-negate`); they are counted in `skipped_count`. FQDN/geography objects can only match by name.
 
 ### Audit Review tab
 
