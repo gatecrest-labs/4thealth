@@ -176,3 +176,19 @@ def test_refresh_endpoint(client):
         r = _post(client, URL + "/refresh", {})
     assert r.status_code == 202
     refresh.assert_called_once_with("Ent")
+
+
+def test_page_renders_rule_lookup_section_with_every_js_id(client):
+    import re
+    from pathlib import Path
+
+    html = client.get("/hygiene").get_data(as_text=True)
+    js = Path("app/static/js/rule_lookup.js").read_text()
+    ids = set(re.findall(r"\$rl\('([A-Za-z]+)'\)", js)) | set(
+        re.findall(r"\['(rl[A-Za-z]+)'(?:, '(rl[A-Za-z]+)')*", js)[0]
+    )
+    ids |= {"rlSrc", "rlDst", "rlPort", "rlFilter"}
+    missing = [i for i in ids if i and f'id="{i}"' not in html]
+    assert not missing
+    assert html.index("Rule Lookup") < html.index("Object Lookup")
+    assert "js/rule_lookup.js" in html
