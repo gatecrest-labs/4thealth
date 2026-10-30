@@ -247,22 +247,37 @@ def _match_port_field(
         return empty, False
     skipped = any(_is_all(n) for n in names)
     hits: dict[str, str] = {}
+    via: dict[str, list[str]] = {}
     for name in names:
         if _is_all(name):
             continue
-        try:
-            ranges = ctx.svc.ranges_for_ref(name)
-        except (ValueError, TypeError, KeyError):
-            ranges = None  # malformed service object: cannot be compared
-        if not ranges:
-            continue
-        if any(r.protocol == "ip" for r in ranges):
-            skipped = True  # IP-protocol wildcard behaves like ALL
-        usable = [r for r in ranges if r.protocol not in _NON_PORT_PROTOCOLS]
-        label = _best(compare_ranges(alt, usable) for alt in wanted)
+        label, ip_wild = _label_service(ctx, name, wanted)
+        skipped = skipped or ip_wild
         if label:
             hits[name] = label
-    return {"label": _best(hits.values()), "names": hits}, skipped
+            leaves = [
+                leaf
+                for leaf in ctx.svc.leaf_names(name)
+                if _label_service(ctx, leaf, wanted)[0]
+            ]
+            if leaves:
+                via[name] = leaves
+    return {"label": _best(hits.values()), "names": hits, "via": via}, skipped
+
+
+def _label_service(
+    ctx: Context, name: str, wanted: list[list[PortRange]]
+) -> tuple[str | None, bool]:
+    """Return (label, is_ip_wildcard) for one service object or group name."""
+    try:
+        ranges = ctx.svc.ranges_for_ref(name)
+    except (ValueError, TypeError, KeyError):
+        return None, False  # malformed service object: cannot be compared
+    if not ranges:
+        return None, False
+    ip_wild = any(r.protocol == "ip" for r in ranges)  # behaves like ALL
+    usable = [r for r in ranges if r.protocol not in _NON_PORT_PROTOCOLS]
+    return _best(compare_ranges(alt, usable) for alt in wanted), ip_wild
 
 
 def match_rule(rule: dict, q: Query, ctx: Context) -> dict:

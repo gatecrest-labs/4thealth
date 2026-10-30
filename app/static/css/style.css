@@ -1888,6 +1888,20 @@ a:hover { text-decoration: underline; }
   margin-left: .3rem;
 }
 .rl-plain { display: block; font-size: .8rem; }
+
+/* Keep the results table inside the page: wrap long names instead of scrolling. */
+#rlTable td { overflow-wrap: anywhere; vertical-align: top; }
+#rlTable .rl-m { white-space: normal; }
+.rl-sub { font-size: .72rem; color: var(--text-muted); }
+.rl-comment {
+  font-size: .72rem;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rl-more summary { font-size: .72rem; color: var(--accent); cursor: pointer; margin-top: .15rem; }
 .rl-banner {
   display: flex;
   align-items: center;
@@ -2860,3 +2874,5 @@ a:hover { text-decoration: underline; }
   font-size: .875rem;
   color: var(--text-muted, #6b7280);
 }
+
+.rl-via { font-size: .7rem; color: var(--text-muted); margin: 0 0 .2rem .5rem; }

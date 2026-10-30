@@ -303,3 +303,24 @@ def test_malformed_service_object_does_not_break_search():
     q = Query(src=None, dst=None, port=[[PortRange("tcp", 443, 443)]])
     m = match_rule(_rule(service=["BAD"]), q, _ctx(svc_objects=svc))
     assert m["port"]["label"] is None
+
+
+def test_group_match_reports_which_members_cover_the_port():
+    from app.planner.matching import ServiceCatalog
+
+    objs = [
+        {"name": "SSH", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "22"},
+        {"name": "HTTPS", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "443"},
+        {"name": "span", "protocol": "TCP/UDP/SCTP", "tcp-portrange": "20-30"},
+    ]
+    groups = [
+        {"name": "inner", "member": ["SSH", "HTTPS"]},
+        {"name": "outer", "member": ["inner", "span", "ghost"]},
+        {"name": "nossh", "member": ["HTTPS"]},
+    ]
+    ctx = Context(addr={}, svc=ServiceCatalog(objs, groups))
+    q = Query(port=parse_port_query("tcp/22", lambda n: None))
+    rule = {"service": ["outer", "nossh", "SSH"]}
+    port = match_rule(rule, q, ctx)["port"]
+    assert set(port["names"]) == {"outer", "SSH"}  # nossh is not a hit
+    assert port["via"] == {"outer": ["SSH", "span"]}  # plain objects need no via
