@@ -23,31 +23,38 @@ function _rlCls(label) {
 
 const RL_INLINE_NAMES = 3;
 
-function _rlNamesHtml(names, field) {
+function _rlNamesHtml(names, field, hideUnmatched) {
   const hits = (field && field.names) || {};
+  const via  = (field && field.via) || {};
   if (!names || !names.length) return '<span style="color:var(--text-muted)">—</span>';
   const one = n => {
     const label = hits[n];
-    return label
-      ? `<span class="rl-m rl-m-${_rlCls(label)}">${esc(n)}<span class="rl-how">${esc(label)}</span></span>`
-      : `<span class="rl-plain">${esc(n)}</span>`;
+    if (!label) return `<span class="rl-plain">${esc(n)}</span>`;
+    const members = via[n] ? `<div class="rl-via">via ${via[n].map(esc).join(', ')}</div>` : '';
+    return `<span class="rl-m rl-m-${_rlCls(label)}">${esc(n)}<span class="rl-how">${esc(label)}</span></span>${members}`;
   };
   // Matched names first, so the reason a rule is listed is never hidden.
   const matched = names.filter(n => hits[n]);
   const others  = names.filter(n => !hits[n]);
-  const room    = Math.max(0, RL_INLINE_NAMES - matched.length);
+  // Port column: other services on the rule did not match, so keep them out of sight.
+  const room    = hideUnmatched && matched.length ? 0 : Math.max(0, RL_INLINE_NAMES - matched.length);
   const shown   = [...matched, ...others.slice(0, room)];
   const rest    = others.slice(room);
   let html = shown.map(one).join('');
   if (rest.length) {
-    html += `<details class="rl-more"><summary>+${rest.length} more</summary>${rest.map(one).join('')}</details>`;
+    const lbl = hideUnmatched && matched.length
+      ? `+${rest.length} other service${rest.length === 1 ? '' : 's'} (no match)`
+      : `+${rest.length} more`;
+    html += `<details class="rl-more"><summary>${lbl}</summary>${rest.map(one).join('')}</details>`;
   }
   return html;
 }
 
 function _rlMatchText(names, field) {
   const hits = (field && field.names) || {};
-  return (names || []).filter(n => hits[n]).map(n => `${n}: ${hits[n]}`).join('; ');
+  const via  = (field && field.via) || {};
+  return (names || []).filter(n => hits[n])
+    .map(n => `${n}: ${hits[n]}${via[n] ? ` (via ${via[n].join(', ')})` : ''}`).join('; ');
 }
 
 function _rlFieldText(r, f) {
@@ -167,7 +174,7 @@ function _rlRow(r) {
     <td><span style="font-size:.75rem;font-weight:600;color:${statusColor}">${esc(r.status)}</span><br><span style="font-size:.75rem;font-weight:600;color:${actionColor}">${esc(r.action)}</span></td>
     <td>${_rlNamesHtml(r.srcaddr, m.src)}</td>
     <td>${_rlNamesHtml(r.dstaddr, m.dst)}</td>
-    <td>${_rlNamesHtml(r.service, m.port)}</td>
+    <td>${_rlNamesHtml(r.service, m.port, true)}</td>
     <td style="font-size:.78rem">${intf || '<span style="color:var(--text-muted)">—</span>'}</td>
   </tr>`;
 }
@@ -294,8 +301,9 @@ function rlExportPdf() {
   const title = `Rule Lookup — ${(rlMeta || {}).adom || ''}`;
   const cell = (names, field) => {
     const hits = (field && field.names) || {};
+    const via  = (field && field.via) || {};
     return (names || []).map(n => hits[n]
-      ? `<div><b>${esc(n)}</b> <small>(${esc(hits[n])})</small></div>`
+      ? `<div><b>${esc(n)}</b> <small>(${esc(hits[n])}${via[n] ? `; via ${esc(via[n].join(', '))}` : ''})</small></div>`
       : `<div>${esc(n)}</div>`).join('');
   };
   const rows = rlFiltered.map(r => {

@@ -2874,3 +2874,5 @@ a:hover { text-decoration: underline; }
   font-size: .875rem;
   color: var(--text-muted, #6b7280);
 }
+
+.rl-via { font-size: .7rem; color: var(--text-muted); margin: 0 0 .2rem .5rem; }
