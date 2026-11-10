@@ -1,4 +1,5 @@
 import time
+import app.license_cache as lc
 from app.fmg_helpers import parse_license_payload
 
 
@@ -41,9 +42,6 @@ def test_non_dict_input():
         assert result["status"] == "unknown"
         assert result["expires"] is None
         assert "subscriptions" in result
-
-
-import app.license_cache as lc  # noqa: E402
 
 
 def test_get_cached_initial_state(monkeypatch):

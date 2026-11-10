@@ -125,6 +125,61 @@ def _ip_in_range(ip_str: str, start_str: str, end_str: str) -> bool:
         return False
 
 
+def _parse_search_range(
+    raw: str,
+) -> tuple[ipaddress.IPv4Address, ipaddress.IPv4Address]:
+    """Parse a NAT lookup query to an inclusive (start, end) address pair.
+
+    Accepted forms:
+      "203.0.113.10"    — single IP, treated as /32
+      "203.0.113.0/24"  — CIDR network
+      "203.0.113.*"     — wildcard-octet shorthand; wildcards must be trailing
+    """
+    if "*" in raw:
+        parts = raw.split(".")
+        if len(parts) != 4:
+            raise ValueError(
+                f"Invalid query {raw!r}: expected 4 octets with trailing wildcards"
+            )
+        first_wild: int | None = None
+        for i, p in enumerate(parts):
+            if p == "*":
+                if first_wild is None:
+                    first_wild = i
+            elif first_wild is not None:
+                raise ValueError(
+                    f"Invalid query {raw!r}: wildcards must be in trailing position"
+                )
+            elif not p.isdigit():
+                raise ValueError(f"Invalid query {raw!r}: non-numeric octet {p!r}")
+        if first_wild is None:
+            raise ValueError(f"Invalid query {raw!r}: no wildcard found")
+        prefix_len = first_wild * 8
+        base_ip = ".".join(p if p != "*" else "0" for p in parts)
+        net = ipaddress.ip_network(f"{base_ip}/{prefix_len}", strict=False)
+        return net.network_address, net.broadcast_address  # type: ignore[return-value]
+    if "/" in raw:
+        net = ipaddress.ip_network(raw, strict=False)
+        return net.network_address, net.broadcast_address  # type: ignore[return-value]
+    ip = ipaddress.ip_address(raw)
+    return ip, ip  # type: ignore[return-value]
+
+
+def _ranges_overlap(
+    s1: ipaddress.IPv4Address,
+    e1: ipaddress.IPv4Address,
+    s2: str,
+    e2: str,
+) -> bool:
+    """Return True if [s1..e1] and [s2..e2] overlap (both inclusive)."""
+    try:
+        a2 = ipaddress.ip_address(s2.strip())
+        b2 = ipaddress.ip_address(e2.strip())
+        return s1 <= b2 and a2 <= e1
+    except ValueError:
+        return False
+
+
 def _cidr_from_mask(ip_mask: str) -> str:
     """Convert 'x.x.x.x y.y.y.y' to 'x.x.x.x/prefix' for display. Returns original on failure."""
     parts = ip_mask.strip().split()
@@ -178,37 +233,32 @@ def _parse_subnet_to_networks(subnet_str: str) -> frozenset | None:
 
 
 def _vip_addr_and_detail(vip: dict) -> tuple[str, str]:
-    """Return (extip_str, 'extip -> mappedip' detail) for a VIP object.
+    """Extract (extip_str, display_detail) from a VIP object dict.
 
-    VIPs are a distinct FMG object class from firewall/address (see
-    FMGClient.get_vip_objects) but FortiGate allows them to be selected as a
-    policy dstaddr exactly like a normal address object, so callers that
-    resolve address names need to fold VIPs in alongside addr_objects.
+    Handles extip as str or list, and mappedip as str, list of str, or
+    list of {"range": ...} dicts (all three shapes appear across FMG versions).
+    Returns (ext_ip, "ext_ip → mapped") for display/lookup purposes.
     """
-    ext_ip_raw = vip.get("extip", "")
-    if isinstance(ext_ip_raw, list):
-        ext_ip_raw = ext_ip_raw[0] if ext_ip_raw else ""
-    ext_ip = str(ext_ip_raw).strip()
-
-    mapped_raw = vip.get("mappedip") or vip.get("mapped-ip") or []
-    if isinstance(mapped_raw, str):
-        mapped_ranges = [mapped_raw] if mapped_raw else []
-    elif isinstance(mapped_raw, list):
-        mapped_ranges = []
-        for entry in mapped_raw:
-            if isinstance(entry, dict):
-                r = entry.get("range", "")
-                if r:
-                    mapped_ranges.append(r)
-            elif isinstance(entry, str) and entry:
-                mapped_ranges.append(entry)
+    extip_raw = vip.get("extip", "")
+    if isinstance(extip_raw, list):
+        ext_ip = ", ".join(str(x) for x in extip_raw if x)
     else:
-        mapped_ranges = []
-    mapped = "; ".join(mapped_ranges)
+        ext_ip = str(extip_raw or "")
 
-    if ext_ip and mapped:
-        return ext_ip, f"{ext_ip} → {mapped}"
-    return ext_ip, ext_ip or mapped or ""
+    mapped_raw = vip.get("mappedip") or vip.get("mapped-ip") or ""
+    if isinstance(mapped_raw, list):
+        parts = []
+        for item in mapped_raw:
+            if isinstance(item, dict):
+                parts.append(str(item.get("range", "")))
+            else:
+                parts.append(str(item))
+        mapped = ", ".join(p for p in parts if p)
+    else:
+        mapped = str(mapped_raw)
+
+    detail = f"{ext_ip} → {mapped}" if mapped else ext_ip
+    return ext_ip, detail
 
 
 def build_addr_resolver(
@@ -240,8 +290,11 @@ def build_addr_resolver(
         name = vip.get("name", "")
         if not name:
             continue
-        ext_ip, _detail = _vip_addr_and_detail(vip)
-        raw[name] = _parse_subnet_to_networks(ext_ip) if ext_ip else None
+        ext_ip, _ = _vip_addr_and_detail(vip)
+        if ext_ip:
+            raw[name] = _parse_subnet_to_networks(ext_ip)
+        else:
+            raw[name] = None
 
     # Build a flat membership map first: group_name → [member_names]
     grp_members: dict[str, list[str]] = {}
@@ -748,15 +801,15 @@ def hygiene_policy_objects():
         subnet = _addr_subnet(ao)
         if n and subnet:
             addr_detail_map[n] = subnet
-    # VIPs are a distinct FMG object class from firewall/address but can be
-    # selected as a policy dstaddr exactly like a normal address object.
+
     for vip in vip_objects:
         if not isinstance(vip, dict):
             continue
         n = vip.get("name", "")
-        _ext_ip, detail = _vip_addr_and_detail(vip)
-        if n and detail:
-            addr_detail_map[n] = detail
+        if n:
+            _, detail = _vip_addr_and_detail(vip)
+            if detail:
+                addr_detail_map[n] = detail
 
     return jsonify(
         {
@@ -773,7 +826,7 @@ def hygiene_policy_objects():
 @bp.route("/api/hygiene/adoms/<adom>/objects/lookup", methods=["POST"])
 @tab_required("rule_hygiene")
 def hygiene_object_lookup(adom: str):
-    """Search address objects, address groups, VIPs, service objects, and service groups.
+    """Search address objects, address groups, service objects, and service groups.
 
     Body: { "query": "search string" }
     Returns: { "objects": [ { name, type, category, detail, members } ] }
@@ -807,17 +860,15 @@ def hygiene_object_lookup(adom: str):
         subnet = _addr_subnet(ao)
         if n and subnet:
             addr_detail_map[n] = subnet
-    # VIPs are a distinct FMG object class from firewall/address (see
-    # FMGClient.get_vip_objects) but FortiGate allows them to be selected as
-    # a policy dstaddr exactly like a normal address object, so group members
-    # that are actually VIPs still need a detail string.
+
     for vip in vip_objects:
         if not isinstance(vip, dict):
             continue
         n = vip.get("name", "")
-        _ext_ip, detail = _vip_addr_and_detail(vip)
-        if n and detail:
-            addr_detail_map[n] = detail
+        if n:
+            _, detail = _vip_addr_and_detail(vip)
+            if detail:
+                addr_detail_map[n] = detail
 
     # Build service detail map so service-group members can show port info
     svc_detail_map: dict[str, str] = {}
@@ -865,7 +916,7 @@ def hygiene_object_lookup(adom: str):
         name = vip.get("name", "")
         if not name or query not in name.lower():
             continue
-        _ext_ip, detail = _vip_addr_and_detail(vip)
+        _, detail = _vip_addr_and_detail(vip)
         results.append(
             {
                 "name": name,
@@ -1210,9 +1261,10 @@ def hygiene_nat_lookup(adom: str):
     if not raw_ip:
         return jsonify({"error": "ip is required"}), 400
     try:
-        searched_ip = str(ipaddress.ip_address(raw_ip))
-    except ValueError:
-        return jsonify({"error": f"Invalid IP address: {raw_ip!r}"}), 400
+        search_start, search_end = _parse_search_range(raw_ip)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    searched_ip = raw_ip
 
     results = []
 
@@ -1331,7 +1383,7 @@ def hygiene_nat_lookup(adom: str):
             mapped_ranges_strs = []
 
         matched = False
-        if _ip_in_range(searched_ip, ext_ip_start, ext_ip_end):
+        if _ranges_overlap(search_start, search_end, ext_ip_start, ext_ip_end):
             matched = True
         if not matched:
             for rng in mapped_ranges_strs:
@@ -1339,7 +1391,9 @@ def hygiene_nat_lookup(adom: str):
                     start, _, end = rng.partition("-")
                 else:
                     start = end = rng
-                if _ip_in_range(searched_ip, start.strip(), end.strip()):
+                if _ranges_overlap(
+                    search_start, search_end, start.strip(), end.strip()
+                ):
                     matched = True
                     break
 
@@ -1376,7 +1430,7 @@ def hygiene_nat_lookup(adom: str):
         end_ip = pool.get("endip", "")
         if not name or not start_ip or not end_ip:
             continue
-        if not _ip_in_range(searched_ip, start_ip, end_ip):
+        if not _ranges_overlap(search_start, search_end, start_ip, end_ip):
             continue
         results.append(
             {

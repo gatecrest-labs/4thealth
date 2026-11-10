@@ -499,6 +499,140 @@ def test_nat_lookup_missing_ip(client):
     assert resp.status_code == 400
 
 
+def test_nat_lookup_cidr_matches_vip_extip(client):
+    """CIDR query must match a VIP whose extip falls inside the network."""
+    vips = [
+        {
+            "name": "vip_inside",
+            "extip": "10.0.0.2",
+            "extintf": "wan1",
+            "mappedip": [{"range": "192.168.1.1"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        },
+        {
+            "name": "vip_outside",
+            "extip": "10.0.0.5",
+            "extintf": "wan1",
+            "mappedip": [{"range": "192.168.1.2"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        },
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = []
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.0.0.0/30"}
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    names = {r["name"] for r in data["results"]}
+    assert "vip_inside" in names
+    assert "vip_outside" not in names
+
+
+def test_nat_lookup_cidr_matches_ippool_overlap(client):
+    """CIDR query must match an IP pool whose range overlaps the searched network."""
+    pools = [
+        {
+            "name": "pool_overlap",
+            "startip": "203.0.113.1",
+            "endip": "203.0.113.20",
+            "type": "overload",
+            "comments": "",
+        }
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = []
+        inst.get_ippool_objects.return_value = pools
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.0/30"}
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "pool_overlap"
+
+
+def test_nat_lookup_wildcard_matches_vip_extip(client):
+    """Wildcard notation (10.1.2.*) must match VIPs whose extip falls in that /24."""
+    vips = [
+        {
+            "name": "vip_match",
+            "extip": "203.0.113.10",
+            "extintf": "wan1",
+            "mappedip": [{"range": "10.0.0.1"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        },
+        {
+            "name": "vip_no_match",
+            "extip": "203.0.114.10",
+            "extintf": "wan1",
+            "mappedip": [{"range": "10.0.0.2"}],
+            "portforward": "disable",
+            "protocol": "",
+            "extport": "",
+            "mappedport": "",
+            "comment": "",
+        },
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = vips
+        inst.get_ippool_objects.return_value = []
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.*"}
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    names = {r["name"] for r in data["results"]}
+    assert "vip_match" in names
+    assert "vip_no_match" not in names
+
+
+def test_nat_lookup_wildcard_matches_ippool(client):
+    """Wildcard notation must match an IP pool whose range overlaps."""
+    pools = [
+        {
+            "name": "pool_match",
+            "startip": "203.0.113.1",
+            "endip": "203.0.113.20",
+            "type": "overload",
+            "comments": "",
+        }
+    ]
+    with patch("app.routes.hygiene_routes.make_client") as mc:
+        inst = mc.return_value.__enter__.return_value
+        inst.get_vip_objects.return_value = []
+        inst.get_ippool_objects.return_value = pools
+        resp = _post(
+            client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "203.0.113.*"}
+        )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["total"] == 1
+    assert data["results"][0]["name"] == "pool_match"
+
+
+def test_nat_lookup_non_trailing_wildcard_returns_400(client):
+    """Wildcards in non-trailing position (e.g. 10.*.1.2) must be rejected."""
+    resp = _post(client, "/api/hygiene/adoms/TestADOM/nat/lookup", {"ip": "10.*.1.2"})
+    assert resp.status_code == 400
+
+
 # ── Where Used ────────────────────────────────────────────────────────────────
 
 

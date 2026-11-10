@@ -1170,7 +1170,7 @@ def _execute_job(job_id: str) -> None:
 
         record.update(
             {
-                "generated_at": gen_at,
+                "ran_at": gen_at,
                 "status": "ok",
                 "packages_total": len(results) + len(skipped),
                 "packages_reviewed": sum(1 for r in results if not r.get("error")),
