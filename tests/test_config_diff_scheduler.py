@@ -176,7 +176,6 @@ def test_validate_single_day_still_works(jobs_path):
 
 def test_register_multi_day_cron_string(jobs_path):
     from app import config_diff_scheduler as sched
-    from unittest.mock import patch
 
     mock_scheduler = MagicMock()
     sched._scheduler = mock_scheduler

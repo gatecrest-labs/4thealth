@@ -71,6 +71,14 @@ sudo useradd --system --shell /sbin/nologin --home /opt/4thealth \
 sudo usermod -aG 4thealth $USER
 ```
 
+#### Create the backup directory
+
+```bash
+sudo mkdir -p /var/backups/4thealth
+sudo chown 4thealth:4thealth /var/backups/4thealth
+sudo chmod 750 /var/backups/4thealth
+```
+
 ### 1.5 Firewall Rules
 
 First check which firewall is active on your server:

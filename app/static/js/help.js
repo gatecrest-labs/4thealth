@@ -59,6 +59,11 @@ const SECTIONS = [
 </ul>
 <h3>Error Cards</h3>
 <p>If an appliance is unreachable the card turns red and shows the error message (e.g. <em>Authentication failed</em> or a network timeout). This does not affect the other cards.</p>
+<h3>Summary &amp; Counts</h3>
+<ul>
+  <li><strong>Managed Firewalls total</strong> — the headline device count now shows a breakdown below it: HA cluster count and standalone device count.</li>
+  <li><strong>ADOM Summary section</strong> — shown below the trend charts; breaks down device counts per ADOM so you can see how the fleet is distributed across management domains at a glance.</li>
+</ul>
 `
   },
   {
@@ -77,6 +82,7 @@ const SECTIONS = [
   <li>The <strong>status dot</strong> reflects FortiManager's connection state for each device (not live CPU/memory).</li>
   <li>Use the <strong>per-page selector</strong> (10 / 25 / 50 / 100) and pagination buttons to navigate large lists.</li>
   <li>Click <strong>Details</strong> on any row to open the full device health panel.</li>
+  <li>The table toolbar includes <strong>CSV</strong>, <strong>JSON</strong>, and <strong>PDF</strong> export buttons that export the currently displayed device list after an ADOM is selected.</li>
 </ul>
 <h3>Device Detail Panel</h3>
 <p>The detail panel fetches live data from FortiManager's proxy API and shows:</p>
@@ -93,9 +99,9 @@ const SECTIONS = [
   },
   {
     id:    'versions',
-    label: 'Device Versions',
+    label: 'Device Review',
     html: `
-<h3>Device Version Report</h3>
+<h3>Device Review</h3>
 <p>Two views: an <strong>All ADOMs</strong> chart at the top that covers every managed device, and a <strong>per-ADOM</strong> chart below that you select from the dropdown.</p>
 
 <h3>All ADOMs Chart</h3>
@@ -127,6 +133,15 @@ const SECTIONS = [
   <li>Shows Name, IP, Platform, Version, and Serial for the current filter selection.</li>
   <li>Use the <strong>per-page selector</strong> (10 / 20 / 50) and <strong>pagination buttons</strong> to navigate large device lists.</li>
   <li><strong>↡ CSV</strong> and <strong>↡ JSON</strong> export all devices matching the current version filter.</li>
+</ul>
+
+<h3>License Status</h3>
+<p>The <strong>License Status</strong> section below the firmware charts shows an SVG donut chart of device license states for the selected ADOM.</p>
+<ul>
+  <li>Segments: <strong>Licensed</strong>, <strong>Expired</strong>, <strong>Expiring Soon</strong>, <strong>Offline</strong>, and <strong>Not Registered</strong>.</li>
+  <li>Click a donut slice or legend item to expand a paginated device list showing Device, Status, Expires, Firmware, and ADOM columns.</li>
+  <li>Export the expanded list as <strong>CSV</strong>, <strong>JSON</strong>, or <strong>PDF</strong>.</li>
+  <li>Click <strong>↺ Refresh</strong> to trigger an immediate cache rebuild — the license cache refreshes every 60 minutes by default.</li>
 </ul>
 `
   },
@@ -164,7 +179,7 @@ const SECTIONS = [
 <h3>NAT Lookup</h3>
 <p>Search VIP (Virtual IP / inbound NAT) and IP Pool (outbound PAT) objects for a given IP. Searches both the external and internal/mapped sides.</p>
 <ul>
-  <li>Enter a single IP address.</li>
+  <li>Enter a single IP address, a CIDR network (e.g. <code>203.0.113.0/24</code>), or a wildcard-octet shorthand (e.g. <code>203.0.113.*</code>). The lookup returns every VIP and IP pool whose address range overlaps the query — useful for finding all NAT objects that touch a subnet.</li>
   <li><strong>VIP match</strong> — returns if the IP equals the VIP's external IP, or falls within the mapped (internal) IP range.</li>
   <li><strong>IP Pool match</strong> — returns if the IP falls within the pool's start–end range.</li>
   <li>Results show: Type (VIP or IP Pool), name, external IP, mapped/pool IP, interface, protocol/port (for port-forwarding VIPs), and comments.</li>
@@ -287,10 +302,15 @@ const SECTIONS = [
   <li>Enter one or more flows: <strong>Source IP</strong>, <strong>Destination IP</strong>, <strong>Service / Port</strong> (e.g. <code>https</code>, <code>443</code>, <code>tcp/8443</code>), and an optional <strong>Comment</strong>.</li>
   <li>Click <strong>Add Flow</strong> to add it to the list. You can add multiple flows before proceeding.</li>
   <li>Import flows from a <strong>CSV or XLSX</strong> file using the import button (columns: src, dst, service, comment).</li>
+  <li><strong>Change Request Details</strong> — an optional block (collapsed by default) for change number, owner, and business justification. The change number is used for export file naming.</li>
+  <li><strong>Group name resolution</strong> — source, destination, and service fields accept FortiGate address group or service group names in addition to IPs and port specs. Unresolved names return an <code>ERROR</code> result with a diagnostic message.</li>
 </ul>
-<h3>Step 2 — Select Packages</h3>
+<h3>Step 2 — Select Firewalls</h3>
 <ul>
-  <li>Choose an <strong>ADOM</strong> then tick one or more <strong>Policy Packages</strong> to analyse.</li>
+  <li>Select an <strong>ADOM</strong> from the dropdown, then pick a <strong>firewall</strong> from the device dropdown.</li>
+  <li>Check one or more <strong>VDOMs</strong> to analyse — VDOM checkboxes are hidden for single-VDOM devices.</li>
+  <li>Click <strong>Add Firewall</strong> to queue the device. Multiple firewalls can be queued before running.</li>
+  <li>Each device + VDOM pair resolves to its installed policy package automatically — no manual package selection is needed.</li>
   <li>Enable <strong>Path Relevance Check</strong> to fetch live routing data from each device — this determines whether the firewall is actually in the traffic path.</li>
 </ul>
 <h3>Step 3 — Review Results</h3>
@@ -305,6 +325,18 @@ const SECTIONS = [
 <p>If <code>policy_db.json</code> is present, each flow is also checked against the network segmentation policy. A <strong>ZONE POLICY BLOCKED</strong> warning appears if the segmentation policy prohibits the flow, even if the firewall rule would allow it.</p>
 <h3>CLI Snippets</h3>
 <p>For flows that need a new or modified rule, a <strong>FortiOS CLI snippet</strong> is generated that you can paste directly into a FortiGate CLI session.</p>
+<h3>Exports</h3>
+<ul>
+  <li><strong>HTML Report</strong> (<code>&lt;change_number&gt;-report.html</code>) — self-contained printable report with a change header, per-flow verdicts, and CLI blocks for each result option.</li>
+  <li><strong>CLI Config</strong> (<code>&lt;change_number&gt;-config.txt</code>) — combined FortiOS CLI for all firewalls with actionable results (<code>MODIFIABLE</code> / <code>NEW_RULE_NEEDED</code> only). Filename falls back to a timestamp prefix when change number is blank.</li>
+</ul>
+<h3>Result Details</h3>
+<ul>
+  <li><strong>Object Plans</strong> — each result includes proposed or reused address and service objects, showing role, action, type, value, and FortiOS CLI per flow.</li>
+  <li><strong>Risk &amp; Approval Chain</strong> — derived from zone-pair domain classification: risk level, required approvers, peer/security review flags, change window, and SLA hours.</li>
+  <li><strong>Alternative Suggestion</strong> — when an existing rule or group could be extended instead of creating a new policy, an <em>Alternative Available</em> block appears with a smaller-change CLI option.</li>
+  <li><strong>Permissiveness Warnings</strong> — advisory messages flag flows using broad CIDRs or <code>any</code>-service.</li>
+</ul>
 `
   },
   {
@@ -319,6 +351,7 @@ const SECTIONS = [
   <li>Enter one or more <strong>source IPs / subnets</strong> and <strong>destination IPs / subnets</strong> (one per line, or comma-separated).</li>
   <li>Optionally enter a <strong>service</strong> (e.g. <code>ssh</code>, <code>443</code>, <code>tcp/8443</code>) to check service-specific block rules.</li>
   <li>Click <strong>Query</strong> to evaluate all src × dst combinations.</li>
+  <li>Export results as <strong>CSV</strong>, <strong>JSON</strong>, or <strong>HTML</strong>.</li>
 </ul>
 <h3>Verdicts</h3>
 <ul>
@@ -330,13 +363,20 @@ const SECTIONS = [
 <p>Rules are evaluated in priority order: <strong>block all</strong> &gt; <strong>block only</strong> (service match) &gt; <strong>allow all</strong>. Zone hierarchy is supported — a zone can inherit policies from its parent zones.</p>
 <h3>Browse</h3>
 <ul>
-  <li><strong>Zones tab</strong> — accordion list of all zones with their subnets. Search by name, description, or subnet. Filter by shared/children/top-level.</li>
+  <li><strong>Zones tab</strong> — accordion list of all zones with their subnets. Search by name, description, or subnet. Filter by shared/children/top-level. Child zones are shown as expandable inline items within their parent zone entry.</li>
   <li><strong>Policies tab</strong> — full policy table. Filter by access type (allow all / block all / block only) or severity.</li>
 </ul>
 <h3>Validate</h3>
 <p>Click <strong>Run Validation</strong> to check the database for structural errors (invalid subnets, missing zone references, empty block-only service lists, etc.).</p>
+<h3>Segmentation Health</h3>
+<p>The <strong>Segmentation Health</strong> sub-tab shows an effectiveness score and identifies weak points in the segmentation policy:</p>
+<ul>
+  <li><strong>Effectiveness score</strong> — a 0–100% measure of how much of the policy surface is actively restricted.</li>
+  <li><strong>Open zone pairs</strong> — zone pairs with no traffic restriction (no block rule and no allow-only constraint).</li>
+  <li><strong>Trust-boundary mismatches</strong> — flags cases where a zone with a high trust level permits all traffic to a zone with a significantly lower trust level. Trust levels are optional integers 0–100 set per zone; mismatches are highlighted so administrators can tighten the policy.</li>
+</ul>
 <h3>Edit Database (Admin only)</h3>
-<p>Admins can add, remove, or modify zones, subnets, and policy rules directly from this panel. Changes are written immediately to <code>policy_db.json</code>.</p>
+<p>Zone Policy database editing has moved to <strong>&#9881; Admin → Zone Policy</strong>. Admins can add, remove, or modify zones, subnets, and policy rules from that panel. Changes are written immediately to <code>policy_db.json</code>.</p>
 `
   },
   {
@@ -358,6 +398,9 @@ const SECTIONS = [
 <h3>Region Colours</h3>
 <p>Device pins are colour-coded by US geographic region. Each region groups a set of states and is assigned a distinct colour. The legend above the map shows the current colour for each region. Any device in a state not assigned to a named region appears in the <strong>Other</strong> colour.</p>
 <p>Admins can change the pin colour for any region (including <strong>Other</strong>) in <strong>&#9881; Admin → Map Region Colors</strong>. Color changes take effect on the next map page load.</p>
+
+<h3>Firewall Search</h3>
+<p>A <strong>firewall search box</strong> above the map lets you find a device by name. Typing zooms the map to and highlights the matching pin. A "not found" message appears if no device matches the search term.</p>
 
 <h3>Legend &amp; ADOM Filter</h3>
 <p>The legend shows each region with its colour. Use the <strong>ADOM filter checkboxes</strong> to show or hide devices by ADOM — useful for focusing on a specific environment (e.g. OT-SERVICES only). The <strong>All</strong> and <strong>None</strong> buttons quickly toggle all checkboxes at once.</p>
@@ -398,7 +441,7 @@ const SECTIONS = [
     label: 'Scheduled Jobs',
     html: `
 <h3>Scheduled Jobs</h3>
-<p>The <strong>Scheduled</strong> sub-tab in the Admin panel lets admins create recurring automated reports. Two job types are available: <strong>Config-Delta</strong> (pending configuration diffs) and <strong>Audit Review</strong> (CIS hardening audit). Both use the same SMTP settings configured at the top of the panel.</p>
+<p>The <strong>Scheduled</strong> sub-tab in the Admin panel lets admins create recurring automated reports. Five job types are available: <strong>Config-Delta</strong>, <strong>Audit Review</strong>, <strong>Rule Hygiene</strong>, <strong>NAT Report</strong>, and <strong>Rule Policy</strong>. All use the same SMTP settings configured at the top of the panel.</p>
 
 <h3>SMTP Settings</h3>
 <p>Before creating any scheduled job, configure the outbound mail server:</p>
@@ -434,6 +477,31 @@ const SECTIONS = [
   <li><strong>Format</strong> — PDF (HTML), CSV, or JSON attachment.</li>
   <li><strong>Email</strong> — comma-separated recipient list.</li>
   <li><strong>Enabled</strong> — uncheck to pause without deleting.</li>
+</ul>
+
+<h3>Rule Hygiene Scheduled Jobs</h3>
+<p>Runs the 8 rule hygiene checks (unnamed, unlogged, shadow, disabled, expired, unhit, redundant rules, plus optional unused objects) against every policy package in an ADOM and emails the findings.</p>
+<ul>
+  <li><strong>Checks</strong> — choose any subset of the 8 checks, or leave all ticked to run everything.</li>
+  <li><strong>Include Unused Objects</strong> — when enabled, fetches the ADOM address and service catalogs and reports objects not referenced by any rule.</li>
+  <li><strong>Format</strong> — HTML, CSV, or JSON attachment.</li>
+  <li><strong>Email</strong> — comma-separated recipient list.</li>
+</ul>
+<p>For ADOMs with many packages, reports are split across multiple emails (up to 20 per-package files per email). Each email shows a summary table at the top.</p>
+
+<h3>NAT Report Scheduled Jobs</h3>
+<p>Lists every VIP and IP Pool in an ADOM alongside the policy rules that use each NAT object, broken down per policy package.</p>
+<ul>
+  <li><strong>Type</strong>: <em>VIP</em> (inbound destination NAT — matched when the VIP name appears in a rule's <code>dstaddr</code>) or <em>IP Pool</em> (outbound source NAT — matched on a rule's <code>poolname</code>). NAT objects with no matching rule appear with blank package/rule fields.</li>
+  <li><strong>Format</strong> — CSV, JSON, or HTML attachment.</li>
+  <li><strong>Email</strong> — comma-separated recipient list.</li>
+</ul>
+
+<h3>Rule Policy Scheduled Jobs</h3>
+<p>Exports per-package policy tables with group-expanded address and service objects and live rule hit counts.</p>
+<ul>
+  <li><strong>Format</strong> — HTML, CSV, or JSON attachment.</li>
+  <li><strong>Email</strong> — comma-separated recipient list.</li>
 </ul>
 
 <h3>Email Report Format</h3>
@@ -479,7 +547,7 @@ const SECTIONS = [
     label: 'Admin',
     html: `
 <h3>Administration Panel</h3>
-<p>Accessible to <strong>admin</strong> accounts only via the <strong>&#9881; Admin</strong> link in the navigation bar. Contains four sub-tabs: <strong>Groups &amp; Permissions</strong>, <strong>Scheduled</strong>, <strong>Map Region Colors</strong>, and <strong>Application Logs</strong>.</p>
+<p>Accessible to <strong>admin</strong> accounts only via the <strong>&#9881; Admin</strong> link in the navigation bar. Contains six sub-tabs: <strong>Groups &amp; Permissions</strong>, <strong>Scheduled</strong>, <strong>Map Region Colors</strong>, <strong>Application Logs</strong>, <strong>Backup</strong>, and <strong>Zone Policy</strong>.</p>
 
 <h3>Groups &amp; Permissions</h3>
 <p>Groups control two things for non-admin users: which <strong>navigation tabs</strong> they can see and which <strong>ADOMs</strong> they can access.</p>
@@ -511,6 +579,17 @@ const SECTIONS = [
 
 <h3>Application Logs</h3>
 <p>An in-memory ring buffer showing up to 2,000 recent log entries (cleared on restart). Use the level and component filters to narrow results. Levels: TRACE → DEBUG → INFO → WARN → ERROR.</p>
+
+<h3>Backup</h3>
+<p>Creates AES-256 encrypted ZIP archives of runtime configuration files (<code>users.json</code>, <code>groups.json</code>, <code>policy_db.json</code>, and similar). Two delivery modes are available:</p>
+<ul>
+  <li><strong>One-time download</strong> — generate an archive immediately and download it to your browser.</li>
+  <li><strong>Scheduled delivery</strong> — configure an FTP, SFTP, or SCP destination and a recurring schedule to push archives automatically.</li>
+</ul>
+<p>Up to 20 archives are stored locally with automatic rotation — the oldest is deleted when the limit is reached. Restoring a backup requires only the password used at creation time; the archive itself carries no credentials.</p>
+
+<h3>Zone Policy</h3>
+<p>The <strong>Zone Policy</strong> sub-tab (Admin only) provides an editor for the network segmentation policy database. Admins can add, remove, or modify zones, subnets, and policy rules. Changes are written immediately to <code>policy_db.json</code>. This replaces the edit panel that was previously on the Zone Policy tab.</p>
 `
   },
   {

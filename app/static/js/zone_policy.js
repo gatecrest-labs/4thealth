@@ -439,6 +439,13 @@ function renderZones() {
     });
   });
 
+  container.querySelectorAll('.zp-child-zone-toggle').forEach(t => {
+    t.addEventListener('click', e => {
+      e.stopPropagation();
+      t.closest('.zp-child-zone-row').classList.toggle('zp-open');
+    });
+  });
+
   if (visible.length === 1 || _selectedZone) {
     const card = container.querySelector('.zp-zone-card');
     if (card) card.classList.add('zp-open');

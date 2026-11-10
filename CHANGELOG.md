@@ -97,6 +97,21 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 - **Zone policy `"allow only"` verdicts** — `evaluate()` in `app/zone_db.py` ignored the service restriction on `"allow only"` policies: a requested service that didn't match the policy's `services` list fell through to the default `ALLOWED` return, behaving identically to `"allow all"`. Non-matching services for a governed zone pair now correctly resolve to `BLOCKED` (affects `/api/zone/query` and `/external/api/zone/query`). `"allow all"`, `"block all"`, and `"block only"` behavior is unchanged.
 - **Device Review scheduled email reports** — protocol names (PING, HTTPS, SSH, HTTP, Telnet, etc.) were missing from the Detail column for Interface Protocols findings. The HTML, CSV, and PDF attachment builders now fall back to the `protocols` list when `detail` is empty, showing e.g. `ping, https (insecure), ssh`.
 
+### Added
+- **NAT Report Scheduled Jobs** — Admin → Scheduled → NAT Report Jobs sub-tab. Recurring per-ADOM NAT object reports emailed on a schedule. Job fields: ADOM, days of week, time, format (CSV/JSON/HTML), email recipients. Each report lists every NATted address in the ADOM (VIPs and IP Pools) and the rules referencing them, per policy package. Run History tracks last run status per job. Admin API: `GET/POST /admin/api/nat-report/jobs`, `PUT/DELETE …/<id>`, `POST …/<id>/run`, `GET …/<id>/status`.
+- **Rule Policy Scheduled Jobs** — Admin → Scheduled → Rule Policy Jobs sub-tab. Per-package policy export (group-expanded policy tables with hit counts) delivered by email as HTML, CSV, or JSON. APScheduler-based with job persistence in `rule_policy_jobs.json`. Admin CRUD and immediate-run endpoints mirror the other scheduler APIs.
+- **Zone Policy — Segmentation Health sub-tab** — Fifth sub-tab on the Zone Policy page. Shows an effectiveness score, a list of open (allow-all) zone pairs, and a trust-boundary mismatch report based on `trust_level` per zone. Served by `GET /api/zone/segmentation-report`.
+- **Zone Policy — Query Flow exports** — CSV, JSON, and HTML export of Query Flow results directly from the Zone Policy Query Flow sub-tab.
+- **Zone Policy — Expandable child zones in Browse** — Browse tab zone accordion now shows child zones as expandable inline items beneath each parent zone entry.
+- **Map — Firewall search** — Search box on the Map tab: type a device name to zoom to and highlight its pin, with "not found" feedback when no match exists.
+- **Dashboard — ADOM Summary section** — Per-ADOM device breakdown shown below the trend charts on the main Dashboard.
+- **NAT Lookup — CIDR/wildcard support** — NAT Lookup now accepts CIDR notation (`10.1.2.0/24`) and wildcard-octet shorthand (`10.1.2.*`) in addition to single IPs. Matching uses range overlap so broad queries return all VIPs and pools that touch the searched network.
+
+### Changed
+- **Dashboard — HA/standalone counts** — Managed Firewalls summary now shows HA cluster count and standalone device count below the total.
+- **Package Change Alerts** — HTML email attachment now renders `+`/`-`/`~` diff lines in color (green/red/amber); the alert rule editor's package picker is now searchable and paginated.
+- **NAT Report** — Output now includes a packages/rules-scanned count row; the job now fails explicitly (with a clear error) when no packages are found in the ADOM.
+
 ---
 
 ## [2026-07-23] — Config-Delta rename and bulk ADOM export

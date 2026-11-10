@@ -248,12 +248,58 @@ Two-section layout (permission key: `versions`):
 
 `GET /rule-review` → `rule_review.html` + `rule_review.js`
 
-Three-step workflow: define flows → select policy packages → review results.
-- Resolves address and service objects for each ADOM to match flows against policies
+Three-step workflow: define flows → select firewalls + VDOMs → review results.
+- Resolves address and service objects for each ADOM to match flows against policies using set-semantics matching (CIDR containment, PortRange coverage) via `app/planner/`
 - Performs path-relevance checks using live device routing + interface data via FMG proxy
-- Integrates zone policy (via `app.zone_db`) for segmentation policy verdicts — reads `policy_db.json` directly, no external service required
-- Generates FortiOS CLI snippets for new/modified rules
-- Verdict categories: PERMITTED / MODIFIABLE / NEW_RULE_NEEDED / EXPLICITLY_DENIED
+- Integrates zone policy (via `app.zone_db`) for segmentation policy verdicts
+- Generates FortiOS CLI snippets for new/modified rules and proposed address/service objects
+- Verdict categories: PERMITTED / MODIFIABLE / NEW_RULE_NEEDED / EXPLICITLY_DENIED / ERROR
+
+**Step 1 — Define Flows:**
+- Source and destination accept IPs, CIDRs, or FortiGate address group names; service accepts port specs or FortiGate service group names
+- Group names are resolved against ADOM address/service objects; unresolved names produce an ERROR result: `Source group "NAME" not found in ADOM "X" — check the Rule Review tab for valid address group names`
+- Optional **Change Request Details** block (collapsed by default): change number, owner, business justification. Change number is used for export file naming.
+
+**Step 2 — Select Firewalls:**
+- ADOM dropdown → firewall dropdown → VDOM checkboxes (hidden when device has only root VDOM)
+- Multiple firewalls can be queued; each device+VDOM pair resolves to its installed policy package server-side via `get_policy_packages()` scope member lookup
+- If no package is found for a device/VDOM, every flow for that selection returns an ERROR result
+
+**Step 3 — Review Results:**
+- Result cards show device/VDOM instead of package path
+- Metadata banner (change number, owner, justification) shown at top when populated
+- **HTML Report export** (`<change_number>-report.html`): self-contained printable report with change header, per-flow verdicts, and CLI blocks for each option
+- **CLI Config export** (`<change_number>-config.txt`): combined FortiOS CLI for all firewalls with actionable results (MODIFIABLE / NEW_RULE_NEEDED only)
+- Export filename falls back to `rule-analysis-<YYYYMMDD-HHMMSS>` prefix when change number is blank
+
+Each result dict carries these fields beyond the core verdict:
+
+| Field | Description |
+|---|---|
+| `device` | Firewall hostname |
+| `vdom` | VDOM name |
+| `object_plans` | List of `{role, action, name, obj_type, value, cli}` — proposed or reused address/service objects |
+| `approval` | `{risk_level, approvers, peer_review, security_review, change_window, sla_hours}` — derived from zone-pair domain classification |
+| `alternative` | GroupAppendAlternative or `null` — a smaller change (extend existing rule/group) instead of creating a new policy |
+| `permissiveness_warnings` | List of advisory strings for broad CIDRs or any-service flows |
+
+**`app/planner/` package** — deterministic analysis engine (no AI). All computation is pure Python; no extra FMG calls beyond what `analyze_flows()` already fetches.
+
+```
+app/planner/
+  __init__.py       # package marker
+  matching.py       # PolicyMatcher, AddressCatalog, ServiceCatalog, PortRange — set-semantics core
+  standards.py      # risk_level(), object_name(), policy_name(), review_requirements()
+  insertion.py      # plan_insertion() — first-match shadowing analysis
+  cli_gen.py        # FortiOS config firewall ... CLI block generators
+  fetch.py          # build_snapshot() — builds DeviceSnapshot from pre-fetched FMG dicts
+  engine.py         # plan_flow() — main entry point; returns 31-key result dict
+  data/
+    naming.yaml             # FortiGate object naming conventions
+    review_requirements.yaml  # approval chains and SLAs by risk level
+```
+
+`analyze_flows()` in `app/rule_review.py` calls `build_snapshot()` + `plan_flow()` per package. Result dict is backward-compatible — all pre-existing keys preserved; new keys are additive. Adding a new check or changing risk thresholds: edit the YAML data files and/or `standards.py`.
 
 ### Zone Policy tab
 
@@ -476,6 +522,48 @@ Each run lists every NATted address in the ADOM and the rules using it, per poli
 
 Admin endpoints (all `admin_required`): `GET/POST /admin/api/nat-report/jobs`, `PUT/DELETE /admin/api/nat-report/jobs/<id>`, `POST .../<id>/run`, `GET .../<id>/status`.
 
+#### Rule Policy Scheduled Jobs
+
+`app/rule_policy_scheduler.py` — APScheduler-based scheduler that emails per-package policy rule reports for an ADOM. Persists jobs in `rule_policy_jobs.json` (gitignored; copy `rule_policy_jobs.example.json` to create).
+
+**Job schema:**
+```json
+{
+  "id": "uuid",
+  "name": "Weekly Policy Review",
+  "adom": "Enterprise Services",
+  "packages": [],
+  "schedule_type": "weekly",
+  "days_of_week": ["MON"],
+  "monthly_position": "beginning",
+  "time": "04:00",
+  "include_global_policies": false,
+  "live_hit_counts": false,
+  "format": "html",
+  "batch_size": 10,
+  "email": "alice@corp.com",
+  "enabled": true,
+  "runs": [...]
+}
+```
+
+`packages: []` = all packages in the ADOM. `schedule_type`: `"daily"`, `"weekly"` (uses `days_of_week`), or `"monthly"` (uses `monthly_position`: `"beginning"` or `"end"`). `batch_size`: number of per-package report files per zip email (1–50, default 10). `live_hit_counts`: when true, fetches live hit counts from FMG per rule (slower; limits concurrency to 2 workers).
+
+**`bulk_policy_adom(adom, packages, include_global, live_hits, max_workers=4)`** in `app/rule_policy_scheduler.py` — session-free entry point for the scheduler and for Package Change Alerts. Builds address/service/VIP catalogs once, then dispatches per-package workers via `ThreadPoolExecutor`. Returns `{adom, results, skipped}`.
+
+**Admin API endpoints** (all `admin_required`):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/admin/api/rule-policy/jobs` | List all Rule Policy scheduled jobs |
+| `POST` | `/admin/api/rule-policy/jobs` | Create a new job |
+| `PUT` | `/admin/api/rule-policy/jobs/<id>` | Update an existing job |
+| `DELETE` | `/admin/api/rule-policy/jobs/<id>` | Delete a job |
+| `POST` | `/admin/api/rule-policy/jobs/<id>/run` | Trigger an immediate run |
+| `GET` | `/admin/api/rule-policy/jobs/<id>/status` | Get last run status / history |
+
+**Scheduled report output:** Email body contains an HTML summary (ADOM, packages reviewed, total rules, skipped packages). Per-package report files in the chosen `format` are zipped and sent as attachments. When package count exceeds `batch_size`, multiple emails are sent as `[Rule Policy] <name> — Part N of M`; the first email carries the full summary, subsequent emails reference Part 1. If no attachment files are generated (e.g. all packages errored), a standalone summary email is sent without attachments.
+
 #### Package Change Alerts
 
 `app/package_change_alerts.py` — not a scheduler: it is driven by `config_diff_scheduler._execute_job`, which calls `evaluate_alerts(adom, results)` right after `bulk_preview_adom()` returns (wrapped in its own try/except so an alert failure never fails the Config-Delta job or its digest email). It reuses those install-preview results — no extra FMG preview calls.
@@ -559,6 +647,16 @@ The "Pending only" toggle filters the device list by `conf_status`. It does not 
 - `GET  /api/pending-changes/adoms` — ADOM list (filtered by access)
 - `GET  /api/pending-changes/adoms/<adom>/devices` — device list with `conf_status`
 - `POST /api/pending-changes/adoms/<adom>/device/<device>/preview` — trigger preview, return structured diff
+
+### Login Metrics
+
+`app/login_metrics.py` — SQLite-backed login event store. Writes one row per login attempt to `login_events.db` (project root, gitignored) via `record_event(success)`.
+
+- **What is tracked:** each login attempt is stored with a Unix timestamp and a success/failure flag (1/0); both successful and failed logins are recorded.
+- **Time resolution:** `get_metrics(range_key)` aggregates events into fixed-width time buckets. Supported range keys and bucket sizes: `1h` (60 s), `4h` (300 s), `12h` (600 s), `1d` (900 s), `7d` (3 600 s), `14d` (7 200 s). Returns `{success: [{ts, v}, …], failed: [{ts, v}, …]}`.
+- **Prune schedule:** APScheduler cron job fires at 03:30 nightly and deletes all events older than 90 days.
+- **Admin API endpoint:** `GET /admin/api/login-metrics?range=<key>` (`api_login_metrics()` in `admin_routes.py`; `admin_required`). Default range is `1h`.
+- **UI:** drives the Login Activity chart in the Admin dashboard.
 
 ## Dependency management
 
