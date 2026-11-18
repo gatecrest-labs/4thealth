@@ -2887,9 +2887,9 @@ a:hover { text-decoration: underline; }
 .nbr-summary { font-size:.82rem; font-weight:600; margin:.25rem 0 .5rem; color: var(--text-muted); }
 
 /* ── Firewalls detail modal: pinned header + tabs, scrolling panel ───── */
-#deviceModal .modal-body { display: flex; flex-direction: column; max-height: calc(100vh - 11rem); }
+#deviceModal .modal-body { display: flex; flex-direction: column; max-height: calc(100vh - 11rem); overflow-y: auto; }
 #deviceModal .modal-body > * { flex-shrink: 0; }
-.detail-panels { flex: 1 1 auto !important; min-height: 0; overflow-y: auto; padding-top: .25rem; }
+.detail-panels { flex: 1 1 auto !important; min-height: 12rem; overflow-y: auto; padding-top: .25rem; }
 .detail-tabs { display: flex; gap: .25rem; border-bottom: 2px solid var(--border); margin: 1rem 0 .5rem; }
 .detail-tab {
   background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px;

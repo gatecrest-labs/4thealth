@@ -378,7 +378,7 @@ ${(d.vdoms || []).map(v => `<tr><td>${vdomBadge(v.name)}</td><td>${escHtml(v.opm
 <div class="detail-panel" data-panel="overview">
 ${fgSubsHtml}
 
-${vdomSection || '<p class="empty-state">No additional overview data.</p>'}
+${(fgSubsHtml || vdomSection) ? vdomSection : '<p class="empty-state">No additional overview data.</p>'}
 </div>
 
 <div class="detail-panel hidden" data-panel="interfaces">
