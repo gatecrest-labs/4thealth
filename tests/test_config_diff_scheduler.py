@@ -427,3 +427,82 @@ def test_failed_part_records_error(jobs_path):
     run = sched.get_all_jobs()[0]["runs"][0]
     assert run["status"] == "error"
     assert "550 too big" in run["error"]
+
+
+def test_running_record_visible_during_run_then_updated_in_place(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    seen = {}
+
+    def fake_bulk(adom, max_workers=1):
+        runs = sched.get_all_jobs()[0]["runs"]
+        seen["runs"] = [dict(r) for r in runs]
+        return _mk_results(3)
+
+    with (
+        patch(
+            "app.routes.pending_changes_routes.bulk_preview_adom", side_effect=fake_bulk
+        ),
+        patch("app.smtp_client.send_email"),
+        patch("app.package_change_alerts.evaluate_alerts"),
+    ):
+        sched._execute_job(job["id"])
+
+    # While the fetch was in flight a 'running' record with started_at existed
+    assert len(seen["runs"]) == 1
+    assert seen["runs"][0]["status"] == "running"
+    assert seen["runs"][0]["started_at"]
+    # After completion: still ONE record, same run_id, now ok with counts
+    runs = sched.get_all_jobs()[0]["runs"]
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == seen["runs"][0]["run_id"]
+    assert runs[0]["status"] == "ok"
+    assert runs[0]["started_at"] == seen["runs"][0]["started_at"]
+    assert runs[0]["devices_total"] == 3
+
+
+def test_failure_updates_running_record_to_error(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    with (
+        patch(
+            "app.routes.pending_changes_routes.bulk_preview_adom",
+            side_effect=RuntimeError("fmg down"),
+        ),
+        patch("app.smtp_client.send_email"),
+    ):
+        sched._execute_job(job["id"])
+    runs = sched.get_all_jobs()[0]["runs"]
+    assert len(runs) == 1
+    assert runs[0]["status"] == "error"
+    assert "fmg down" in runs[0]["error"]
+    assert runs[0]["started_at"]
+
+
+def test_startup_marks_dead_running_record_interrupted(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    sched._start_run(job["id"])  # simulates a run whose process died
+    sched._mark_interrupted_runs()
+    run = sched.get_all_jobs()[0]["runs"][0]
+    assert run["status"] == "interrupted"
+    assert "interrupted" in run["error"].lower()
+
+
+def test_startup_leaves_genuinely_running_record_alone(jobs_path):
+    from app import config_diff_scheduler as sched
+
+    job = _batch_job(sched, 100)
+    sched._start_run(job["id"])
+    held = sched._try_acquire_job_lock(job["id"])  # another worker owns the job
+    try:
+        sched._mark_interrupted_runs()
+    finally:
+        import fcntl
+
+        fcntl.flock(held, fcntl.LOCK_UN)
+        held.close()
+    assert sched.get_all_jobs()[0]["runs"][0]["status"] == "running"

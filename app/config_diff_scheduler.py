@@ -190,6 +190,72 @@ def _append_run(job_id: str, record: dict) -> None:
         _save(jobs)
 
 
+def _now_iso() -> str:
+    return datetime.datetime.utcnow().isoformat() + "Z"
+
+
+def _start_run(job_id: str) -> str:
+    """Persist an in-progress run record so a long job is visible while running."""
+    run_id = str(uuid.uuid4())
+    now = _now_iso()
+    _append_run(
+        job_id,
+        {"run_id": run_id, "started_at": now, "ran_at": now, "status": "running"},
+    )
+    return run_id
+
+
+def _update_run(job_id: str, run_id: str | None, updates: dict) -> None:
+    """Merge `updates` into the run record `run_id`; append one if it's missing."""
+    with _lock:
+        jobs = _load()
+        for j in jobs:
+            if j["id"] != job_id:
+                continue
+            runs = j.setdefault("runs", [])
+            rec = next((r for r in runs if run_id and r.get("run_id") == run_id), None)
+            if rec is None:
+                rec = {"run_id": run_id} if run_id else {}
+                runs.insert(0, rec)
+            rec.update(updates)
+        _save(jobs)
+
+
+def _mark_interrupted_runs() -> None:
+    """At startup, flip 'running' records whose job isn't executing to 'interrupted'.
+
+    The per-job flock is held for the life of a running job (by whichever
+    worker owns it), so a lock we can take means nothing is running it — the
+    process that started the run died before finishing.
+    """
+    with _lock:
+        jobs = _load()
+    for j in jobs:
+        stale = [r for r in j.get("runs", []) if r.get("status") == "running"]
+        if not stale:
+            continue
+        fh = _try_acquire_job_lock(j["id"])
+        if fh is None:
+            continue  # genuinely running in another worker
+        try:
+            for r in stale:
+                _update_run(
+                    j["id"],
+                    r.get("run_id"),
+                    {
+                        "status": "interrupted",
+                        "ran_at": _now_iso(),
+                        "error": "Run interrupted (app restarted before it finished)",
+                    },
+                )
+        finally:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+                fh.close()
+            except Exception:
+                pass
+
+
 # ── Job execution ─────────────────────────────────────────────────────────────
 
 
@@ -218,6 +284,7 @@ def _execute_job(job_id: str) -> None:
         )
         return
     _running_jobs.add(job_id)
+    run_id: str | None = None
     try:
         with _lock:
             jobs = _load()
@@ -226,6 +293,7 @@ def _execute_job(job_id: str) -> None:
             app_log("ERROR", "config_diff_scheduler", f"Job {job_id} not found")
             return
 
+        run_id = _start_run(job_id)
         adom = job["adom"]
         fmt = job.get("format", "pdf")
         email = job["email"]
@@ -261,12 +329,13 @@ def _execute_job(job_id: str) -> None:
             )
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
-        record: dict[str, Any] = {
-            "ran_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "status": "ok",
-            "devices_total": len(results),
-            "devices_with_changes": ok_count,
-        }
+        # Fetch phase is done; record device counts now so they are visible
+        # while the (batched) emails are still going out.
+        _update_run(
+            job_id,
+            run_id,
+            {"devices_total": len(results), "devices_with_changes": ok_count},
+        )
 
         generated_at = datetime.datetime.utcnow().isoformat() + "Z"
         base_subject = f"4THealth Config-Delta — {adom} — {generated_at[:10]}"
@@ -299,6 +368,7 @@ def _execute_job(job_id: str) -> None:
                 part = (part_num, total_parts)
             attachment = _build_attachment(adom, fmt, batch, generated_at, part)
             send_email(email, subject, body_html, [attachment])
+            _update_run(job_id, run_id, {"emails_sent": part_num})
             app_log(
                 "INFO",
                 "config_diff_scheduler",
@@ -306,8 +376,11 @@ def _execute_job(job_id: str) -> None:
                 f"devices={len(batch)} to={email}",
             )
 
-        record["emails_sent"] = total_parts
-        _append_run(job_id, record)
+        _update_run(
+            job_id,
+            run_id,
+            {"status": "ok", "ran_at": _now_iso(), "emails_sent": total_parts},
+        )
         _prune_runs(job_id)
         app_log(
             "INFO",
@@ -317,12 +390,11 @@ def _execute_job(job_id: str) -> None:
         )
 
     except Exception as exc:
-        record = {
-            "ran_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "status": "error",
-            "error": str(exc),
-        }
-        _append_run(job_id, record)
+        _update_run(
+            job_id,
+            run_id,
+            {"status": "error", "ran_at": _now_iso(), "error": str(exc)},
+        )
         app_log(
             "ERROR",
             "config_diff_scheduler",
@@ -618,6 +690,14 @@ def init_scheduler(app) -> None:
     from apscheduler.schedulers.background import BackgroundScheduler
 
     _scheduler = BackgroundScheduler(daemon=True)
+    try:
+        _mark_interrupted_runs()
+    except Exception as exc:
+        app_log(
+            "ERROR",
+            "config_diff_scheduler",
+            f"Failed to reconcile interrupted runs: {exc}",
+        )
     jobs = _load()
     for job in jobs:
         if job.get("enabled"):
