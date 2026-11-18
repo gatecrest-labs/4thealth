@@ -7,6 +7,16 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ---
 
+## [2026-11] — Config-Delta scheduled jobs: batched emails & run visibility
+
+- Config-Delta scheduled jobs gained a **Devices per email** setting (`batch_size`, default 100, range 1–500). ADOMs larger than that are split into `[Part N of M]` emails; Part 1 carries the full per-device summary and each part has its own attachment (`config-delta-<adom>-<date>-partNofM.<ext>`). Small ADOMs still send a single email exactly as before. Fixes very large ADOMs (850+ devices) producing one oversized message that could be dropped after the SMTP relay accepted it
+- A run record is now written as `running` when a job starts (with `run_id` / `started_at`) and updated in place with device counts and `emails_sent`, then finalized to `ok` / `error`. Admin → Scheduled shows **RUNNING…** while a job is in progress
+- Runs orphaned by an app restart are marked `interrupted` at startup (checked via the per-job lock, so a live run in another worker is untouched)
+- `/admin/api/config-diff/jobs/<id>/status` now reports `running` from the persisted record as well as the in-process set, so it is correct with multiple gunicorn workers
+- Existing jobs need no migration: a missing `batch_size` defaults to 100
+
+---
+
 ## [2026-11] — Firewalls detail tabs & neighbor health
 
 - Firewalls device detail modal is now tabbed: **Overview** (FortiGuard, VDOMs), **Interfaces**, **Routing** (IPv4/IPv6 routes, BGP neighbors, BGP advertised prefixes, OSPF neighbors) and **Tunnels** (IPsec)

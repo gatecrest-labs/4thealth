@@ -843,10 +843,14 @@ function renderJobsTable() {
   } else {
     tbody.innerHTML = slice.map(j => {
       const last = j.runs && j.runs[0];
-      const ts   = last ? new Date(last.ran_at).toLocaleString() : '—';
+      const ts   = last ? new Date(last.started_at && last.status === 'running' ? last.started_at : last.ran_at).toLocaleString() : '—';
       const badge = !last ? '<span style="color:var(--text-muted)">Never</span>'
         : last.status === 'ok'
           ? '<span style="color:#166534;font-weight:600">OK</span>'
+        : last.status === 'running'
+          ? `<span style="color:#92400e;font-weight:600" title="Started ${escH(ts)}${last.devices_total ? ' — ' + last.devices_total + ' devices fetched, ' + (last.emails_sent || 0) + ' email(s) sent' : ''}">RUNNING…</span>`
+        : last.status === 'interrupted'
+          ? `<span style="color:#92400e;font-weight:600" title="${escH(last.error||'')}">INTERRUPTED</span>`
           : `<span style="color:var(--danger);font-weight:600" title="${escH(last.error||'')}">ERROR</span>`;
       return `<tr>
         <td>${escH(j.adom)}</td>
@@ -893,6 +897,7 @@ function showJobForm(job) {
   document.getElementById('jobFormTime').value    = job ? job.time : '06:00';
   document.getElementById('jobFormFormat').value  = job ? job.format : 'pdf';
   document.getElementById('jobFormEmail').value   = job ? job.email : '';
+  document.getElementById('jobFormBatchSize').value = job ? (job.batch_size || 100) : 100;
   document.getElementById('jobFormEnabled').checked = job ? !!job.enabled : true;
   document.getElementById('jobFormMsg').textContent = '';
   document.getElementById('jobForm').style.display = 'block';
@@ -926,6 +931,7 @@ async function saveJob() {
     time:         document.getElementById('jobFormTime').value,
     format:       document.getElementById('jobFormFormat').value,
     email:        document.getElementById('jobFormEmail').value.trim(),
+    batch_size:   parseInt(document.getElementById('jobFormBatchSize').value, 10) || 100,
     enabled:      document.getElementById('jobFormEnabled').checked,
   };
   const url    = id ? `/admin/api/config-diff/jobs/${id}` : '/admin/api/config-diff/jobs';
