@@ -367,13 +367,25 @@ ${(d.vdoms || []).map(v => `<tr><td>${vdomBadge(v.name)}</td><td>${escHtml(v.opm
   <div class="detail-item"><span class="detail-label">Policy Package</span><span class="detail-value">${escHtml(d.policy_package || '—')}</span></div>
 </div>
 
+<div class="detail-tabs" role="tablist">
+  <button class="detail-tab active" data-tab="overview">Overview</button>
+  <button class="detail-tab" data-tab="interfaces">Interfaces (${visibleIfaces.length})</button>
+  <button class="detail-tab" data-tab="routing">Routing <span class="detail-tab-badge hidden" id="routingBadge"></span></button>
+  <button class="detail-tab" data-tab="tunnels">Tunnels (${(d.ipsec || []).length})</button>
+</div>
+
+<div class="detail-panels">
+<div class="detail-panel" data-panel="overview">
 ${fgSubsHtml}
 
-${vdomSection}
+${vdomSection || '<p class="empty-state">No additional overview data.</p>'}
+</div>
 
-<div class="section-title">Interfaces (<span id="ifaceCountLabel">${visibleIfaces.length}</span>)</div>
+<div class="detail-panel hidden" data-panel="interfaces">
 <div id="ifaceWidget"></div>
+</div>
 
+<div class="detail-panel hidden" data-panel="routing">
 <div class="section-title">IPv4 Routes</div>
 <div id="routeWidget"></div>
 
@@ -388,11 +400,33 @@ ${vdomSection}
 
 <div class="section-title">OSPF Neighbors</div>
 <div id="ospfWidget"></div>
+</div>
 
-<div class="section-title">IPsec Tunnels (${(d.ipsec || []).length})</div>
-${subTable(['Tunnel','Remote Gateway','Status','Uptime'], ipsecRows, 'No IPsec tunnels')}`;
+<div class="detail-panel hidden" data-panel="tunnels">
+${subTable(['Tunnel','Remote Gateway','Status','Uptime'], ipsecRows, 'No IPsec tunnels')}
+</div>
+</div>`;
 
   return { html, visibleIfaces, vdomColorMap };
+}
+
+/* ── Detail modal tabs ──────────────────────────────────────────────────── */
+function initDetailTabs(root) {
+  const tabs   = root.querySelectorAll('.detail-tab');
+  const panels = root.querySelectorAll('.detail-panel');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.toggle('active', t === tab));
+      panels.forEach(p => p.classList.toggle('hidden', p.dataset.panel !== tab.dataset.tab));
+    });
+  });
+}
+
+function setRoutingBadge(count) {
+  const el = document.getElementById('routingBadge');
+  if (!el) return;
+  el.textContent = count > 0 ? `⚠ ${count}` : '';
+  el.classList.toggle('hidden', count <= 0);
 }
 
 /* ── Interface widget (paginated + filterable) ──────────────────────────── */
@@ -899,6 +933,11 @@ function loadDeviceDetail(adom, deviceName) {
     renderBgpNeighWidget(data.bgp_by_vdom       || {}, vdomColorMap);
     renderBgpPathsWidget(data.bgp_paths_by_vdom || {}, vdomColorMap);
     renderOspfWidget(data.ospf_by_vdom          || {}, vdomColorMap);
+
+    initDetailTabs(document.getElementById('modalBody'));
+    setRoutingBadge(
+      neighborProblemCount(data.bgp_by_vdom  || {}, b => classifyBgpState(b.state)) +
+      neighborProblemCount(data.ospf_by_vdom || {}, o => classifyOspfState(o.state)));
   });
 
   es.addEventListener('error', e => {
