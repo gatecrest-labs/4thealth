@@ -425,6 +425,8 @@ Two scheduler modules support recurring exports (plus the Package Change Alerts 
 
 `app/smtp_client.py` — stdlib `smtplib` wrapper. Config in `smtp_config.json` (project root, gitignored). `send_email()` raises on failure; `test_connection()` always returns a dict.
 
+**Email batching:** each job has `batch_size` (devices per email, default 100, 1–500). ADOMs with more devices are split into `[Part N of M]` emails; Part 1 carries the full per-device summary table, every part has its own attachment (`config-delta-<adom>-<date>-partNofM.<ext>`). ADOMs at or under `batch_size` send one email exactly as before. The run record gains `emails_sent`. Note: `ran_at` is only written after all emails are sent, so a running job shows no run record until it finishes.
+
 **Admin UI:** Admin → Scheduled sub-tab. SMTP form + jobs table. JS in `app/static/js/admin.js`.
 
 **Persistence pattern:** Same as `app_settings.json` / `api_tokens.json` — atomic JSON writes via `app/atomic_io.py`, threading.Lock for concurrent access.

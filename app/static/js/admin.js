@@ -893,6 +893,7 @@ function showJobForm(job) {
   document.getElementById('jobFormTime').value    = job ? job.time : '06:00';
   document.getElementById('jobFormFormat').value  = job ? job.format : 'pdf';
   document.getElementById('jobFormEmail').value   = job ? job.email : '';
+  document.getElementById('jobFormBatchSize').value = job ? (job.batch_size || 100) : 100;
   document.getElementById('jobFormEnabled').checked = job ? !!job.enabled : true;
   document.getElementById('jobFormMsg').textContent = '';
   document.getElementById('jobForm').style.display = 'block';
@@ -926,6 +927,7 @@ async function saveJob() {
     time:         document.getElementById('jobFormTime').value,
     format:       document.getElementById('jobFormFormat').value,
     email:        document.getElementById('jobFormEmail').value.trim(),
+    batch_size:   parseInt(document.getElementById('jobFormBatchSize').value, 10) || 100,
     enabled:      document.getElementById('jobFormEnabled').checked,
   };
   const url    = id ? `/admin/api/config-diff/jobs/${id}` : '/admin/api/config-diff/jobs';

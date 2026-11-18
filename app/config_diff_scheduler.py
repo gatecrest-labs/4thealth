@@ -25,8 +25,24 @@ _running_jobs: set[str] = set()  # job IDs currently executing (for status polli
 
 _VALID_DAYS = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"}
 
+DEFAULT_BATCH_SIZE = 100  # devices per email
+_MAX_BATCH_SIZE = 500
+
+
+def _parse_batch_size(data: dict) -> int:
+    """Return the validated batch_size from job data (default if absent)."""
+    raw = data.get("batch_size", DEFAULT_BATCH_SIZE)
+    try:
+        batch_size = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("batch_size must be an integer")
+    if not (1 <= batch_size <= _MAX_BATCH_SIZE):
+        raise ValueError(f"batch_size must be between 1 and {_MAX_BATCH_SIZE}")
+    return batch_size
+
 
 def _validate_job_fields(data: dict) -> None:
+    _parse_batch_size(data)
     days = data.get("days_of_week")
     if not isinstance(days, list) or not days:
         raise ValueError("days_of_week must be a non-empty list")
@@ -78,6 +94,7 @@ def create_job(data: dict) -> dict:
         "time": data["time"],
         "format": data.get("format", "pdf"),
         "email": data["email"],
+        "batch_size": _parse_batch_size(data),
         "enabled": bool(data.get("enabled", True)),
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
         "runs": [],
@@ -104,6 +121,7 @@ def update_job(job_id: str, data: dict) -> dict:
                     "time": data["time"],
                     "format": data.get("format", "pdf"),
                     "email": data["email"],
+                    "batch_size": _parse_batch_size(data),
                     "enabled": bool(data.get("enabled", True)),
                 }
                 _save(jobs)
@@ -211,11 +229,13 @@ def _execute_job(job_id: str) -> None:
         adom = job["adom"]
         fmt = job.get("format", "pdf")
         email = job["email"]
+        batch_size = int(job.get("batch_size", DEFAULT_BATCH_SIZE))
 
         app_log(
             "INFO",
             "config_diff_scheduler",
-            f"Running scheduled Config-Delta export: adom={adom} format={fmt} to={email}",
+            f"Running scheduled Config-Delta export: adom={adom} format={fmt} "
+            f"batch_size={batch_size} to={email}",
         )
 
         from app.routes.pending_changes_routes import bulk_preview_adom
@@ -249,20 +269,51 @@ def _execute_job(job_id: str) -> None:
         }
 
         generated_at = datetime.datetime.utcnow().isoformat() + "Z"
-        subject = f"4THealth Config-Delta — {adom} — {generated_at[:10]}"
-        body_html = _build_summary_html(adom, results)
-        attachment = _build_attachment(adom, fmt, results, generated_at)
+        base_subject = f"4THealth Config-Delta — {adom} — {generated_at[:10]}"
+        summary_html = _build_summary_html(adom, results)
 
         from app.smtp_client import send_email
 
-        send_email(email, subject, body_html, [attachment])
+        # Split into batches of `batch_size` devices so a large ADOM does not
+        # produce one multi-tens-of-MB message that the mail path may drop.
+        # Part 1 carries the full per-device summary; later parts are short.
+        batches = _chunk(results, batch_size) or [[]]
+        total_parts = len(batches)
+        for part_idx, batch in enumerate(batches):
+            part_num = part_idx + 1
+            if total_parts == 1:
+                subject, body_html, part = base_subject, summary_html, None
+            elif part_num == 1:
+                subject = base_subject
+                body_html = summary_html + (
+                    f"<p style='color:#6b7280'>This is Part 1 of {total_parts}. "
+                    f"Parts 2–{total_parts} contain the remaining devices.</p>"
+                )
+                part = (part_num, total_parts)
+            else:
+                subject = f"[Part {part_num} of {total_parts}] {base_subject}"
+                body_html = (
+                    f"<p>This is Part {part_num} of {total_parts}. "
+                    f"See Part 1 for the full summary.</p>"
+                )
+                part = (part_num, total_parts)
+            attachment = _build_attachment(adom, fmt, batch, generated_at, part)
+            send_email(email, subject, body_html, [attachment])
+            app_log(
+                "INFO",
+                "config_diff_scheduler",
+                f"Config-Delta email sent: adom={adom} part={part_num}/{total_parts} "
+                f"devices={len(batch)} to={email}",
+            )
 
+        record["emails_sent"] = total_parts
         _append_run(job_id, record)
         _prune_runs(job_id)
         app_log(
             "INFO",
             "config_diff_scheduler",
-            f"Config-Delta export sent: adom={adom} devices={len(results)} changes={ok_count} to={email}",
+            f"Config-Delta export sent: adom={adom} devices={len(results)} "
+            f"changes={ok_count} emails={total_parts} to={email}",
         )
 
     except Exception as exc:
@@ -330,13 +381,23 @@ def _build_summary_html(adom: str, results: list[dict]) -> str:
     )
 
 
+def _chunk(items: list, size: int) -> list[list]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
 def _build_attachment(
-    adom: str, fmt: str, results: list[dict], generated_at: str
+    adom: str,
+    fmt: str,
+    results: list[dict],
+    generated_at: str,
+    part: tuple[int, int] | None = None,
 ) -> dict:
     import csv
     import io
 
     date = generated_at[:10]  # "YYYY-MM-DD" from ISO string
+    if part:
+        date = f"{date}-part{part[0]}of{part[1]}"
     if fmt == "json":
         data = json.dumps(
             {
