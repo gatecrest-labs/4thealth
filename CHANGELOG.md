@@ -7,6 +7,17 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ---
 
+## [2026-11] — Firewalls detail tabs & neighbor health
+
+- Firewalls device detail modal is now tabbed: **Overview** (FortiGuard, VDOMs), **Interfaces**, **Routing** (IPv4/IPv6 routes, BGP neighbors, BGP advertised prefixes, OSPF neighbors) and **Tunnels** (IPsec)
+- Header, summary grid and tab bar stay pinned while the selected tab scrolls inside the window; dialog widened from 900px to 1100px
+- BGP and OSPF neighbor state is shown as a badge with an icon: BGP `Established` and OSPF `Full` are green, OSPF `2-Way` is amber, every other state is red; unhealthy rows are tinted
+- Each neighbor table has a summary line (e.g. "3 of 4 Established · 1 down"), lists unhealthy neighbors first, and has a **Problems only** filter
+- The Routing tab shows a warning count when any BGP/OSPF neighbor is not healthy
+- Front-end only: no API changes; neighbor state does not affect device health status on the list or map
+
+---
+
 ## [2026-09] — Audit Review tab
 
 - Renamed "Device Review" tab to "Audit Review"; internal key `device_review` → `audit_review`; URL `/device-review` → `/audit-review`
