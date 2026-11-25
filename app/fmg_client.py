@@ -1,8 +1,11 @@
 """FortiManager JSON-RPC client — read-only, no device changes."""
 
+import contextlib
+import fcntl
 import json
 import os
 import re
+import tempfile
 import time
 import warnings
 
@@ -102,6 +105,41 @@ PROXY_ENDPOINTS = [
 ]
 
 PREVIEW_TIMEOUT_SECS = 120
+
+# FMG install-preview staging is not safe to run concurrently: a new
+# install/package call replaces the previously staged context, and this holds
+# across ADOMs (an interactive click during a bulk job lost BOTH diffs).  Every
+# staging cycle is serialised through one flock file shared by all gunicorn
+# workers (flock is per open file description, so threads are covered too).
+STAGING_LOCK_PATH = os.path.join(tempfile.gettempdir(), "4thealth_fmg_staging.lock")
+STAGING_LOCK_TIMEOUT_SECS = 900
+
+
+@contextlib.contextmanager
+def fmg_staging_lock(timeout: float = STAGING_LOCK_TIMEOUT_SECS):
+    """Hold the cross-process FMG staging lock; raise FMGError on timeout."""
+    fd = open(STAGING_LOCK_PATH, "a+")  # noqa: SIM115 - closed in finally
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise FMGError(
+                        "another preview is already in progress on FortiManager; "
+                        "try again in a minute"
+                    ) from None
+                time.sleep(0.2)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        fd.close()
+
+
 _CONF_STATUS_MAP = {0: "unknown", 1: "insync", 2: "outofsync"}
 # db_status: whether FMG DB has been modified since the last install
 _DB_STATUS_MAP = {0: "unknown", 1: "nomod", 2: "modified"}
@@ -514,6 +552,15 @@ class FMGClient:
                                     lines[0] if isinstance(lines[0], dict) else {},
                                 )
                                 detail = failed.get("detail", "")
+                                app_log(
+                                    "WARN",
+                                    "fmg_client",
+                                    f"install_preview task_failed: task={taskid} "
+                                    f"device={device} label={label} "
+                                    f"lines={[ln for ln in lines if isinstance(ln, dict)]!r}"[
+                                        :1500
+                                    ],
+                                )
                             # FMG reports num_err > 0 with "Copy to device done" on
                             # certain firmware combinations when the preview was
                             # successfully applied to the device — not a real failure.
@@ -549,10 +596,22 @@ class FMGClient:
                         "/securityconsole/preview/result",
                         {"adom": adom, "scope": pkg_scope, "preview_taskid": taskid},
                     )
-                except FMGError:
+                except FMGError as _res_err:
+                    app_log(
+                        "INFO",
+                        "fmg_client",
+                        f"install_preview result_error: adom={adom} "
+                        f"device={device} taskid={taskid} reason={_res_err}",
+                    )
                     continue
                 message = result_data.get("message", "")
                 if not message:
+                    app_log(
+                        "INFO",
+                        "fmg_client",
+                        f"install_preview result_empty_message: adom={adom} "
+                        f"device={device} taskid={taskid}",
+                    )
                     continue
                 try:
                     entries = json.loads(message)
@@ -579,6 +638,13 @@ class FMGClient:
                     if entry.get("name", "").lower() != device.lower():
                         continue
                     r = entry.get("result", "")
+                    app_log(
+                        "INFO",
+                        "fmg_client",
+                        f"install_preview entry: adom={adom} device={device} "
+                        f"taskid={taskid} result_len={len(r)} "
+                        f"head={r.strip()[:60]!r}",
+                    )
                     if r.strip() and r.strip() != "=== No preview result ===":
                         parts.append(r)
                 if parts:
@@ -600,6 +666,10 @@ class FMGClient:
             pkg_scope = [{"name": device, "vdom": v} for v in pkg_vdom_list]
             stage_taskid = None
             preview_taskid = None
+            # Serialise the whole stage → preview → result → cancel cycle
+            # across all workers/ADOMs; released in the finally below.
+            _stage_lock = fmg_staging_lock()
+            _stage_lock.__enter__()
             try:
                 # Step 1: stage this package for preview
                 try:
@@ -615,7 +685,7 @@ class FMGClient:
                 except FMGError as _stage_err:
                     # RPC rejection — package may have no diff; skip it.
                     app_log(
-                        "WARNING",
+                        "WARN",
                         "fmg_client",
                         f"install_preview SKIP: adom={adom} device={device} "
                         f"pkg={pkg_name!r} scope_vdoms={pkg_vdom_list} "
@@ -624,6 +694,12 @@ class FMGClient:
                     continue
                 stage_taskid = stage_data.get("task")
                 if not stage_taskid:
+                    app_log(
+                        "WARN",
+                        "fmg_client",
+                        f"install_preview NO_STAGE_TASK: adom={adom} device={device} "
+                        f"pkg={pkg_name!r} stage_data={stage_data!r}",
+                    )
                     continue
                 _poll(stage_taskid, f"Stage:{pkg_name}")
 
@@ -640,10 +716,22 @@ class FMGClient:
                             "preview_taskid": stage_taskid,
                         },
                     )
-                except FMGError:
+                except FMGError as _prev_err:
+                    app_log(
+                        "WARN",
+                        "fmg_client",
+                        f"install_preview PREVIEW_REJECTED: adom={adom} "
+                        f"device={device} pkg={pkg_name!r} reason={_prev_err}",
+                    )
                     continue
                 preview_taskid = preview_data.get("task")
                 if not preview_taskid:
+                    app_log(
+                        "WARN",
+                        "fmg_client",
+                        f"install_preview NO_PREVIEW_TASK: adom={adom} "
+                        f"device={device} pkg={pkg_name!r} data={preview_data!r}",
+                    )
                     continue
                 _poll(preview_taskid, f"Preview:{pkg_name}")
 
@@ -669,6 +757,7 @@ class FMGClient:
                     )
                 except Exception:
                     pass
+                _stage_lock.__exit__(None, None, None)
 
         return "\n".join(raw_parts)
 
