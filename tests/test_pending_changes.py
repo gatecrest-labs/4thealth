@@ -535,3 +535,93 @@ def test_parse_preview_diff_merges_repeated_vdom_blocks():
     vpn = parse_preview_diff(raw)["vdoms"][1]["changes"]
     joined = "\n".join(c["line"] for c in vpn)
     assert "delete 1959" in joined and "delete 1761" in joined
+
+
+# ── cross-process staging lock ────────────────────────────────────────────────
+#
+# FMG install-preview staging is not safe to run concurrently: a new
+# install/package call replaces the previous staged context, even across ADOMs
+# (observed: an interactive click during a bulk job lost BOTH diffs).  All
+# staging cycles are therefore serialised through one flock file shared by
+# every gunicorn worker.
+
+
+def test_staging_lock_is_mutually_exclusive(tmp_path, monkeypatch):
+    import threading
+
+    import app.fmg_client as fc
+
+    monkeypatch.setattr(fc, "STAGING_LOCK_PATH", str(tmp_path / "stage.lock"))
+    order = []
+    release_first = threading.Event()
+    first_in = threading.Event()
+
+    def first():
+        with fc.fmg_staging_lock(timeout=5):
+            order.append("first-in")
+            first_in.set()
+            release_first.wait(5)
+            order.append("first-out")
+
+    def second():
+        first_in.wait(5)
+        with fc.fmg_staging_lock(timeout=5):
+            order.append("second-in")
+
+    t1 = threading.Thread(target=first)
+    t2 = threading.Thread(target=second)
+    t1.start()
+    t2.start()
+    first_in.wait(5)
+    assert order == ["first-in"]  # second is blocked while first holds the lock
+    release_first.set()
+    t1.join(5)
+    t2.join(5)
+    assert order == ["first-in", "first-out", "second-in"]
+
+
+def test_staging_lock_times_out_with_fmgerror(tmp_path, monkeypatch):
+    import app.fmg_client as fc
+
+    monkeypatch.setattr(fc, "STAGING_LOCK_PATH", str(tmp_path / "stage.lock"))
+    with fc.fmg_staging_lock(timeout=5):
+        with pytest.raises(fc.FMGError, match="another preview"):
+            with fc.fmg_staging_lock(timeout=0.3):
+                pass
+
+
+def test_get_install_preview_holds_staging_lock_during_cycle(tmp_path, monkeypatch):
+    import fcntl
+
+    import app.fmg_client as fc
+
+    lock_path = str(tmp_path / "stage.lock")
+    monkeypatch.setattr(fc, "STAGING_LOCK_PATH", lock_path)
+    client = _make_client()
+    held_during_post = []
+    responses = iter(_happy_path_responses("config system global\nend\n"))
+
+    def fake_post(body):
+        url = body["params"][0]["url"]
+        if url == "/securityconsole/install/package":
+            with open(lock_path, "a+") as f:
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    held_during_post.append(False)
+                    fcntl.flock(f, fcntl.LOCK_UN)
+                except BlockingIOError:
+                    held_during_post.append(True)
+        return next(responses)
+
+    with (
+        patch.object(client, "get_device_vdoms", return_value=[{"name": "root"}]),
+        patch.object(client, "get_package_info", return_value=_PKG_INFO_MOCK),
+        patch.object(client, "_post", side_effect=fake_post),
+        patch("time.sleep"),
+    ):
+        client.get_install_preview("MyADOM", "FW1")
+
+    assert held_during_post == [True]
+    # lock is released once the cycle finishes
+    with open(lock_path, "a+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)

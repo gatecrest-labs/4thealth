@@ -17,6 +17,18 @@ Versions use the date the change merged to `main` (YYYY-MM-DD).
 
 ---
 
+## [2026-11] — Config-Delta preview reliability
+
+- Fixed Config-Delta previews coming back empty ("No pending changes found") or failing with `Install preview finish and status=ERROR` for devices marked Pkg Pending. FortiManager allows only one staged install-preview at a time, and that holds across ADOMs: a click during another preview or a running scheduled job made **both** previews lose their diff
+- All install-preview staging cycles (stage → preview → result → cancel) are now serialised through one cross-process file lock (`fmg_staging_lock()` in `app/fmg_client.py`, lock file `4thealth_fmg_staging.lock` in the system temp dir) shared by every gunicorn worker, the interactive route, scheduled Config-Delta jobs and Package Change Alerts. A click made during a running job now waits for the current device (about 30–60 s) instead of returning a wrong result; after 15 minutes it fails with "another preview is already in progress on FortiManager"
+- Trade-off: previews in different ADOMs no longer run in parallel, so two simultaneous scheduled jobs take longer than before
+- Scheduled Config-Delta digests and Package Change Alerts built from overlapping previews could previously be missing diffs; they are no longer affected
+- Fixed the `install_preview SKIP` log line using level `WARNING`, which the app logger does not recognise, so it was always dropped. It is now `WARN`
+- New `install_preview` log lines for paths that were silent: `NO_STAGE_TASK`, `PREVIEW_REJECTED`, `NO_PREVIEW_TASK`, `result_error`, `result_empty_message`, a per-entry `entry:` line with `result_len` and the start of the text FMG returned, and `task_failed` with the full FMG task line detail
+- Restarting the service while a long Config-Delta job runs marks that run **Interrupted**; it does not resume and must be rerun from Admin → Scheduled
+
+---
+
 ## [2026-11] — Firewalls detail tabs & neighbor health
 
 - Firewalls device detail modal is now tabbed: **Overview** (FortiGuard, VDOMs), **Interfaces**, **Routing** (IPv4/IPv6 routes, BGP neighbors, BGP advertised prefixes, OSPF neighbors) and **Tunnels** (IPsec)
