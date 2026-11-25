@@ -118,7 +118,16 @@ STAGING_LOCK_TIMEOUT_SECS = 900
 @contextlib.contextmanager
 def fmg_staging_lock(timeout: float = STAGING_LOCK_TIMEOUT_SECS):
     """Hold the cross-process FMG staging lock; raise FMGError on timeout."""
-    fd = open(STAGING_LOCK_PATH, "a+")  # noqa: SIM115 - closed in finally
+    # Open (or create) the lock file with mode 0o666 so any user that runs the
+    # service can open it.  Using os.open + os.chmod overrides the process umask,
+    # which prevents [Errno 13] Permission denied when the file was first created
+    # by a different user (e.g. root during a manual test run).
+    fd_no = os.open(STAGING_LOCK_PATH, os.O_CREAT | os.O_RDWR, 0o666)
+    try:
+        os.chmod(STAGING_LOCK_PATH, 0o666)
+    except OSError:
+        pass  # best-effort; chmod may fail if another user owns the file
+    fd = os.fdopen(fd_no, "a+")
     deadline = time.monotonic() + timeout
     try:
         while True:
